@@ -1,0 +1,58 @@
+{
+  "name": "praxis",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "dev:backend": "MODE=all tsx watch services/backend/src/index.ts",
+    "dev:backend:control-plane": "MODE=control-plane tsx watch services/backend/src/index.ts",
+    "dev:backend:worker": "MODE=worker tsx watch services/backend/src/index.ts",
+    "dev:sandbox-worker": "tsx watch services/sandbox-worker/src/index.ts",
+    "dev:web": "vite services/web",
+    "smoke": "tsx scripts/smoke.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "db:up": "docker compose -f docker/docker-compose.dev.yml up -d --wait",
+    "db:down": "docker compose -f docker/docker-compose.dev.yml down"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.50.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.52.0",
+    "@opentelemetry/sdk-node": "^0.52.0",
+    "@opentelemetry/sdk-trace-node": "^1.25.0",
+    "@orpc/client": "^1.9.6",
+    "@orpc/openapi": "^1.9.6",
+    "@orpc/server": "^1.9.6",
+    "@orpc/tanstack-query": "^1.9.6",
+    "@orpc/zod": "^1.9.6",
+    "@scalar/api-reference": "^1.25.0",
+    "@tanstack/react-query": "^5.59.0",
+    "antd": "^5.21.0",
+    "hono": "^4.6.0",
+    "pg-boss": "^10.1.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/node": "^22.7.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "concurrently": "^9.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}
