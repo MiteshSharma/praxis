@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "biome check .",
     "format": "biome format --write .",
+    "test": "vitest run",
     "db:up": "docker compose -f docker/docker-compose.dev.yml up -d --wait",
     "db:down": "docker compose -f docker/docker-compose.dev.yml down"
   },
