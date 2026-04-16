@@ -1,1 +1,3 @@
-export { router, type Router } from './router';
+export { contract, type Contract } from './router';
+export * from './schemas';
+export * from './events';

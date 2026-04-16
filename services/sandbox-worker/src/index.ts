@@ -1,28 +1,31 @@
-import { createLogger, initTelemetry, onShutdown, requestId } from '@shared/telemetry';
+import { createLogger, initTelemetry, onShutdown } from '@shared/telemetry';
 
 initTelemetry('sandbox-worker');
 
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { env } from './lib/env';
+import { errorHandler } from './middleware/error-handler';
+import { requestContext } from './middleware/request-context';
+import { registerRoutes } from './routes';
+import { AgentService } from './services/agent.service';
+import { ExecService } from './services/exec.service';
+import { PublishService } from './services/publish.service';
 
 const log = createLogger('sandbox-worker');
-const PORT = Number(process.env.SANDBOX_WORKER_PORT ?? 8787);
 
 const app = new Hono();
-app.use('*', requestId());
+app.use('*', requestContext());
+app.onError(errorHandler);
 
-app.get('/health', (c) =>
-  c.json({ status: 'ok', service: 'sandbox-worker', time: new Date().toISOString() }),
-);
-app.get('/ready', (c) =>
-  c.json({ status: 'ok', service: 'sandbox-worker', time: new Date().toISOString() }),
-);
+registerRoutes(app, {
+  agentService: new AgentService(),
+  execService: new ExecService(),
+  publishService: new PublishService(),
+});
 
-app.post('/prompt', (c) => c.json({ error: 'not_implemented' }, 501));
-app.post('/exec', (c) => c.json({ error: 'not_implemented' }, 501));
-
-const server = serve({ fetch: app.fetch, port: PORT });
-log.info({ port: PORT }, 'sandbox-worker started');
+const server = serve({ fetch: app.fetch, port: env.PORT });
+log.info({ port: env.PORT }, 'sandbox-worker started');
 
 onShutdown(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));

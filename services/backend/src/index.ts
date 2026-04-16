@@ -1,5 +1,5 @@
-import { env } from './env';
 import { createLogger, initTelemetry, onShutdown } from '@shared/telemetry';
+import { env } from './lib/env';
 
 initTelemetry(`backend:${env.MODE}`);
 const log = createLogger(`backend:${env.MODE}`);
@@ -10,14 +10,14 @@ async function main(): Promise<void> {
   const handles: Handle[] = [];
 
   if (env.MODE === 'control-plane' || env.MODE === 'all') {
-    const { startControlPlane } = await import('./control-plane/start');
-    handles.push(await startControlPlane());
+    const { buildControlPlane } = await import('./control-plane');
+    handles.push(await buildControlPlane());
     log.info({ port: env.PORT }, 'control-plane role started');
   }
 
   if (env.MODE === 'worker' || env.MODE === 'all') {
-    const { startWorker } = await import('./worker/start');
-    handles.push(await startWorker());
+    const { buildWorker } = await import('./worker');
+    handles.push(await buildWorker());
     log.info({ healthPort: env.WORKER_HEALTH_PORT }, 'worker role started');
   }
 

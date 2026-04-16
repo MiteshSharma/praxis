@@ -1,5 +1,7 @@
 import { Layout, Typography } from 'antd';
-import { Home } from './pages/Home';
+import { Route, Routes } from 'react-router-dom';
+import { CreateJob } from './pages/CreateJob';
+import { JobView } from './pages/JobView';
 
 const { Header, Content } = Layout;
 
@@ -11,8 +13,11 @@ export function App() {
           Praxis
         </Typography.Title>
       </Header>
-      <Content style={{ padding: 24 }}>
-        <Home />
+      <Content style={{ padding: 24, maxWidth: 960, margin: '0 auto', width: '100%' }}>
+        <Routes>
+          <Route path="/" element={<CreateJob />} />
+          <Route path="/jobs/:jobId" element={<JobView />} />
+        </Routes>
       </Content>
     </Layout>
   );
