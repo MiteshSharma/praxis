@@ -2,10 +2,20 @@ import { implement } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { contract } from '@shared/contracts';
 import type { Hono } from 'hono';
+import type { AgentsService } from '../services/agents.service';
+import type { ConversationsService } from '../services/conversations.service';
 import type { JobsService } from '../services/jobs.service';
+import type { PlansService } from '../services/plans.service';
+import type { PluginsService } from '../services/plugins.service';
+import type { WorkflowsService } from '../services/workflows.service';
 
 interface RpcDeps {
   jobsService: JobsService;
+  plansService: PlansService;
+  workflowsService: WorkflowsService;
+  agentsService: AgentsService;
+  conversationsService: ConversationsService;
+  pluginsService: PluginsService;
 }
 
 /**
@@ -18,14 +28,109 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const health = os.health.handler(() => ({ ok: true, service: 'backend' }));
 
   const jobsCreate = os.jobs.create.handler(({ input }) => deps.jobsService.create(input));
-
   const jobsGet = os.jobs.get.handler(({ input }) => deps.jobsService.getById(input.jobId));
-
   const jobsList = os.jobs.list.handler(({ input }) => deps.jobsService.list(input?.limit ?? 50));
-
   const jobsListArtifacts = os.jobs.listArtifacts.handler(({ input }) =>
     deps.jobsService.listArtifacts(input.jobId),
   );
+  const jobsListSteps = os.jobs.listSteps.handler(({ input }) =>
+    deps.jobsService.listSteps(input.jobId),
+  );
+  const jobsRestart = os.jobs.restart.handler(({ input }) =>
+    deps.jobsService.restart(input.jobId),
+  );
+
+  const jobsGetLatestPlan = os.jobs.getLatestPlan.handler(({ input }) =>
+    deps.plansService.getLatestPlan(input.jobId),
+  );
+  const jobsListPlans = os.jobs.listPlans.handler(({ input }) =>
+    deps.plansService.listPlans(input.jobId),
+  );
+  const jobsApprovePlan = os.jobs.approvePlan.handler(async ({ input }) => {
+    await deps.plansService.approvePlan(input.jobId);
+    return { ok: true };
+  });
+  const jobsRevisePlan = os.jobs.revisePlan.handler(async ({ input }) => {
+    await deps.plansService.revisePlan(input.jobId, input.answers, input.additionalFeedback);
+    return { ok: true };
+  });
+  const jobsRejectPlan = os.jobs.rejectPlan.handler(async ({ input }) => {
+    await deps.plansService.rejectPlan(input.jobId, input.reason);
+    return { ok: true };
+  });
+
+  const workflowsList = os.workflows.list.handler(({ input }) =>
+    deps.workflowsService.list(input?.limit ?? 50),
+  );
+  const workflowsGet = os.workflows.get.handler(({ input }) =>
+    deps.workflowsService.getById(input.id),
+  );
+  const workflowsCreate = os.workflows.create.handler(({ input }) =>
+    deps.workflowsService.create(input),
+  );
+
+  const agentsList = os.agents.list.handler(({ input }) =>
+    deps.agentsService.list(input?.limit ?? 50, input?.kind),
+  );
+  const agentsGet = os.agents.get.handler(({ input }) =>
+    deps.agentsService.getById(input.id),
+  );
+  const agentsCreate = os.agents.create.handler(({ input }) =>
+    deps.agentsService.create(input),
+  );
+  const agentsDelete = os.agents.delete.handler(async ({ input }) => {
+    await deps.agentsService.delete(input.id);
+    return { ok: true };
+  });
+  const agentsListSkills = os.agents.listSkills.handler(({ input }) =>
+    deps.agentsService.listSkills(input.agentId),
+  );
+  const agentsAttachSkill = os.agents.attachSkill.handler(async ({ input }) => {
+    await deps.agentsService.attachSkill(input.agentId, input.skillId, input.position);
+    return { ok: true };
+  });
+  const agentsDetachSkill = os.agents.detachSkill.handler(async ({ input }) => {
+    await deps.agentsService.detachSkill(input.agentId, input.skillId);
+    return { ok: true };
+  });
+
+  const conversationsList = os.conversations.list.handler(({ input }) =>
+    deps.conversationsService.list(input?.limit ?? 50),
+  );
+  const conversationsGet = os.conversations.get.handler(({ input }) =>
+    deps.conversationsService.getById(input.id),
+  );
+  const conversationsCreate = os.conversations.create.handler(({ input }) =>
+    deps.conversationsService.create(input),
+  );
+  const conversationsUpdate = os.conversations.update.handler(({ input }) => {
+    const { id, ...patch } = input;
+    return deps.conversationsService.update(id, patch);
+  });
+  const conversationsDelete = os.conversations.delete.handler(async ({ input }) => {
+    await deps.conversationsService.delete(input.id);
+    return { ok: true };
+  });
+  const conversationsSendMessage = os.conversations.sendMessage.handler(({ input }) =>
+    deps.conversationsService.sendMessage(input),
+  );
+  const conversationsListMessages = os.conversations.listMessages.handler(({ input }) =>
+    deps.conversationsService.listMessages(input.conversationId),
+  );
+
+  const pluginsList = os.plugins.list.handler(({ input }) =>
+    deps.pluginsService.list(input.conversationId),
+  );
+  const pluginsCreate = os.plugins.create.handler(({ input }) =>
+    deps.pluginsService.create(input),
+  );
+  const pluginsToggle = os.plugins.toggle.handler(({ input }) =>
+    deps.pluginsService.toggle(input.id, input.enabled),
+  );
+  const pluginsDelete = os.plugins.delete.handler(async ({ input }) => {
+    await deps.pluginsService.delete(input.id);
+    return { ok: true };
+  });
 
   const router = {
     health,
@@ -34,6 +139,42 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       get: jobsGet,
       list: jobsList,
       listArtifacts: jobsListArtifacts,
+      listSteps: jobsListSteps,
+      restart: jobsRestart,
+      getLatestPlan: jobsGetLatestPlan,
+      listPlans: jobsListPlans,
+      approvePlan: jobsApprovePlan,
+      revisePlan: jobsRevisePlan,
+      rejectPlan: jobsRejectPlan,
+    },
+    workflows: {
+      list: workflowsList,
+      get: workflowsGet,
+      create: workflowsCreate,
+    },
+    agents: {
+      list: agentsList,
+      get: agentsGet,
+      create: agentsCreate,
+      delete: agentsDelete,
+      listSkills: agentsListSkills,
+      attachSkill: agentsAttachSkill,
+      detachSkill: agentsDetachSkill,
+    },
+    conversations: {
+      list: conversationsList,
+      get: conversationsGet,
+      create: conversationsCreate,
+      update: conversationsUpdate,
+      delete: conversationsDelete,
+      sendMessage: conversationsSendMessage,
+      listMessages: conversationsListMessages,
+    },
+    plugins: {
+      list: pluginsList,
+      create: pluginsCreate,
+      toggle: pluginsToggle,
+      delete: pluginsDelete,
     },
   };
 

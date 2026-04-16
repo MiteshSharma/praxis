@@ -1,7 +1,10 @@
+import { useMutation } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Descriptions, Space, Tag, Timeline, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { PlanReviewCard } from '../components/PlanReviewCard';
+import { StepProgress } from '../components/StepProgress';
 import { rpc } from '../rpc';
 
 interface StreamItem {
@@ -11,20 +14,129 @@ interface StreamItem {
   raw?: unknown;
 }
 
+/** Parse a raw SDK chunk into a human-readable {label, detail, color} */
+function parseChunk(raw: unknown): { label: string; detail?: string; color: string } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const msg = raw as Record<string, unknown>;
+
+  // System init message — show model + cwd
+  if (msg.type === 'system') {
+    const model = msg.model as string | undefined;
+    const cwd = msg.cwd as string | undefined;
+    return {
+      label: `Session started${model ? ` · ${model}` : ''}`,
+      detail: cwd ? `cwd: ${cwd}` : undefined,
+      color: 'gray',
+    };
+  }
+
+  // Assistant message — extract text and tool_use blocks
+  if (msg.type === 'assistant') {
+    const message = msg.message as { content?: unknown[] } | undefined;
+    const blocks = message?.content ?? [];
+    const parts: string[] = [];
+    let color = 'blue';
+    let label = 'Assistant';
+
+    for (const block of blocks) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as Record<string, unknown>;
+      if (b.type === 'text') {
+        const text = String(b.text ?? '').trim();
+        if (text) parts.push(text.slice(0, 300) + (text.length > 300 ? '…' : ''));
+      } else if (b.type === 'tool_use') {
+        const name = String(b.name ?? 'tool');
+        const input = b.input as Record<string, unknown> | undefined;
+        // Show first meaningful input value
+        const inputStr = input
+          ? Object.values(input)
+              .slice(0, 2)
+              .map((v) => String(v).slice(0, 120))
+              .join(', ')
+          : '';
+        parts.push(`${name}(${inputStr})`);
+        label = 'Tool call';
+        color = 'orange';
+      }
+    }
+
+    if (parts.length === 0) return null;
+    return { label, detail: parts.join('\n'), color };
+  }
+
+  // User message — tool results
+  if (msg.type === 'user') {
+    const message = msg.message as { content?: unknown[] } | undefined;
+    const blocks = message?.content ?? [];
+    const results: string[] = [];
+    let hasError = false;
+
+    for (const block of blocks) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as Record<string, unknown>;
+      if (b.type === 'tool_result') {
+        if (b.is_error) hasError = true;
+        const content = b.content;
+        const text =
+          typeof content === 'string'
+            ? content
+            : Array.isArray(content)
+              ? content
+                  .map((c) => (typeof c === 'object' && c !== null ? (c as Record<string, unknown>).text ?? '' : c))
+                  .join('')
+              : '';
+        const trimmed = String(text).trim().slice(0, 200);
+        if (trimmed) results.push(trimmed + (String(text).length > 200 ? '…' : ''));
+      }
+    }
+
+    if (results.length === 0) return null;
+    return {
+      label: hasError ? 'Tool error' : 'Tool result',
+      detail: results.join('\n'),
+      color: hasError ? 'red' : 'green',
+    };
+  }
+
+  return null;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   queued: 'default',
   provisioning: 'blue',
   preparing: 'blue',
+  building: 'processing',
+  plan_ready: 'cyan',
+  plan_review: 'orange',
+  plan_revising: 'processing',
+  plan_rejected: 'error',
   executing: 'processing',
-  finalizing: 'purple',
+  checking: 'processing',
+  learning: 'purple',
+  publishing: 'purple',
   completed: 'success',
   failed: 'error',
 };
 
+/** Statuses where the live stream view is relevant */
+const STREAM_STATUSES = new Set([
+  'provisioning', 'preparing', 'building', 'plan_revising',
+  'executing', 'checking', 'learning', 'publishing',
+]);
+
+/** Statuses where the plan review card is relevant */
+const PLAN_REVIEW_STATUSES = new Set(['plan_ready', 'plan_review']);
+
 export function JobView() {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const [items, setItems] = useState<StreamItem[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
+
+  const restartMutation = useMutation({
+    mutationFn: () => rpc.jobs.restart({ jobId: jobId ?? '' }),
+    onSuccess: ({ jobId: newJobId }) => navigate(`/jobs/${newJobId}`),
+  });
 
   const jobQuery = useQuery({
     queryKey: ['job', jobId],
@@ -32,9 +144,8 @@ export function JobView() {
     enabled: !!jobId,
     refetchInterval: (q) => {
       const status = q.state.data?.status;
-      return status === 'completed' || status === 'failed' || status === 'plan_rejected'
-        ? false
-        : 3000;
+      const terminal = status === 'completed' || status === 'failed' || status === 'plan_rejected';
+      return terminal ? false : 3000;
     },
   });
 
@@ -53,7 +164,6 @@ export function JobView() {
         setItems((prev) => {
           const next = [...prev, { id: e.lastEventId, ...parsed }];
           if (parsed.seq !== undefined) {
-            // dedup/order by seq
             next.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
           }
           return next;
@@ -62,15 +172,13 @@ export function JobView() {
         setStreamError(String(err));
       }
     };
-    source.onerror = () => {
-      setStreamError('stream disconnected');
-    };
+    source.onerror = () => setStreamError('stream disconnected');
     return () => source.close();
   }, [jobId]);
 
   const timelineItems = useMemo(
     () =>
-      items.map((item, idx) => {
+      items.flatMap((item, idx) => {
         const kind = item.event?.kind ?? 'chunk';
         let label = kind;
         let description: string | undefined;
@@ -79,12 +187,24 @@ export function JobView() {
           label = `${ev.from} → ${ev.to}`;
         } else if (kind === 'chunk') {
           const raw = (item.event as { raw?: unknown })?.raw;
-          description =
-            typeof raw === 'string'
-              ? raw
-              : raw && typeof raw === 'object'
-                ? JSON.stringify(raw).slice(0, 240)
-                : undefined;
+          const parsed = parseChunk(raw);
+          if (!parsed) return [];
+          label = parsed.label;
+          description = parsed.detail;
+          return [{
+            key: `${item.id}-${idx}`,
+            color: parsed.color,
+            children: (
+              <>
+                <Typography.Text strong>{label}</Typography.Text>
+                {description && (
+                  <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12, marginTop: 2 }}>
+                    <Typography.Text type="secondary">{description}</Typography.Text>
+                  </div>
+                )}
+              </>
+            ),
+          }];
         } else if (kind === 'artifact-created') {
           const ev = item.event as { artifactKind?: string; url?: string };
           description = `${ev.artifactKind}: ${ev.url ?? ''}`;
@@ -92,7 +212,7 @@ export function JobView() {
           const ev = item.event as { error?: string };
           description = ev.error;
         }
-        return {
+        return [{
           key: `${item.id}-${idx}`,
           color:
             kind === 'failed'
@@ -112,7 +232,7 @@ export function JobView() {
               )}
             </>
           ),
-        };
+        }];
       }),
     [items],
   );
@@ -124,12 +244,26 @@ export function JobView() {
   if (!job) return null;
 
   const prArtifact = artifactsQuery.data?.find((a) => a.kind === 'pr');
+  const showPlanReview = PLAN_REVIEW_STATUSES.has(job.status);
+  const showStream = STREAM_STATUSES.has(job.status) || items.length > 0;
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      {/* Job header */}
       <Card
         title={job.title}
-        extra={<Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>}
+        extra={
+          <Space>
+            <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>
+            <Button
+              size="small"
+              onClick={() => restartMutation.mutate()}
+              loading={restartMutation.isPending}
+            >
+              Restart
+            </Button>
+          </Space>
+        }
       >
         <Descriptions size="small" column={1}>
           <Descriptions.Item label="Repo">
@@ -156,6 +290,31 @@ export function JobView() {
         </Descriptions>
       </Card>
 
+      {/* Step progress — always shown once steps exist */}
+      {jobId && (
+        <StepProgress
+          jobId={jobId}
+          refetchInterval={
+            job.status === 'completed' || job.status === 'failed' || job.status === 'plan_rejected'
+              ? 0
+              : 3000
+          }
+        />
+      )}
+
+      {/* Plan review — shown when status is plan_ready or plan_review */}
+      {showPlanReview && jobId && <PlanReviewCard jobId={jobId} />}
+
+      {/* Terminal states */}
+      {job.status === 'plan_rejected' && (
+        <Alert
+          type="error"
+          message="Plan rejected"
+          description="The plan was rejected. No code was changed."
+        />
+      )}
+
+      {/* PR link — shown on completion */}
       {prArtifact?.url && (
         <Card>
           <Button type="primary" href={prArtifact.url} target="_blank" rel="noreferrer">
@@ -164,13 +323,16 @@ export function JobView() {
         </Card>
       )}
 
-      <Card title="Live timeline" extra={streamError && <Tag color="red">{streamError}</Tag>}>
-        {timelineItems.length === 0 ? (
-          <Typography.Text type="secondary">waiting for events...</Typography.Text>
-        ) : (
-          <Timeline items={timelineItems} />
-        )}
-      </Card>
+      {/* Live stream timeline */}
+      {showStream && (
+        <Card title="Live timeline" extra={streamError && <Tag color="red">{streamError}</Tag>}>
+          {timelineItems.length === 0 ? (
+            <Typography.Text type="secondary">waiting for events…</Typography.Text>
+          ) : (
+            <Timeline items={[...timelineItems].reverse()} />
+          )}
+        </Card>
+      )}
     </Space>
   );
 }

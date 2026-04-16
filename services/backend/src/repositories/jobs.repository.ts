@@ -1,6 +1,6 @@
-import type { ArtifactDto, JobDto } from '@shared/contracts';
-import { type Database, artifacts, jobs } from '@shared/db';
-import { desc, eq } from 'drizzle-orm';
+import type { ArtifactDto, JobDto, JobStepDto } from '@shared/contracts';
+import { type Database, artifacts, jobSteps, jobs } from '@shared/db';
+import { asc, desc, eq } from 'drizzle-orm';
 
 export class JobsRepository {
   constructor(private readonly db: Database) {}
@@ -16,6 +16,28 @@ export class JobsRepository {
       .orderBy(desc(jobs.createdAt))
       .limit(limit);
     return rows.map(toJobDto);
+  }
+
+  async findStepsByJobId(jobId: string): Promise<JobStepDto[]> {
+    const rows = await this.db
+      .select()
+      .from(jobSteps)
+      .where(eq(jobSteps.jobId, jobId))
+      .orderBy(asc(jobSteps.stepIndex));
+    return rows.map((r) => ({
+      id: r.id,
+      jobId: r.jobId,
+      stepIndex: r.stepIndex,
+      retryOf: r.retryOf,
+      kind: r.kind,
+      name: r.name,
+      config: (r.config ?? {}) as Record<string, unknown>,
+      status: r.status,
+      startedAt: r.startedAt?.toISOString() ?? null,
+      completedAt: r.completedAt?.toISOString() ?? null,
+      output: (r.output ?? null) as Record<string, unknown> | null,
+      errorMessage: r.errorMessage,
+    }));
   }
 
   async findArtifactsByJobId(jobId: string): Promise<ArtifactDto[]> {

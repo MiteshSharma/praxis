@@ -1,25 +1,55 @@
 import { randomUUID } from 'node:crypto';
 import type { JobStatus, NotifyEvent } from '@shared/contracts';
-import { type Database, type Job, artifacts, jobs, sandboxes } from '@shared/db';
+import { assertTransition } from '@shared/contracts';
+import { type Database, type Job, artifacts, jobSteps, jobs, sandboxes, workflowVersions } from '@shared/db';
 import type { LocalSandboxProvider, SandboxInfo } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
-import { eq } from 'drizzle-orm';
+import type { WorkflowDefinition } from '@shared/workflows';
+import { and, eq } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
 import { emitNotification } from '../egress/notify';
+import { DEFAULT_WORKFLOW } from '../defaults/default-workflow';
+import { DbTaskTracker } from '../task-tracker/db-task-tracker';
+import type { TaskTracker } from '../task-tracker/task-tracker';
+import { HoldTimeoutError, PlanRejectedError, StepRunner } from './step-runner';
 import { appendTimeline, transitionJob } from './transitions';
+
+export type ResumeMode = 'execute' | 'revise';
 
 export interface JobOrchestratorDeps {
   db: Database;
   boss: PgBoss;
   sandbox: LocalSandboxProvider;
   log: Logger;
+  redisUrl: string;
+  /** MCP endpoint the sandbox-worker calls for submit_plan */
+  mcpEndpoint?: string;
+  /** Secret used to mint MCP JWTs — required when mcpEndpoint is set */
+  mcpSecret?: string;
+  /** Override task tracker for testing */
+  taskTracker?: TaskTracker;
 }
 
 export class JobOrchestrator {
-  constructor(private readonly deps: JobOrchestratorDeps) {}
+  private readonly tracker: TaskTracker;
+  private readonly stepRunner: StepRunner;
 
-  async run(jobId: string): Promise<void> {
-    const { db, boss, sandbox, log } = this.deps;
+  constructor(private readonly deps: JobOrchestratorDeps) {
+    this.tracker = deps.taskTracker ?? new DbTaskTracker(deps.db);
+    this.stepRunner = new StepRunner({
+      db: deps.db,
+      boss: deps.boss,
+      sandbox: deps.sandbox,
+      taskTracker: this.tracker,
+      log: deps.log,
+      redisUrl: deps.redisUrl,
+      mcpEndpoint: deps.mcpEndpoint,
+      mcpSecret: deps.mcpSecret,
+    });
+  }
+
+  async run(jobId: string, resumeMode?: ResumeMode): Promise<void> {
+    const { db, sandbox, log } = this.deps;
     const jobRow = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
     if (!jobRow) {
       log.warn({ jobId }, 'orchestrator: job not found');
@@ -30,7 +60,13 @@ export class JobOrchestrator {
     let sandboxInfo: SandboxInfo | undefined;
 
     try {
-      // queued → provisioning
+      // ── Cold resume from plan_review (after hot hold expired) ────────────
+      if (resumeMode === 'execute' || resumeMode === 'revise') {
+        await this.runColdResume(jobRow, resumeMode, jobLog);
+        return;
+      }
+
+      // ── Initial run ──────────────────────────────────────────────────────
       if (!(await this.transition(jobId, 'queued', 'provisioning', { startedAt: new Date() }))) {
         jobLog.warn({ status: jobRow.status }, 'job not in queued state, skipping');
         return;
@@ -48,97 +84,32 @@ export class JobOrchestrator {
         endpoint: sandboxInfo.endpoint,
       });
 
-      // provisioning → preparing
       await this.mustTransition(jobId, 'provisioning', 'preparing');
 
-      // Clone repo into the sandbox's workspace
       const workspace = sandbox.workspaceFor(sandboxInfo.providerId);
-      const cloneUrl = injectToken(jobRow.githubUrl);
-      const clone = await sandbox.exec(
-        sandboxInfo.providerId,
-        `git clone --depth 1 --branch ${jobRow.githubBranch} ${cloneUrl} .`,
-        { cwd: workspace, timeoutSeconds: 120 },
-      );
-      if (clone.exitCode !== 0) {
-        throw new Error(`git clone failed: ${clone.stderr.slice(0, 500)}`);
-      }
-      const shaResult = await sandbox.exec(sandboxInfo.providerId, 'git rev-parse HEAD', {
-        cwd: workspace,
-      });
-      const commitSha = shaResult.stdout.trim();
-      await db.update(jobs).set({ githubCommitSha: commitSha }).where(eq(jobs.id, jobId));
+      await this.cloneRepo(jobRow, sandboxInfo, workspace, jobLog);
 
-      // preparing → executing
-      await this.mustTransition(jobId, 'preparing', 'executing');
+      // ── Materialise steps ────────────────────────────────────────────────
+      await this.prepareSteps(jobRow);
 
-      await this.runAgentSession(jobRow, sandboxInfo, workspace);
+      // ── Run steps ────────────────────────────────────────────────────────
+      await this.stepRunner.run(jobRow, sandboxInfo);
 
-      // executing → finalizing
-      await this.mustTransition(jobId, 'executing', 'finalizing');
-
-      const publishResult = await this.publish(jobRow, sandboxInfo, workspace);
-
-      if (publishResult) {
-        const [artifact] = await db
-          .insert(artifacts)
-          .values({
-            jobId,
-            kind: 'pr',
-            path: null,
-            url: publishResult.prUrl,
-            metadata: {
-              branchName: publishResult.branchName,
-              commitSha: publishResult.commitSha,
-              prNumber: publishResult.prNumber,
-              repoUrl: jobRow.githubUrl,
-            },
-          })
-          .returning();
-        if (artifact) {
-          const seq = await appendTimeline(db, jobId, 'artifact-created', {
-            artifactId: artifact.id,
-            kind: 'pr',
-            url: artifact.url,
-          });
-          await this.emit(jobId, seq, {
-            kind: 'artifact-created',
-            artifactId: artifact.id,
-            artifactKind: 'pr',
-            url: artifact.url ?? undefined,
-          });
-        }
-      }
-
-      // finalizing → completed
-      const completed = await this.transition(jobId, 'finalizing', 'completed', {
-        completedAt: new Date(),
-      });
-      if (completed) {
-        await this.emit(jobId, completed.seq + 1, {
-          kind: 'completed',
-          summary: publishResult?.prUrl,
-        });
-      }
-      jobLog.info({ prUrl: publishResult?.prUrl }, 'job completed');
+      // ── Publish ──────────────────────────────────────────────────────────
+      await this.mustTransition(jobId, 'preparing', 'publishing');
+      await this.finalize(jobRow, sandboxInfo, workspace, jobLog);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      jobLog.error({ err }, 'job failed');
-      const current = (await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) }))?.status as
-        | JobStatus
-        | undefined;
-      if (current && current !== 'failed' && current !== 'completed') {
-        const failed = await transitionJob(db, jobId, current, 'failed', {
-          errorMessage,
-          errorCategory: 'permanent',
-        });
-        if (failed) {
-          await this.emit(jobId, failed.seq + 1, {
-            kind: 'failed',
-            error: errorMessage,
-            errorCategory: 'permanent',
-          });
-        }
+      if (err instanceof PlanRejectedError) {
+        // Transition already happened in StepRunner.runPlanStep
+        jobLog.info('job plan rejected');
+        return;
       }
+      if (err instanceof HoldTimeoutError) {
+        jobLog.info('job entered cold suspension after hold timeout');
+        // Sandbox will be destroyed in finally; job stays in plan_review
+        return;
+      }
+      await this.failJob(jobId, jobRow.status as JobStatus, err, jobLog);
     } finally {
       if (sandboxInfo) {
         await sandbox.destroy(sandboxInfo.providerId).catch(() => undefined);
@@ -153,65 +124,201 @@ export class JobOrchestrator {
     }
   }
 
-  private async runAgentSession(
+  // ── Cold resume (after hot hold expires or cold revise) ────────────────────
+
+  private async runColdResume(
+    jobRow: Job,
+    mode: ResumeMode,
+    log: Logger,
+  ): Promise<void> {
+    const { db, sandbox } = this.deps;
+    const jobId = jobRow.id;
+    let sandboxInfo: SandboxInfo | undefined;
+
+    try {
+      sandboxInfo = await sandbox.create({ jobId });
+      await db.insert(sandboxes).values({
+        jobId,
+        providerId: sandboxInfo.providerId,
+        status: 'running',
+        endpoint: sandboxInfo.endpoint,
+      });
+
+      const fromStatus = mode === 'execute' ? 'plan_review' : 'plan_revising';
+      await this.mustTransition(jobId, fromStatus as JobStatus, 'preparing');
+
+      const workspace = sandbox.workspaceFor(sandboxInfo.providerId);
+      await this.cloneRepo(jobRow, sandboxInfo, workspace, log);
+
+      if (mode === 'execute') {
+        // Plan steps completed before the hot hold expired — mark them passed
+        // so the step runner skips them and starts from the first execute step.
+        await db
+          .update(jobSteps)
+          .set({ status: 'passed', completedAt: new Date() })
+          .where(and(eq(jobSteps.jobId, jobId), eq(jobSteps.kind, 'plan')));
+
+        await this.stepRunner.run(jobRow, sandboxInfo);
+        await this.mustTransition(jobId, 'preparing', 'publishing');
+        await this.finalize(jobRow, sandboxInfo, workspace, log);
+      } else {
+        // Revise: re-run from current position in step runner (plan step will handle revision)
+        await this.stepRunner.run(jobRow, sandboxInfo);
+        // After revision, sandbox destroyed — next cold resume will execute
+      }
+    } catch (err) {
+      if (err instanceof PlanRejectedError || err instanceof HoldTimeoutError) return;
+      await this.failJob(jobId, jobRow.status as JobStatus, err, log);
+    } finally {
+      if (sandboxInfo) {
+        await sandbox.destroy(sandboxInfo.providerId).catch(() => undefined);
+        await db
+          .update(sandboxes)
+          .set({ status: 'destroyed', destroyedAt: new Date() })
+          .where(eq(sandboxes.providerId, sandboxInfo.providerId));
+      }
+    }
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  private async cloneRepo(
     job: Job,
     sandboxInfo: SandboxInfo,
     workspace: string,
+    log: Logger,
   ): Promise<void> {
-    const { db, log } = this.deps;
-    const requestId = randomUUID();
-
-    const response = await fetch(`${sandboxInfo.endpoint}/prompt`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-request-id': requestId,
-      },
-      body: JSON.stringify({
-        sessionId: job.id,
-        jobId: job.id,
-        title: job.title,
-        description: job.description,
-        workingDir: workspace,
-        env: {
-          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
-        },
-      }),
+    const { sandbox, db } = this.deps;
+    const cloneUrl = injectToken(job.githubUrl);
+    const clone = await sandbox.exec(
+      sandboxInfo.providerId,
+      `git clone --depth 1 --branch ${job.githubBranch} ${cloneUrl} .`,
+      { cwd: workspace, timeoutSeconds: 120 },
+    );
+    if (clone.exitCode !== 0) {
+      throw new Error(`git clone failed: ${clone.stderr.slice(0, 500)}`);
+    }
+    const shaResult = await sandbox.exec(sandboxInfo.providerId, 'git rev-parse HEAD', {
+      cwd: workspace,
     });
+    const commitSha = shaResult.stdout.trim();
+    await db.update(jobs).set({ githubCommitSha: commitSha }).where(eq(jobs.id, job.id));
 
-    if (!response.ok || !response.body) {
-      throw new Error(`sandbox /prompt failed: ${response.status}`);
+    // Create a dedicated branch for this job's changes (worktree pattern)
+    const branchName = `praxis/job-${job.id.substring(0, 8)}`;
+    const branch = await sandbox.exec(
+      sandboxInfo.providerId,
+      `git checkout -b ${branchName}`,
+      { cwd: workspace },
+    );
+    if (branch.exitCode !== 0) {
+      throw new Error(`git checkout -b failed: ${branch.stderr.slice(0, 500)}`);
+    }
+    await appendTimeline(db, job.id, 'sandbox-ready', { event: 'branch-created', branchName });
+    log.info({ commitSha, branchName }, 'repo cloned, branch created');
+  }
+
+  /**
+   * Materialise workflow steps into `job_steps` rows.
+   *
+   * Uses the job's referenced workflow (if any) or falls back to DEFAULT_WORKFLOW.
+   * Substitutes `$input.*` placeholders with resolved values from the job.
+   */
+  private async prepareSteps(job: Job): Promise<void> {
+    const { db } = this.deps;
+
+    // Resolve workflow definition
+    let workflow: WorkflowDefinition;
+    if (job.workflowVersionId) {
+      const [version] = await db
+        .select()
+        .from(workflowVersions)
+        .where(eq(workflowVersions.id, job.workflowVersionId))
+        .limit(1);
+      workflow = (version?.definition as WorkflowDefinition | undefined) ?? DEFAULT_WORKFLOW;
+    } else {
+      workflow = DEFAULT_WORKFLOW;
     }
 
-    for await (const chunk of parseSSE(response.body)) {
-      let parsed: unknown = chunk;
-      try {
-        parsed = JSON.parse(chunk);
-      } catch {
-        // leave as string
+    // Build input values — simple prompt substitution for Phase 3
+    const inputs: Record<string, string> = {
+      prompt: job.description ?? job.title,
+    };
+
+    const rows = workflow.steps.map((step, index) => ({
+      jobId: job.id,
+      stepIndex: index,
+      kind: step.kind,
+      name: step.name,
+      config: substituteInputs(step as Record<string, unknown>, inputs),
+      status: 'pending',
+    }));
+
+    await db.insert(jobSteps).values(rows);
+  }
+
+  private async finalize(
+    job: Job,
+    sandboxInfo: SandboxInfo,
+    _workspace: string,
+    log: Logger,
+  ): Promise<void> {
+    const { db } = this.deps;
+    const publishResult = await this.publish(job, sandboxInfo, log);
+
+    if (publishResult) {
+      const [artifact] = await db
+        .insert(artifacts)
+        .values({
+          jobId: job.id,
+          kind: 'pr',
+          path: null,
+          url: publishResult.prUrl,
+          metadata: {
+            branchName: publishResult.branchName,
+            commitSha: publishResult.commitSha,
+            prNumber: publishResult.prNumber,
+            repoUrl: job.githubUrl,
+          },
+        })
+        .returning();
+      if (artifact) {
+        const seq = await appendTimeline(db, job.id, 'artifact-created', {
+          artifactId: artifact.id,
+          kind: 'pr',
+          url: artifact.url,
+        });
+        await this.emit(job.id, seq, {
+          kind: 'artifact-created',
+          artifactId: artifact.id,
+          artifactKind: 'pr',
+          url: artifact.url ?? undefined,
+        });
       }
-      const seq = await appendTimeline(db, job.id, 'chunk', { chunk: parsed });
-      await this.emit(job.id, seq, {
-        kind: 'chunk',
-        raw: parsed,
+    }
+
+    const completed = await this.transition(job.id, 'publishing', 'completed', {
+      completedAt: new Date(),
+    });
+    if (completed) {
+      await this.emit(job.id, completed.seq + 1, {
+        kind: 'completed',
+        summary: publishResult?.prUrl,
       });
     }
-
-    log.info({ jobId: job.id }, 'agent session finished');
+    log.info({ prUrl: publishResult?.prUrl }, 'job completed');
   }
 
   private async publish(
     job: Job,
     sandboxInfo: SandboxInfo,
-    _workspace: string,
+    log: Logger,
   ): Promise<{
     branchName: string;
     commitSha: string;
     prNumber: number;
     prUrl: string;
   } | null> {
-    const { log } = this.deps;
-
     const githubToken = process.env.GITHUB_TOKEN ?? '';
     if (!githubToken) {
       log.warn({ jobId: job.id }, 'GITHUB_TOKEN not set — skipping /publish; no PR will be opened');
@@ -255,6 +362,7 @@ export class JobOrchestrator {
     to: JobStatus,
     patch: Parameters<typeof transitionJob>[4] = {},
   ): Promise<{ seq: number } | null> {
+    assertTransition(from, to);
     const result = await transitionJob(this.deps.db, jobId, from, to, patch);
     if (!result) return null;
     await this.emit(jobId, result.seq, { kind: 'status-changed', from, to });
@@ -273,7 +381,41 @@ export class JobOrchestrator {
       this.deps.log.error({ err, jobId, event: event.kind }, 'notification enqueue failed');
     }
   }
+
+  private async failJob(
+    jobId: string,
+    currentStatus: JobStatus,
+    err: unknown,
+    log: Logger,
+  ): Promise<void> {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    log.error({ err }, 'job failed');
+    if (
+      currentStatus !== 'failed' &&
+      currentStatus !== 'completed' &&
+      currentStatus !== 'plan_rejected'
+    ) {
+      try {
+        assertTransition(currentStatus, 'failed');
+        const failed = await transitionJob(this.deps.db, jobId, currentStatus, 'failed', {
+          errorMessage,
+          errorCategory: 'permanent',
+        });
+        if (failed) {
+          await this.emit(jobId, failed.seq + 1, {
+            kind: 'failed',
+            error: errorMessage,
+            errorCategory: 'permanent',
+          });
+        }
+      } catch {
+        log.error({ jobId, currentStatus }, 'could not transition to failed');
+      }
+    }
+  }
 }
+
+// ── Utilities ──────────────────────────────────────────────────────────────
 
 function injectToken(url: string): string {
   const token = process.env.GITHUB_TOKEN;
@@ -281,31 +423,22 @@ function injectToken(url: string): string {
   return url.replace('https://', `https://x-access-token:${token}@`);
 }
 
-async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<string, void, void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let idx: number;
-      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic stream frame split
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const dataLines = frame
-          .split('\n')
-          .filter((l) => l.startsWith('data: '))
-          .map((l) => l.slice(6));
-        if (dataLines.length === 0) continue;
-        yield dataLines.join('\n');
-      }
+/**
+ * Walk an object and replace `"$input.<name>"` strings with the resolved input value.
+ */
+function substituteInputs(
+  obj: Record<string, unknown>,
+  inputs: Record<string, string>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string') {
+      result[k] = v.replace(/\$input\.(\w+)/g, (_, name: string) => inputs[name] ?? `$input.${name}`);
+    } else if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      result[k] = substituteInputs(v as Record<string, unknown>, inputs);
+    } else {
+      result[k] = v;
     }
-  } finally {
-    reader.releaseLock();
   }
+  return result;
 }

@@ -1,5 +1,5 @@
 import { ORPCError } from '@orpc/server';
-import type { ArtifactDto, JobDto } from '@shared/contracts';
+import type { ArtifactDto, JobDto, JobStepDto } from '@shared/contracts';
 import { TaskIngestService, splitWebInput } from '@shared/core';
 import type { Database } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
@@ -10,6 +10,7 @@ interface CreateJobInput {
   githubUrl: string;
   githubBranch: string;
   input: string;
+  workflowVersionId?: string;
 }
 
 /**
@@ -40,6 +41,7 @@ export class JobsService {
       metadata: {},
       githubUrl: input.githubUrl,
       githubBranch: input.githubBranch,
+      workflowVersionId: input.workflowVersionId,
     });
     return { jobId: id };
   }
@@ -56,5 +58,28 @@ export class JobsService {
 
   async listArtifacts(jobId: string): Promise<ArtifactDto[]> {
     return this.repo.findArtifactsByJobId(jobId);
+  }
+
+  async listSteps(jobId: string): Promise<JobStepDto[]> {
+    return this.repo.findStepsByJobId(jobId);
+  }
+
+  async restart(jobId: string): Promise<{ jobId: string }> {
+    const original = await this.repo.findById(jobId);
+    if (!original) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
+
+    const { id } = await this.ingest.ingest({
+      source: 'web',
+      triggerKind: 'restart',
+      title: original.title,
+      description: original.description ?? undefined,
+      metadata: { restartedFromJobId: original.id },
+      githubUrl: original.githubUrl,
+      githubBranch: original.githubBranch,
+      workflowVersionId: original.workflowVersionId ?? undefined,
+      conversationId: original.conversationId ?? undefined,
+    });
+
+    return { jobId: id };
   }
 }

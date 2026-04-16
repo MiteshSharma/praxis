@@ -34,7 +34,6 @@ export class PublishService {
 
     await runShell(`git config user.name "${input.gitAuthor.name}"`, workspace);
     await runShell(`git config user.email "${input.gitAuthor.email}"`, workspace);
-    await runShell(`git checkout -b ${input.branchName}`, workspace);
     await runShell('git add -A', workspace);
 
     const status = await runShell('git status --porcelain', workspace);

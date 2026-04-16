@@ -23,6 +23,10 @@ const EnvSchema = z.object({
   WORKER_HEALTH_PORT: z.coerce.number().int().positive().default(3101),
   LOG_LEVEL: z.string().default('info'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+  /** Shared secret for signing MCP JWTs (HS256). At least 32 chars. */
+  MCP_SHARED_SECRET: z.string().min(32).optional(),
+  /** Where the sandbox-worker calls submit_plan. Optional in dev. */
+  CONTROL_PLANE_MCP_URL: z.string().url().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

@@ -10,7 +10,7 @@ const NON_TERMINAL_RUNNING = [
   'executing',
   'checking',
   'learning',
-  'finalizing',
+  'publishing',
 ] as const;
 
 /**
@@ -18,7 +18,10 @@ const NON_TERMINAL_RUNNING = [
  * retry them (if under max_retries) or mark them failed.
  */
 export async function recoverStuckJobs(db: Database, log: Logger): Promise<number> {
-  const cutoff = new Date(Date.now() - 2 * 60 * 1000);
+  // 15-minute cutoff: generous enough for long sandbox sessions that heartbeat
+  // correctly but recovers genuinely stuck jobs (process crash, network failure)
+  // within a reasonable window.
+  const cutoff = new Date(Date.now() - 15 * 60 * 1000);
 
   const stuck = await db
     .select()

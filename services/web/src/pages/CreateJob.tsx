@@ -1,5 +1,5 @@
-import { useMutation } from '@tanstack/react-query';
-import { Alert, Button, Card, Form, Input, Typography } from 'antd';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Alert, Button, Card, Form, Input, Select, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { rpc } from '../rpc';
 
@@ -7,11 +7,17 @@ interface FormValues {
   githubUrl: string;
   githubBranch: string;
   input: string;
+  workflowVersionId?: string;
 }
 
 export function CreateJob() {
   const navigate = useNavigate();
   const [form] = Form.useForm<FormValues>();
+
+  const workflowsQuery = useQuery({
+    queryKey: ['workflows'],
+    queryFn: () => rpc.workflows.list(),
+  });
 
   const mutation = useMutation({
     mutationFn: (values: FormValues) =>
@@ -19,6 +25,7 @@ export function CreateJob() {
         githubUrl: values.githubUrl,
         githubBranch: values.githubBranch || 'main',
         input: values.input,
+        workflowVersionId: values.workflowVersionId || undefined,
       }),
     onSuccess: ({ jobId }) => navigate(`/jobs/${jobId}`),
   });
@@ -54,6 +61,26 @@ export function CreateJob() {
             placeholder={
               'fix the failing tests\n\nThe unit tests in src/foo.test.ts are red; figure out why and fix them.'
             }
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="workflowVersionId"
+          label="Workflow"
+          extra={
+            <Typography.Text type="secondary">
+              Leave empty to use the default plan → execute flow.
+            </Typography.Text>
+          }
+        >
+          <Select
+            allowClear
+            placeholder="Default workflow (plan → execute)"
+            loading={workflowsQuery.isLoading}
+            options={workflowsQuery.data?.map((wf) => ({
+              value: wf.latestVersion?.id ?? '',
+              label: `${wf.name} v${wf.latestVersion?.version ?? 1}`,
+            }))}
           />
         </Form.Item>
 
