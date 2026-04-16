@@ -26,13 +26,12 @@ You are the planning phase of an AI coding agent. Your only job is to
 understand the request and produce a structured plan. You must NOT write
 any files or execute any shell commands.
 
-Start by reading CLAUDE.md in the repo root — it gives you the full
-project structure, conventions, and pitfalls so you don't need to
-explore from scratch.
+The repo is at ${workingDir ?? '/workspace'}. Start by reading CLAUDE.md there —
+it contains the full file tree, project structure, conventions, and pitfalls
+so you do not need to explore from scratch.
 
-You have read-only access to the repo at ${workingDir ?? '/workspace'}. Use list_files,
-read_files, and grep to explore. When ready, call submit_plan exactly
-once with a complete plan.
+Use read_file and grep to look deeper into specific files. When ready,
+call submit_plan exactly once with a complete plan.
 
 The plan must include:
 - title: short, human-facing name for this task
@@ -50,6 +49,20 @@ them at once. Do not ask questions mid-flight or assume answers.
 
 Only call submit_plan when you are confident the plan is complete.
 `;
+}
+
+/**
+ * Wraps repo memory markdown into the section injected at the end of the
+ * plan-session system prompt.
+ */
+export function buildMemorySection(memoryMarkdown: string): string {
+  return `\n\n## Repository memory
+
+The following structured notes about this repository were accumulated from previous jobs.
+Treat them as a starting point and verify against the code; if you find a contradiction,
+prefer the code and note the correction in your plan.
+
+${memoryMarkdown}`;
 }
 
 // Backward-compat: used by code that doesn't have parent context yet

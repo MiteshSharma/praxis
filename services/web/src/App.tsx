@@ -5,6 +5,8 @@ import { ConversationDetail } from './pages/ConversationDetail';
 import { ConversationList } from './pages/ConversationList';
 import { CreateJob } from './pages/CreateJob';
 import { JobView } from './pages/JobView';
+import { MemoryEditor } from './pages/MemoryEditor';
+import { MemoryList } from './pages/MemoryList';
 import { WorkflowBrowse } from './pages/WorkflowBrowse';
 
 const { Header, Content, Sider } = Layout;
@@ -14,6 +16,7 @@ const NAV_ITEMS = [
   { key: '/', label: <Link to="/">New job</Link> },
   { key: '/workflows', label: <Link to="/workflows">Workflows</Link> },
   { key: '/agents', label: <Link to="/agents">Agents</Link> },
+  { key: '/memories', label: <Link to="/memories">Memory</Link> },
 ];
 
 export function App() {
@@ -47,6 +50,8 @@ export function App() {
           <Route path="/conversations/:id" element={<ConversationDetail />} />
           <Route path="/workflows" element={<WorkflowBrowse />} />
           <Route path="/agents" element={<AgentBrowse />} />
+          <Route path="/memories" element={<MemoryList />} />
+          <Route path="/memories/*" element={<MemoryEditor />} />
         </Routes>
       </Content>
     </Layout>

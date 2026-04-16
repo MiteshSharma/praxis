@@ -50,6 +50,7 @@ services/
       agents.service.ts
       conversations.service.ts
       plugins.service.ts
+      memories.service.ts                listRepos, get, update, delete repo memory files
       notifier.service.ts
     repositories/
       jobs.repository.ts
@@ -110,6 +111,8 @@ services/
       CreateJob.tsx
       AgentBrowse.tsx
       WorkflowBrowse.tsx
+      MemoryList.tsx                     /memories — list of repos with memory
+      MemoryEditor.tsx                   /memories/* — view/edit a repo's MEMORY.md
     components/
       PlanReviewCard.tsx                 approve / revise / reject UI
       StepProgress.tsx                   step status bar
@@ -126,10 +129,12 @@ shared/
     index.ts
     run/
       index.ts
-      job-orchestrator.ts               full job lifecycle (provision → clone → steps → publish)
-      step-runner.ts                    dispatches plan / execute / check steps
+      job-orchestrator.ts               full job lifecycle (provision → clone → steps → learn → publish)
+      step-runner.ts                    dispatches plan / execute / check steps; accepts memoryMarkdown
       transitions.ts                    transitionJob() — CAS update + timeline append
       recovery.ts                       recoverStuckJobs() cron helper
+      learning.ts                       runLearningPass() — single-turn memory update after all steps
+      job-context.ts                    gatherJobContext() — assembles job+plan+steps text for learning
     ingress/
       index.ts
       task-ingest-service.ts            create job row + enqueue
@@ -141,7 +146,7 @@ shared/
       db-task-tracker.ts                createPlan, approvePlan, recordRevisionRequest …
     prompts/
       index.ts
-      plan-session.ts                   buildPlanSessionSystemPrompt(parentContext, workingDir)
+      plan-session.ts                   buildPlanSessionSystemPrompt(parentContext, workingDir) + buildMemorySection()
       execute-session.ts                buildExecuteSystemPrompt(plan, workingDir)
       revision-session.ts               buildRevisionSystemPrompt(ctx, workingDir)
     mcp/
@@ -156,6 +161,7 @@ shared/
       index.ts
       default-agent.ts                  { model, systemPrompt, allowedTools }
       default-workflow.ts               [ plan step, execute step ]
+      learning-agent.ts                 LEARNING_AGENT — single-turn memory updater, no tools
     http/
       res.ts                            res.json() helper
       res.test.ts
@@ -176,12 +182,14 @@ shared/
       plugins.ts                        MCP stdio/http plugins per conversation
       artifacts.ts
       sandboxes.ts
+      repo-memories.ts                  one row per repo — repoKey, contentUri, sizeBytes, entryCount
     drizzle/
       0001_init.sql
       0002_add_plans.sql
       0003_add_workflows.sql
       0004_add_conversations_plugins.sql
       0005_add_skills.sql
+      0006_add_repo_memories.sql
 
   workflows/src/
     index.ts
@@ -192,6 +200,15 @@ shared/
   mcp/src/
     index.ts
     registry.ts                         PluginRegistry — resolves MCP servers for a conversation
+
+  memory/src/
+    index.ts
+    repo-key.ts                           normalizeRepoKey() — collapses HTTPS/SSH/.git variants
+    validator.ts                          validateMemoryFormat() + SECTION_ENTRY_LIMIT/PRUNE_THRESHOLD
+    memory-file.ts                        loadMemoryFile, saveMemoryFile, EMPTY_MEMORY_TEMPLATE
+
+  storage/src/
+    index.ts                              S3-compatible storage singleton via @aws-sdk/client-s3
 
   sandbox/src/
     index.ts
@@ -238,7 +255,7 @@ All valid transitions are listed in `shared/contracts/src/events.ts` → `JOB_TR
 | `execute` | `runExecuteStep` | POST /prompt with execute system prompt → agent edits files |
 | `check` | `runCheckStep` | POST /exec with shell command → throw `CheckFailedError` on nonzero |
 
-Between steps the job transitions through `preparing`. After all steps: `preparing → publishing → completed`.
+Between steps the job transitions through `preparing`. After all steps: `preparing → learning → publishing → completed` (learning is skipped when `jobs.disable_learning = true`, in which case `preparing → publishing`).
 
 ---
 
@@ -307,6 +324,10 @@ await emitNotification(boss, jobId, seq, { kind: 'chunk', raw: data });
 | `MCP_SHARED_SECRET` | Signs MCP JWTs — must be ≥ 32 chars |
 | `CONTROL_PLANE_MCP_URL` | URL sandbox calls for MCP, e.g. `http://localhost:3000/mcp` |
 | `MODE` | `control-plane` \| `worker` \| `all` |
+| `STORAGE_ENDPOINT` | MinIO/S3 endpoint, e.g. `http://localhost:9000` (optional in dev) |
+| `STORAGE_BUCKET` | Bucket name, default `praxis` |
+| `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | MinIO credentials |
+| `STORAGE_REGION` | Region, default `us-east-1` |
 
 ---
 
@@ -317,6 +338,8 @@ await emitNotification(boss, jobId, seq, { kind: 'chunk', raw: data });
 - **State transitions** must exist in `JOB_TRANSITIONS` before calling `transitionJob`/`assertTransition` — it throws otherwise.
 - **Branch created at clone time** (`praxis/job-<8-char-id>`) by `JobOrchestrator.cloneRepo`. The execute agent writes to this branch; `/publish` just commits + pushes it — never runs `git checkout -b`.
 - **SSE error propagation**: if `agent.service.ts` throws, the sandbox-worker emits `{ type: 'error', error: '...' }` into the stream. `callSandboxPrompt` in step-runner detects this and re-throws, which `failJob` catches and transitions to `failed`.
+- **Repo memory**: stored in MinIO at `memory/<repo_key>/MEMORY.md`. Injected into the plan-session system prompt (not execute). Hard limit 32 KB / 20 entries per section. Learning pass runs after all steps as a single-turn agent call; failures are logged at warn and do NOT fail the job.
+- **Storage not configured**: `@shared/storage` throws `StorageNotConfiguredError` when STORAGE_* env vars are absent. `loadMemoryFile` returns `null`, `runLearningPass` logs warn and skips. Jobs still complete normally.
 - **Adding a shared utility**: place in `shared/<existing-package>/src/`, re-export from its `index.ts`. Only create a new package for genuinely independent concerns.
 - **Tests**: `vitest` is installed but no `vitest.config.ts` exists yet. Create one at repo root and place test files as `*.test.ts` beside source files.
 - **Lint/format**: `npm run lint` (Biome check), `npm run format` (Biome write).

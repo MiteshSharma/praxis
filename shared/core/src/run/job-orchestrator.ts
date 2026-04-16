@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { JobStatus, NotifyEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
 import { type Database, type Job, artifacts, jobSteps, jobs, sandboxes, workflowVersions } from '@shared/db';
+import { EMPTY_MEMORY_TEMPLATE, loadMemoryFile, normalizeRepoKey } from '@shared/memory';
 import type { LocalSandboxProvider, SandboxInfo } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
 import type { WorkflowDefinition } from '@shared/workflows';
@@ -13,6 +14,7 @@ import { DbTaskTracker } from '../task-tracker/db-task-tracker';
 import type { TaskTracker } from '../task-tracker/task-tracker';
 import { HoldTimeoutError, PlanRejectedError, StepRunner } from './step-runner';
 import { appendTimeline, transitionJob } from './transitions';
+import { runLearningPass } from './learning';
 
 export type ResumeMode = 'execute' | 'revise';
 
@@ -89,15 +91,30 @@ export class JobOrchestrator {
       const workspace = sandbox.workspaceFor(sandboxInfo.providerId);
       await this.cloneRepo(jobRow, sandboxInfo, workspace, jobLog);
 
+      // ── Load repo memory ─────────────────────────────────────────────────
+      const memoryMarkdown = await this.loadRepoMemory(jobRow, jobLog);
+      this.stepRunner.setMemory(memoryMarkdown);
+
       // ── Materialise steps ────────────────────────────────────────────────
       await this.prepareSteps(jobRow);
 
       // ── Run steps ────────────────────────────────────────────────────────
       await this.stepRunner.run(jobRow, sandboxInfo);
 
-      // ── Publish ──────────────────────────────────────────────────────────
+      // ── Publish (PR creation) ────────────────────────────────────────────
       await this.mustTransition(jobId, 'preparing', 'publishing');
       await this.finalize(jobRow, sandboxInfo, workspace, jobLog);
+
+      // ── Learning pass (after PR) ─────────────────────────────────────────
+      const freshJob = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+      if (!freshJob?.disableLearning) {
+        await this.mustTransition(jobId, 'publishing', 'learning');
+        await runLearningPass(jobId, sandboxInfo, workspace, { db, log: jobLog });
+        await this.mustTransition(jobId, 'learning', 'completed', { completedAt: new Date() });
+      } else {
+        await this.mustTransition(jobId, 'publishing', 'completed', { completedAt: new Date() });
+      }
+      await this.emitCompleted(jobId);
     } catch (err) {
       if (err instanceof PlanRejectedError) {
         // Transition already happened in StepRunner.runPlanStep
@@ -158,9 +175,26 @@ export class JobOrchestrator {
           .set({ status: 'passed', completedAt: new Date() })
           .where(and(eq(jobSteps.jobId, jobId), eq(jobSteps.kind, 'plan')));
 
+        // Load memory (already injected during original plan run, but load again for cold resume)
+        const memoryMarkdown = await this.loadRepoMemory(jobRow, log);
+        this.stepRunner.setMemory(memoryMarkdown);
+
         await this.stepRunner.run(jobRow, sandboxInfo);
+
+        // ── Publish (PR creation) ──────────────────────────────────────────
         await this.mustTransition(jobId, 'preparing', 'publishing');
         await this.finalize(jobRow, sandboxInfo, workspace, log);
+
+        // ── Learning pass (after PR) ───────────────────────────────────────
+        const freshJob = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+        if (!freshJob?.disableLearning) {
+          await this.mustTransition(jobId, 'publishing', 'learning');
+          await runLearningPass(jobId, sandboxInfo, workspace, { db, log });
+          await this.mustTransition(jobId, 'learning', 'completed', { completedAt: new Date() });
+        } else {
+          await this.mustTransition(jobId, 'publishing', 'completed', { completedAt: new Date() });
+        }
+        await this.emitCompleted(jobId);
       } else {
         // Revise: re-run from current position in step runner (plan step will handle revision)
         await this.stepRunner.run(jobRow, sandboxInfo);
@@ -181,6 +215,24 @@ export class JobOrchestrator {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  private async loadRepoMemory(job: Job, log: Logger): Promise<string | null> {
+    const { db } = this.deps;
+    try {
+      const repoKey = normalizeRepoKey(job.githubUrl);
+      const memoryMarkdown = await loadMemoryFile(db, repoKey);
+      const sizeBytes = memoryMarkdown ? Buffer.byteLength(memoryMarkdown, 'utf-8') : 0;
+      await appendTimeline(db, job.id, 'memory-loaded', {
+        hasMemory: memoryMarkdown !== null,
+        sizeBytes,
+      });
+      log.info({ repoKey, hasMemory: memoryMarkdown !== null, sizeBytes }, 'repo memory loaded');
+      return memoryMarkdown;
+    } catch (err) {
+      log.warn({ err, jobId: job.id }, 'could not load repo memory; continuing without it');
+      return null;
+    }
+  }
 
   private async cloneRepo(
     job: Job,
@@ -257,6 +309,10 @@ export class JobOrchestrator {
     await db.insert(jobSteps).values(rows);
   }
 
+  /**
+   * Creates the PR (commit + push + GitHub PR) and records the artifact.
+   * Does NOT transition job status — caller handles publishing → learning → completed.
+   */
   private async finalize(
     job: Job,
     sandboxInfo: SandboxInfo,
@@ -297,16 +353,16 @@ export class JobOrchestrator {
       }
     }
 
-    const completed = await this.transition(job.id, 'publishing', 'completed', {
-      completedAt: new Date(),
-    });
-    if (completed) {
-      await this.emit(job.id, completed.seq + 1, {
-        kind: 'completed',
-        summary: publishResult?.prUrl,
-      });
-    }
-    log.info({ prUrl: publishResult?.prUrl }, 'job completed');
+    log.info({ prUrl: publishResult?.prUrl }, 'PR created, entering learning phase');
+  }
+
+  private async emitCompleted(jobId: string): Promise<void> {
+    const { db } = this.deps;
+    const job = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+    if (!job) return;
+    const seq = await appendTimeline(db, jobId, 'completed', {});
+    await this.emit(jobId, seq, { kind: 'completed', summary: undefined });
+    this.deps.log.info({ jobId }, 'job completed');
   }
 
   private async publish(
@@ -369,8 +425,13 @@ export class JobOrchestrator {
     return { seq: result.seq };
   }
 
-  private async mustTransition(jobId: string, from: JobStatus, to: JobStatus): Promise<void> {
-    const r = await this.transition(jobId, from, to);
+  private async mustTransition(
+    jobId: string,
+    from: JobStatus,
+    to: JobStatus,
+    patch: Parameters<typeof transitionJob>[4] = {},
+  ): Promise<void> {
+    const r = await this.transition(jobId, from, to, patch);
     if (!r) throw new Error(`transition ${from} → ${to} rejected`);
   }
 
@@ -384,12 +445,18 @@ export class JobOrchestrator {
 
   private async failJob(
     jobId: string,
-    currentStatus: JobStatus,
+    _staleStatus: JobStatus,
     err: unknown,
     log: Logger,
   ): Promise<void> {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log.error({ err }, 'job failed');
+
+    // Re-query the actual current status — the initial jobRow snapshot is stale
+    // after multiple transitions.
+    const current = await this.deps.db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+    const currentStatus = (current?.status ?? _staleStatus) as JobStatus;
+
     if (
       currentStatus !== 'failed' &&
       currentStatus !== 'completed' &&

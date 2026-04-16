@@ -8,6 +8,7 @@ import { registerOpenApi } from '../plugins/openapi';
 import { AgentsService } from '../services/agents.service';
 import { ConversationsService } from '../services/conversations.service';
 import { JobsService } from '../services/jobs.service';
+import { MemoriesService } from '../services/memories.service';
 import { PlansService } from '../services/plans.service';
 import { PluginsService } from '../services/plugins.service';
 import { WorkflowsService } from '../services/workflows.service';
@@ -31,10 +32,11 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   const agentsService = new AgentsService(deps.db);
   const conversationsService = new ConversationsService(deps.db, deps.boss, deps.log);
   const pluginsService = new PluginsService(deps.db);
+  const memoriesService = new MemoriesService(deps.db);
 
   healthRoutes(app);
   sseRoutes(app);
   registerMcpRoutes(app, { db: deps.db, log: deps.log, mcpSecret: env.MCP_SHARED_SECRET });
-  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, conversationsService, pluginsService });
+  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, conversationsService, pluginsService, memoriesService });
   await registerOpenApi(app);
 }

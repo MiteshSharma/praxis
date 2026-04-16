@@ -25,7 +25,7 @@ function formatAnswers(
  * System prompt for the revision phase. The previous plan plus user
  * answers/feedback are injected so the agent can produce an improved plan.
  */
-export function buildRevisionSystemPrompt(ctx: RevisionContext): string {
+export function buildRevisionSystemPrompt(ctx: RevisionContext, workingDir?: string): string {
   const data = ctx.previousPlan.data as {
     bodyMarkdown?: string;
     openQuestions?: Array<{ id: string; question: string }>;
@@ -43,8 +43,8 @@ export function buildRevisionSystemPrompt(ctx: RevisionContext): string {
 You are revising a plan that the user requested changes on. Your job is
 to call submit_plan with an improved version.
 
-Start by reading CLAUDE.md in the repo root if you need to re-orient
-on project structure or conventions.
+The repo is at ${workingDir ?? '/workspace'}. Read CLAUDE.md there if you need
+to re-orient on project structure or conventions.
 
 --- PREVIOUS PLAN (v${ctx.previousPlan.version}) ---
 ${data.bodyMarkdown ?? '(plan body unavailable)'}

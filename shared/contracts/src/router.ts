@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract';
 import { z } from 'zod';
-import { AgentSchema, ArtifactSchema, ConversationSchema, JobSchema, JobStepSchema, MessageSchema, PlanSchema, PluginSchema, WorkflowSchema } from './schemas';
+import { AgentSchema, ArtifactSchema, ConversationSchema, JobSchema, JobStepSchema, MessageSchema, PlanSchema, PluginSchema, RepoMemoryListItemSchema, RepoMemorySchema, WorkflowSchema } from './schemas';
 
 /**
  * The contract. Handlers are implemented in services/backend via oRPC's
@@ -205,6 +205,22 @@ export const contract = {
     listMessages: oc
       .input(z.object({ conversationId: z.string().uuid() }))
       .output(z.array(MessageSchema)),
+  },
+
+  memories: {
+    listRepos: oc.output(z.array(RepoMemoryListItemSchema)),
+
+    get: oc
+      .input(z.object({ repoKey: z.string() }))
+      .output(RepoMemorySchema.nullable()),
+
+    update: oc
+      .input(z.object({ repoKey: z.string(), content: z.string().min(1) }))
+      .output(z.object({ sizeBytes: z.number(), entryCount: z.number() })),
+
+    delete: oc
+      .input(z.object({ repoKey: z.string() }))
+      .output(z.object({ ok: z.boolean() })),
   },
 
   plugins: {

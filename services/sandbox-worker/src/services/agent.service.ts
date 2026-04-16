@@ -64,6 +64,11 @@ export class AgentService {
       options.systemPrompt = body.systemPrompt;
     }
 
+    // Cap turns (used by the learning pass for single-shot generation)
+    if (body.maxTurns !== undefined) {
+      options.maxTurns = body.maxTurns;
+    }
+
     // Auto-allow specified tools
     if (body.allowedTools?.length) {
       options.allowedTools = body.allowedTools;

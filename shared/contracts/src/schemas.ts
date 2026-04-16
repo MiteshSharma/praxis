@@ -163,6 +163,21 @@ export const ConversationSchema = z.object({
 });
 export type ConversationDto = z.infer<typeof ConversationSchema>;
 
+// ── Repo Memories ─────────────────────────────────────────────────────────────
+
+export const RepoMemoryListItemSchema = z.object({
+  repoKey: z.string(),
+  sizeBytes: z.number(),
+  entryCount: z.number(),
+  updatedAt: z.string(),
+});
+export type RepoMemoryListItemDto = z.infer<typeof RepoMemoryListItemSchema>;
+
+export const RepoMemorySchema = RepoMemoryListItemSchema.extend({
+  content: z.string(),
+});
+export type RepoMemoryDto = z.infer<typeof RepoMemorySchema>;
+
 // ── Plugins ───────────────────────────────────────────────────────────────────
 
 export const PluginSchema = z.object({

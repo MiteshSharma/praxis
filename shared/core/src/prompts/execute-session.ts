@@ -4,14 +4,14 @@ import type { Plan } from '../task-tracker/task-tracker';
  * System prompt for the execution phase. The approved plan is injected so
  * the agent knows exactly what to implement.
  */
-export function buildExecuteSystemPrompt(plan: Plan): string {
+export function buildExecuteSystemPrompt(plan: Plan, workingDir?: string): string {
   const data = plan.data as { bodyMarkdown?: string; title?: string };
   return `\
 You are the execution phase of an AI coding agent. The user has approved
 the following plan — implement it exactly as described.
 
-Start by reading CLAUDE.md in the repo root for project conventions
-before making any changes.
+The repo is at ${workingDir ?? '/workspace'}. Read CLAUDE.md there — it has the
+full file tree and conventions so you can go straight to the relevant files.
 
 --- APPROVED PLAN ---
 ${data.bodyMarkdown ?? '(plan body unavailable)'}

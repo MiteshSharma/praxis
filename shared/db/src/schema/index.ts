@@ -8,3 +8,4 @@ export * from './agents';
 export * from './workflows';
 export * from './conversations';
 export * from './plugins';
+export * from './repo-memories';

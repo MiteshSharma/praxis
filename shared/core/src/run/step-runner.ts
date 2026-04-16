@@ -11,12 +11,13 @@ import type PgBoss from 'pg-boss';
 import { emitNotification } from '../egress/notify';
 import { DEFAULT_AGENT } from '../defaults/default-agent';
 import { buildExecuteSystemPrompt } from '../prompts/execute-session';
-import { buildPlanSessionSystemPrompt } from '../prompts/plan-session';
+import { buildMemorySection, buildPlanSessionSystemPrompt } from '../prompts/plan-session';
 import { buildRevisionSystemPrompt } from '../prompts/revision-session';
 import type { TaskTracker } from '../task-tracker/task-tracker';
 import { appendTimeline, transitionJob } from './transitions';
 
 const PLAN_HOLD_MS = 10 * 60 * 1000; // 10 minutes
+
 
 export interface StepRunnerDeps {
   db: Database;
@@ -27,6 +28,8 @@ export interface StepRunnerDeps {
   redisUrl: string;
   mcpEndpoint?: string;
   mcpSecret?: string;
+  /** Repo memory markdown loaded during the preparing phase. Injected into plan-session prompts. */
+  memoryMarkdown?: string | null;
 }
 
 export class CheckFailedError extends Error {
@@ -55,6 +58,11 @@ export class HoldTimeoutError extends Error {
 
 export class StepRunner {
   constructor(private readonly deps: StepRunnerDeps) {}
+
+  /** Called by JobOrchestrator after loading repo memory during the preparing phase. */
+  setMemory(memoryMarkdown: string | null): void {
+    this.deps.memoryMarkdown = memoryMarkdown;
+  }
 
   async run(job: Job, sandboxInfo: SandboxInfo): Promise<void> {
     const { db } = this.deps;
@@ -204,9 +212,12 @@ export class StepRunner {
 
     const resolved = await this.resolveStepAgent(_step);
     const basePrompt = buildPlanSessionSystemPrompt(parentContext, workspace);
+    const memorySection = this.deps.memoryMarkdown
+      ? buildMemorySection(this.deps.memoryMarkdown)
+      : '';
     const systemPrompt = resolved
-      ? `${basePrompt}\n\n${resolved.systemPrompt}`
-      : basePrompt;
+      ? `${basePrompt}\n\n${resolved.systemPrompt}${memorySection}`
+      : `${basePrompt}${memorySection}`;
 
     await this.callSandboxPrompt(
       job,
@@ -271,10 +282,10 @@ export class StepRunner {
 
     if (cfg.condition === 'previous_check_failed' && cfg.recoveryContext) {
       // Recovery execute: inject failure context into system prompt
-      const base = plan ? buildExecuteSystemPrompt(plan) : '';
+      const base = plan ? buildExecuteSystemPrompt(plan, workspace) : '';
       systemPrompt = `${base}\n\n## Recovery context\n\nThe previous check step failed. Here is the failure output:\n\n${cfg.recoveryContext}\n\nPlease fix the issues and ensure the check passes.`;
     } else if (plan) {
-      systemPrompt = buildExecuteSystemPrompt(plan);
+      systemPrompt = buildExecuteSystemPrompt(plan, workspace);
     } else {
       // No plan — fall back to generic implementation prompt
       systemPrompt = DEFAULT_AGENT.systemPrompt;
@@ -399,7 +410,7 @@ export class StepRunner {
       previousPlan,
       answers: feedback.answers,
       additionalFeedback: feedback.additionalFeedback,
-    });
+    }, workspace);
 
     const mcpToken = await this.mintToken(job.id);
     if (!mcpToken || !this.deps.mcpEndpoint) {

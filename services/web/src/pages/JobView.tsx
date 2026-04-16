@@ -1,8 +1,10 @@
+import type { JobStatus } from '@shared/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Descriptions, Space, Tag, Timeline, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { JobPhaseBar } from '../components/JobPhaseBar';
 import { PlanReviewCard } from '../components/PlanReviewCard';
 import { rpc } from '../rpc';
 
@@ -151,7 +153,7 @@ export function JobView() {
   const artifactsQuery = useQuery({
     queryKey: ['job', jobId, 'artifacts'],
     queryFn: () => rpc.jobs.listArtifacts({ jobId: jobId ?? '' }),
-    enabled: !!jobId && jobQuery.data?.status === 'completed',
+    enabled: !!jobId && ['publishing', 'learning', 'completed'].includes(jobQuery.data?.status ?? ''),
   });
 
   useEffect(() => {
@@ -241,18 +243,32 @@ export function JobView() {
     [items],
   );
 
+  // PR URL — prefer live stream (appears as soon as publishing finishes),
+  // fall back to artifacts query (covers direct navigation to a post-publish job).
+  const prUrlFromStream = useMemo(() => {
+    for (const item of items) {
+      const ev = item.event as { kind?: string; artifactKind?: string; url?: string } | undefined;
+      if (ev?.kind === 'artifact-created' && ev.artifactKind === 'pr' && ev.url) return ev.url;
+    }
+    return undefined;
+  }, [items]);
+
   if (jobQuery.isLoading) return <Card loading />;
   if (jobQuery.error) return <Alert type="error" message={String(jobQuery.error)} />;
 
   const job = jobQuery.data;
   if (!job) return null;
 
-  const prArtifact = artifactsQuery.data?.find((a) => a.kind === 'pr');
+  const prUrl = prUrlFromStream ?? artifactsQuery.data?.find((a) => a.kind === 'pr')?.url;
+
   const showPlanReview = PLAN_REVIEW_STATUSES.has(job.status);
   const showStream = STREAM_STATUSES.has(job.status) || items.length > 0;
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      {/* Phase progress bar */}
+      <JobPhaseBar status={job.status as JobStatus} />
+
       {/* Job header */}
       <Card
         title={job.title}
@@ -306,18 +322,21 @@ export function JobView() {
         />
       )}
 
-      {/* PR link — shown on completion */}
-      {prArtifact?.url && (
-        <Card>
-          <Button type="primary" href={prArtifact.url} target="_blank" rel="noreferrer">
-            View PR on GitHub →
-          </Button>
-        </Card>
-      )}
-
       {/* Live stream timeline */}
       {showStream && (
-        <Card title="Live timeline" extra={streamError && <Tag color="red">{streamError}</Tag>}>
+        <Card
+          title="Live timeline"
+          extra={
+            <Space>
+              {prUrl && (
+                <Button type="primary" size="small" href={prUrl} target="_blank" rel="noreferrer">
+                  PR created →
+                </Button>
+              )}
+              {streamError && <Tag color="red">{streamError}</Tag>}
+            </Space>
+          }
+        >
           {timelineItems.length === 0 ? (
             <Typography.Text type="secondary">waiting for events…</Typography.Text>
           ) : (

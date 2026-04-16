@@ -30,5 +30,7 @@ export const PromptBodySchema = z.object({
   mcpEndpoint: z.string().optional(),
   /** Conversation-level MCP plugins to wire into the agent session */
   plugins: z.array(PluginConfigSchema).optional(),
+  /** Cap the number of agent turns. 1 = single-shot (used by the learning pass). */
+  maxTurns: z.number().int().positive().optional(),
 });
 export type PromptBody = z.infer<typeof PromptBodySchema>;

@@ -1,10 +1,11 @@
-import { implement } from '@orpc/server';
+import { ORPCError, implement } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { contract } from '@shared/contracts';
 import type { Hono } from 'hono';
 import type { AgentsService } from '../services/agents.service';
 import type { ConversationsService } from '../services/conversations.service';
 import type { JobsService } from '../services/jobs.service';
+import { MemoriesService } from '../services/memories.service';
 import type { PlansService } from '../services/plans.service';
 import type { PluginsService } from '../services/plugins.service';
 import type { WorkflowsService } from '../services/workflows.service';
@@ -16,6 +17,7 @@ interface RpcDeps {
   agentsService: AgentsService;
   conversationsService: ConversationsService;
   pluginsService: PluginsService;
+  memoriesService: MemoriesService;
 }
 
 /**
@@ -132,6 +134,27 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     return { ok: true };
   });
 
+  const memoriesListRepos = os.memories.listRepos.handler(() =>
+    deps.memoriesService.listRepos(),
+  );
+  const memoriesGet = os.memories.get.handler(({ input }) =>
+    deps.memoriesService.get(input.repoKey),
+  );
+  const memoriesUpdate = os.memories.update.handler(async ({ input }) => {
+    try {
+      return await deps.memoriesService.update(input.repoKey, input.content);
+    } catch (err) {
+      if (MemoriesService.isValidationError(err)) {
+        throw new ORPCError('BAD_REQUEST', { message: err.message });
+      }
+      throw err;
+    }
+  });
+  const memoriesDelete = os.memories.delete.handler(async ({ input }) => {
+    await deps.memoriesService.delete(input.repoKey);
+    return { ok: true };
+  });
+
   const router = {
     health,
     jobs: {
@@ -169,6 +192,12 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       delete: conversationsDelete,
       sendMessage: conversationsSendMessage,
       listMessages: conversationsListMessages,
+    },
+    memories: {
+      listRepos: memoriesListRepos,
+      get: memoriesGet,
+      update: memoriesUpdate,
+      delete: memoriesDelete,
     },
     plugins: {
       list: pluginsList,
