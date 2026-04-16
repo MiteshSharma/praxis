@@ -22,96 +22,192 @@ Praxis orchestrates multi-step AI coding jobs against GitHub repos: plan → use
 
 ---
 
-## Directory map
+## File tree
+
+Read this before exploring — it covers every source file in the repo.
 
 ```
+CLAUDE.md                                ← you are here
+tsconfig.json / tsconfig.base.json
+biome.json
+package.json
+
 services/
   backend/src/
-    index.ts              boots as control-plane, worker, or both (MODE env)
-    control-plane.ts      Hono app — mounts RPC, SSE, health, MCP routes
-    worker.ts             pg-boss consumer — runs jobs, recovery cron
+    index.ts                             boots as control-plane, worker, or both (MODE env)
+    control-plane.ts                     Hono app — mounts RPC, SSE, health, MCP routes
+    worker.ts                            pg-boss consumer — runs jobs, recovery cron
+    lib/env.ts                           typed env config
     routes/
-      rpc.ts              ALL oRPC handlers wired here (see pattern below)
-      sse.ts              GET /sse/jobs/:id — streams timeline events
-      health.ts           /health, /ready
-    services/             business logic — one file per domain
+      index.ts                           composes all routes
+      rpc.ts                             ALL oRPC handlers wired here
+      sse.ts                             GET /sse/jobs/:id — streams timeline events
+      health.ts                          /health, /ready
+    services/
       jobs.service.ts
-      plans.service.ts    approve / revise / reject
+      plans.service.ts                   approve / revise / reject
       workflows.service.ts
       agents.service.ts
       conversations.service.ts
       plugins.service.ts
-    repositories/         DB queries — one file per table group
-    queues/               pg-boss consumers (job-execute, recover-stuck)
+      notifier.service.ts
+    repositories/
+      jobs.repository.ts
+      plans.repository.ts
+      workflows.repository.ts
+      agents.repository.ts
+      conversations.repository.ts
+      plugins.repository.ts
+    queues/
+      index.ts
+      job-execute.ts                     consumer — runs JobOrchestrator
+      notify-dispatch.ts                 consumer — fans out SSE events
+      recover-stuck.ts                   cron — detects hung jobs
     control-plane/mcp/
-      submit-plan.ts      POST /mcp/submit_plan — receives plan from sandbox agent
-    middleware/           error-handler, cors, validate
-    lib/env.ts            typed env config
+      submit-plan.ts                     POST /mcp/submit_plan
+    middleware/
+      cors.ts
+      error-handler.ts
+      validate.ts
+      request-context.ts
+    dto/
+      jobs.dto.ts
+      health.dto.ts
+      sse.dto.ts
 
   sandbox-worker/src/
-    index.ts              boots tiny Hono server inside the sandbox
+    index.ts                             tiny Hono server inside the sandbox
+    lib/env.ts
     routes/
-      prompt.ts           POST /prompt — runs Claude agent, streams SSE chunks
-      exec.ts             POST /exec — runs shell command, returns {exitCode, stdout, stderr}
-      publish.ts          POST /publish — commit + push + open PR
-      abort.ts            POST /abort/:sessionId
+      index.ts
+      prompt.ts                          POST /prompt — runs Claude agent, streams SSE
+      exec.ts                            POST /exec — runs shell command
+      publish.ts                         POST /publish — commit + push + open PR
+      abort.ts                           POST /abort/:sessionId
+      health.ts
     services/
-      agent.service.ts    calls claude-agent-sdk; wires in-process MCP tools
+      agent.service.ts                   calls claude-agent-sdk; wires in-process MCP tools
       exec.service.ts
-      publish.service.ts  git commit/push + Octokit PR creation
+      publish.service.ts                 git commit/push + Octokit PR creation
+    middleware/
+      error-handler.ts
+      validate.ts
+      request-context.ts
+    dto/
+      agent.dto.ts
+      exec.dto.ts
+      publish.dto.ts
+      abort.dto.ts
 
   web/src/
-    pages/JobView.tsx      job detail + live timeline
-    pages/ConversationDetail.tsx
+    App.tsx                              router setup
+    main.tsx
+    rpc.ts                               oRPC client
+    pages/
+      JobView.tsx                        job detail + live timeline
+      ConversationDetail.tsx
+      ConversationList.tsx
+      CreateJob.tsx
+      AgentBrowse.tsx
+      WorkflowBrowse.tsx
     components/
-      PlanReviewCard.tsx  approve / revise / reject UI
-      StepProgress.tsx    step status bar
-    rpc.ts                oRPC client (mirrors contract)
+      PlanReviewCard.tsx                 approve / revise / reject UI
+      StepProgress.tsx                   step status bar
+      PluginsPanel.tsx
 
 shared/
   contracts/src/
-    router.ts             oRPC contract — source of truth for all API shapes
-    schemas.ts            Zod DTOs (JobSchema, PlanSchema, AgentSchema …)
-    events.ts             JOB_STATUSES, JOB_TRANSITIONS, NotifyEvent types
+    router.ts                            oRPC contract — source of truth for all API shapes
+    schemas.ts                           Zod DTOs (JobSchema, PlanSchema, AgentSchema …)
+    events.ts                            JOB_STATUSES, JOB_TRANSITIONS, NotifyEvent types
+    index.ts
 
   core/src/
+    index.ts
     run/
-      job-orchestrator.ts  full job lifecycle (provision → clone → steps → publish)
-      step-runner.ts       dispatches plan / execute / check steps
-      transitions.ts       transitionJob() — CAS update + timeline append
-      recovery.ts          recoverStuckJobs() cron helper
-    ingress/task-ingest-service.ts  create job row + enqueue
-    task-tracker/db-task-tracker.ts createPlan, approvePlan, recordRevisionRequest …
+      index.ts
+      job-orchestrator.ts               full job lifecycle (provision → clone → steps → publish)
+      step-runner.ts                    dispatches plan / execute / check steps
+      transitions.ts                    transitionJob() — CAS update + timeline append
+      recovery.ts                       recoverStuckJobs() cron helper
+    ingress/
+      index.ts
+      task-ingest-service.ts            create job row + enqueue
+      task-source.ts
+      sources/web-task-source.ts
+    task-tracker/
+      index.ts
+      task-tracker.ts                   interface
+      db-task-tracker.ts                createPlan, approvePlan, recordRevisionRequest …
     prompts/
-      plan-session.ts     buildPlanSessionSystemPrompt(parentContext, workingDir)
-      execute-session.ts  buildExecuteSystemPrompt(plan, workingDir)
-      revision-session.ts buildRevisionSystemPrompt(…)
-    mcp/auth.ts           mintMcpToken / verifyMcpToken (HS256 JWT, 30 min TTL)
-    egress/notify.ts      emitNotification → pg-boss → SSE fan-out
+      index.ts
+      plan-session.ts                   buildPlanSessionSystemPrompt(parentContext, workingDir)
+      execute-session.ts                buildExecuteSystemPrompt(plan, workingDir)
+      revision-session.ts               buildRevisionSystemPrompt(ctx, workingDir)
+    mcp/
+      index.ts
+      auth.ts                           mintMcpToken / verifyMcpToken (HS256 JWT, 30 min TTL)
+    egress/
+      index.ts
+      notify.ts                         emitNotification → pg-boss → SSE fan-out
+      notifier-registry.ts
+      task-notifier.ts
     defaults/
-      default-agent.ts    { model, systemPrompt, allowedTools: [Read,Glob,Grep,Bash,Edit,Write] }
-      default-workflow.ts [ plan step, execute step ]
+      index.ts
+      default-agent.ts                  { model, systemPrompt, allowedTools }
+      default-workflow.ts               [ plan step, execute step ]
+    http/
+      res.ts                            res.json() helper
+      res.test.ts
 
   db/src/
+    index.ts                            re-exports all tables + types
+    client.ts                           drizzle client factory
+    migrate.ts
     schema/
-      jobs.ts             jobs table
-      plans.ts            plans table (version, status, data JSON)
-      job-steps.ts        job_steps (stepIndex, kind, config, status, output)
-      job-timeline.ts     job_timeline (jobId, seq, type, payload) — immutable log
-      agents.ts           agents + agent_versions + agent_skills
-      workflows.ts        workflows + workflow_versions
-      conversations.ts    conversations + messages
-      plugins.ts          plugins (MCP stdio/http per conversation)
-      artifacts.ts        artifacts (pr, diff …)
-      sandboxes.ts        sandboxes (lifecycle tracking)
-    client.ts             drizzle client factory
-    index.ts              re-exports all tables + types
+      index.ts
+      jobs.ts
+      plans.ts                          (version, status, data JSON)
+      job-steps.ts                      (stepIndex, kind, config, status, output)
+      job-timeline.ts                   immutable event log
+      agents.ts                         agents + agent_versions + agent_skills
+      workflows.ts                      workflows + workflow_versions
+      conversations.ts                  conversations + messages
+      plugins.ts                        MCP stdio/http plugins per conversation
+      artifacts.ts
+      sandboxes.ts
+    drizzle/
+      0001_init.sql
+      0002_add_plans.sql
+      0003_add_workflows.sql
+      0004_add_conversations_plugins.sql
+      0005_add_skills.sql
 
-  workflows/src/types.ts  WorkflowDefinition, AgentDefinition, WorkflowStepDef (plan|execute|check)
-  mcp/src/               PluginRegistry — resolves external MCP servers for a conversation
-  sandbox/src/           LocalSandboxProvider interface + types
-  telemetry/src/         pino logger, OTEL, request-id middleware
-  stream/src/            SSE parsing helpers
+  workflows/src/
+    index.ts
+    types.ts                            WorkflowDefinition, AgentDefinition, WorkflowStepDef
+    parser.ts
+    loader.ts
+
+  mcp/src/
+    index.ts
+    registry.ts                         PluginRegistry — resolves MCP servers for a conversation
+
+  sandbox/src/
+    index.ts
+    types.ts
+    local-sandbox-provider.ts
+
+  telemetry/src/
+    index.ts
+    logger.ts                           pino
+    otel.ts
+    request-id.ts
+    shutdown.ts
+
+  stream/src/
+    index.ts
+    job-stream.ts                       SSE parsing helpers
 ```
 
 Path alias: `@shared/<name>` → `./shared/<name>/src`
