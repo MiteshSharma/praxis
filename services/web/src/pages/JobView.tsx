@@ -4,7 +4,6 @@ import { Alert, Button, Card, Descriptions, Space, Tag, Timeline, Typography } f
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PlanReviewCard } from '../components/PlanReviewCard';
-import { StepProgress } from '../components/StepProgress';
 import { rpc } from '../rpc';
 
 interface StreamItem {
@@ -294,18 +293,6 @@ export function JobView() {
           )}
         </Descriptions>
       </Card>
-
-      {/* Step progress — always shown once steps exist */}
-      {jobId && (
-        <StepProgress
-          jobId={jobId}
-          refetchInterval={
-            job.status === 'completed' || job.status === 'failed' || job.status === 'plan_rejected'
-              ? 0
-              : 3000
-          }
-        />
-      )}
 
       {/* Plan review — shown when status is plan_ready or plan_review */}
       {showPlanReview && jobId && <PlanReviewCard jobId={jobId} />}
