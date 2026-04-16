@@ -10,6 +10,9 @@ export function buildExecuteSystemPrompt(plan: Plan): string {
 You are the execution phase of an AI coding agent. The user has approved
 the following plan — implement it exactly as described.
 
+Start by reading CLAUDE.md in the repo root for project conventions
+before making any changes.
+
 --- APPROVED PLAN ---
 ${data.bodyMarkdown ?? '(plan body unavailable)'}
 --- END PLAN ---

@@ -43,6 +43,9 @@ export function buildRevisionSystemPrompt(ctx: RevisionContext): string {
 You are revising a plan that the user requested changes on. Your job is
 to call submit_plan with an improved version.
 
+Start by reading CLAUDE.md in the repo root if you need to re-orient
+on project structure or conventions.
+
 --- PREVIOUS PLAN (v${ctx.previousPlan.version}) ---
 ${data.bodyMarkdown ?? '(plan body unavailable)'}
 --- END PREVIOUS PLAN ---
