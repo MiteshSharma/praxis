@@ -157,6 +157,11 @@ export function JobView() {
 
   useEffect(() => {
     if (!jobId) return;
+
+    // Clear stale events from a previous job when jobId changes
+    setItems([]);
+    setStreamError(null);
+
     const source = new EventSource(`http://localhost:3000/sse/jobs/${jobId}`);
     source.onmessage = (e) => {
       try {
