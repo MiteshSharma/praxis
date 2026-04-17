@@ -1,7 +1,8 @@
 import type { JobStatus } from '@shared/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, Descriptions, Dropdown, Modal, Space, Tag, Timeline, Typography } from 'antd';
+import { Alert, Button, Card, Collapse, Descriptions, Drawer, Dropdown, Modal, Space, Tag, Timeline, Typography } from 'antd';
+import Markdown from 'react-markdown';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { JobPhaseBar } from '../components/JobPhaseBar';
@@ -128,12 +129,19 @@ const STREAM_STATUSES = new Set([
 /** Statuses where the plan review card is relevant */
 const PLAN_REVIEW_STATUSES = new Set(['plan_ready', 'plan_review']);
 
+/** Statuses where a previously-approved plan can be fetched and viewed */
+const PLAN_VIEWABLE_STATUSES = new Set([
+  'executing', 'checking', 'learning', 'publishing',
+  'completed', 'failed', 'plan_rejected',
+]);
+
 export function JobView() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [items, setItems] = useState<StreamItem[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [promptModal, setPromptModal] = useState<{ phase: string; text: string } | null>(null);
+  const [showPlanDrawer, setShowPlanDrawer] = useState(false);
   const showPrompt = useCallback((phase: string, text: string) => setPromptModal({ phase, text }), []);
 
   const restartMutation = useMutation({
@@ -168,7 +176,7 @@ export function JobView() {
   const latestPlanQuery = useQuery({
     queryKey: ['job', jobId, 'plan'],
     queryFn: () => rpc.jobs.getLatestPlan({ jobId: jobId ?? '' }),
-    enabled: !!jobId && jobQuery.data?.status === 'failed',
+    enabled: !!jobId && PLAN_VIEWABLE_STATUSES.has(jobQuery.data?.status ?? ''),
   });
 
   const artifactsQuery = useQuery({
@@ -338,6 +346,11 @@ export function JobView() {
         extra={
           <Space>
             <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>
+            {latestPlanQuery.data && (
+              <Button size="small" onClick={() => setShowPlanDrawer(true)}>
+                View Plan
+              </Button>
+            )}
             {job.status === 'failed' && latestPlanQuery.data?.status === 'approved' && (
               <Button
                 size="small"
@@ -444,6 +457,58 @@ export function JobView() {
           )}
         </Card>
       )}
+
+      {/* Plan viewer drawer */}
+      <Drawer
+        title={latestPlanQuery.data?.data.title ?? 'Plan'}
+        open={showPlanDrawer}
+        onClose={() => setShowPlanDrawer(false)}
+        width={640}
+      >
+        {latestPlanQuery.data && (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Descriptions size="small" column={1}>
+              <Descriptions.Item label="Summary">
+                {latestPlanQuery.data.data.summary}
+              </Descriptions.Item>
+              {latestPlanQuery.data.data.affectedPaths.length > 0 && (
+                <Descriptions.Item label="Affected files">
+                  {latestPlanQuery.data.data.affectedPaths.map((p) => (
+                    <Tag key={p} style={{ marginBottom: 2 }}>{p}</Tag>
+                  ))}
+                </Descriptions.Item>
+              )}
+              {(latestPlanQuery.data.data.risks ?? []).length > 0 && (
+                <Descriptions.Item label="Risks">
+                  {(latestPlanQuery.data.data.risks ?? []).map((r, i) => (
+                    <Tag color="orange" key={i} style={{ marginBottom: 2 }}>{r}</Tag>
+                  ))}
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+
+            <Collapse ghost items={[{
+              key: 'body',
+              label: 'Full plan details',
+              children: (
+                <div style={{ maxHeight: 480, overflow: 'auto' }}>
+                  <Markdown>{latestPlanQuery.data.data.bodyMarkdown}</Markdown>
+                </div>
+              ),
+            }]} />
+
+            <Typography.Title level={5}>Steps</Typography.Title>
+            {latestPlanQuery.data.data.steps.map((step) => (
+              <Space key={step.id} align="start">
+                <Tag color={step.status === 'done' ? 'success' : step.status === 'skipped' ? 'default' : 'blue'}>
+                  {step.status}
+                </Tag>
+                <Typography.Text>{step.content}</Typography.Text>
+              </Space>
+            ))}
+          </Space>
+        )}
+      </Drawer>
 
       {/* System prompt viewer */}
       <Modal
