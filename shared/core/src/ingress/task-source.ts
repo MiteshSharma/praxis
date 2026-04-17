@@ -16,6 +16,8 @@ export interface NormalizedTask {
   conversationId?: string;
   parentJobId?: string;
   autoApprove?: boolean;
+  /** Model override for this job. Null = use system default. */
+  model?: string | null;
 }
 
 export interface TaskSource {

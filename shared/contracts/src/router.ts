@@ -1,6 +1,19 @@
 import { oc } from '@orpc/contract';
 import { z } from 'zod';
-import { AgentSchema, ArtifactSchema, ConversationChannelSchema, ConversationSchema, JobSchema, JobStepSchema, MessageSchema, PlanSchema, PluginSchema, RepoMemoryListItemSchema, RepoMemorySchema, WorkflowSchema } from './schemas';
+import {
+  AgentSchema,
+  ArtifactSchema,
+  ConversationChannelSchema,
+  ConversationSchema,
+  JobSchema,
+  JobStepSchema,
+  MessageSchema,
+  PlanSchema,
+  PluginSchema,
+  RepoMemoryListItemSchema,
+  RepoMemorySchema,
+  WorkflowSchema,
+} from './schemas';
 
 /**
  * The contract. Handlers are implemented in services/backend via oRPC's
@@ -31,13 +44,9 @@ export const contract = {
 
     listArtifacts: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(ArtifactSchema)),
 
-    getLatestPlan: oc
-      .input(z.object({ jobId: z.string().uuid() }))
-      .output(PlanSchema.nullable()),
+    getLatestPlan: oc.input(z.object({ jobId: z.string().uuid() })).output(PlanSchema.nullable()),
 
-    listPlans: oc
-      .input(z.object({ jobId: z.string().uuid() }))
-      .output(z.array(PlanSchema)),
+    listPlans: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(PlanSchema)),
 
     approvePlan: oc
       .input(z.object({ jobId: z.string().uuid() }))
@@ -57,17 +66,13 @@ export const contract = {
       .input(z.object({ jobId: z.string().uuid(), reason: z.string().optional() }))
       .output(z.object({ ok: z.boolean() })),
 
-    listSteps: oc
-      .input(z.object({ jobId: z.string().uuid() }))
-      .output(z.array(JobStepSchema)),
+    listSteps: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(JobStepSchema)),
 
     restart: oc
       .input(z.object({ jobId: z.string().uuid() }))
       .output(z.object({ jobId: z.string().uuid() })),
 
-    delete: oc
-      .input(z.object({ jobId: z.string().uuid() }))
-      .output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ jobId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
 
     resumeFromPlan: oc
       .input(z.object({ jobId: z.string().uuid() }))
@@ -79,9 +84,7 @@ export const contract = {
       .input(z.object({ limit: z.number().int().positive().max(100).default(50) }).optional())
       .output(z.array(WorkflowSchema)),
 
-    get: oc
-      .input(z.object({ id: z.string().uuid() }))
-      .output(WorkflowSchema),
+    get: oc.input(z.object({ id: z.string().uuid() })).output(WorkflowSchema),
 
     create: oc
       .input(
@@ -116,16 +119,16 @@ export const contract = {
   agents: {
     list: oc
       .input(
-        z.object({
-          kind: z.enum(['agent', 'skill']).optional(),
-          limit: z.number().int().positive().max(100).default(50),
-        }).optional(),
+        z
+          .object({
+            kind: z.enum(['agent', 'skill']).optional(),
+            limit: z.number().int().positive().max(100).default(50),
+          })
+          .optional(),
       )
       .output(z.array(AgentSchema)),
 
-    get: oc
-      .input(z.object({ id: z.string().uuid() }))
-      .output(AgentSchema),
+    get: oc.input(z.object({ id: z.string().uuid() })).output(AgentSchema),
 
     create: oc
       .input(
@@ -147,16 +150,18 @@ export const contract = {
       )
       .output(AgentSchema),
 
-    delete: oc
-      .input(z.object({ id: z.string().uuid() }))
-      .output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
 
-    listSkills: oc
-      .input(z.object({ agentId: z.string().uuid() }))
-      .output(z.array(AgentSchema)),
+    listSkills: oc.input(z.object({ agentId: z.string().uuid() })).output(z.array(AgentSchema)),
 
     attachSkill: oc
-      .input(z.object({ agentId: z.string().uuid(), skillId: z.string().uuid(), position: z.number().int().default(0) }))
+      .input(
+        z.object({
+          agentId: z.string().uuid(),
+          skillId: z.string().uuid(),
+          position: z.number().int().default(0),
+        }),
+      )
       .output(z.object({ ok: z.boolean() })),
 
     detachSkill: oc
@@ -169,58 +174,69 @@ export const contract = {
       .input(z.object({ limit: z.number().int().positive().max(100).default(50) }).optional())
       .output(z.array(ConversationSchema)),
 
-    get: oc
-      .input(z.object({ id: z.string().uuid() }))
-      .output(ConversationSchema),
+    get: oc.input(z.object({ id: z.string().uuid() })).output(ConversationSchema),
 
     create: oc
-      .input(z.object({
-        title: z.string().min(1),
-        defaultGithubUrl: z.string().url().optional(),
-        defaultWorkflowId: z.string().uuid().optional(),
-      }))
+      .input(
+        z.object({
+          title: z.string().min(1),
+          defaultGithubUrl: z.string().url().optional(),
+          defaultWorkflowId: z.string().uuid().optional(),
+        }),
+      )
       .output(ConversationSchema),
 
     update: oc
-      .input(z.object({
-        id: z.string().uuid(),
-        title: z.string().optional(),
-        defaultGithubUrl: z.string().url().nullable().optional(),
-        defaultWorkflowId: z.string().uuid().nullable().optional(),
-        planHoldHours: z.number().int().min(1).max(168).optional(),
-      }))
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          title: z.string().optional(),
+          defaultGithubUrl: z.string().url().nullable().optional(),
+          defaultWorkflowId: z.string().uuid().nullable().optional(),
+          planHoldHours: z.number().int().min(1).max(168).optional(),
+          model: z.string().nullable().optional(),
+        }),
+      )
       .output(ConversationSchema),
 
-    delete: oc
-      .input(z.object({ id: z.string().uuid() }))
-      .output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
 
     sendMessage: oc
-      .input(z.object({
-        conversationId: z.string().uuid(),
-        content: z.string().min(1),
-        triggersJob: z.boolean().default(true),
-        jobOverrides: z.object({
-          githubUrl: z.string().url().optional(),
-          workflowVersionId: z.string().uuid().optional(),
-          title: z.string().optional(),
-        }).optional(),
-      }))
-      .output(z.object({
-        messageId: z.string().uuid(),
-        jobId: z.string().uuid().nullable(),
-      })),
+      .input(
+        z.object({
+          conversationId: z.string().uuid(),
+          content: z.string().min(1),
+          triggersJob: z.boolean().default(true),
+          jobOverrides: z
+            .object({
+              githubUrl: z.string().url().optional(),
+              workflowVersionId: z.string().uuid().optional(),
+              title: z.string().optional(),
+            })
+            .optional(),
+        }),
+      )
+      .output(
+        z.object({
+          messageId: z.string().uuid(),
+          jobId: z.string().uuid().nullable(),
+        }),
+      ),
 
     listMessages: oc
-      .input(z.object({
-        conversationId: z.string().uuid(),
-        limit: z.number().int().positive().max(100).default(20),
-        before: z.string().datetime().optional(),
-      }))
-      .output(z.object({
-        messages: z.array(MessageSchema),
-        hasMore: z.boolean(),
-      })),
+      .input(
+        z.object({
+          conversationId: z.string().uuid(),
+          limit: z.number().int().positive().max(100).default(20),
+          before: z.string().datetime().optional(),
+        }),
+      )
+      .output(
+        z.object({
+          messages: z.array(MessageSchema),
+          hasMore: z.boolean(),
+        }),
+      ),
   },
 
   channels: {
@@ -229,62 +245,56 @@ export const contract = {
       .output(z.array(ConversationChannelSchema)),
 
     create: oc
-      .input(z.object({
-        conversationId: z.string().uuid(),
-        type: z.enum(['webhook']),
-        name: z.string().min(1),
-        config: z.record(z.unknown()),
-      }))
+      .input(
+        z.object({
+          conversationId: z.string().uuid(),
+          type: z.enum(['webhook']),
+          name: z.string().min(1),
+          config: z.record(z.unknown()),
+        }),
+      )
       .output(ConversationChannelSchema),
 
     toggle: oc
       .input(z.object({ id: z.string().uuid(), enabled: z.boolean() }))
       .output(ConversationChannelSchema),
 
-    delete: oc
-      .input(z.object({ id: z.string().uuid() }))
-      .output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
   },
 
   memories: {
     listRepos: oc.output(z.array(RepoMemoryListItemSchema)),
 
-    get: oc
-      .input(z.object({ repoKey: z.string() }))
-      .output(RepoMemorySchema.nullable()),
+    get: oc.input(z.object({ repoKey: z.string() })).output(RepoMemorySchema.nullable()),
 
     update: oc
       .input(z.object({ repoKey: z.string(), content: z.string().min(1) }))
       .output(z.object({ sizeBytes: z.number(), entryCount: z.number() })),
 
-    delete: oc
-      .input(z.object({ repoKey: z.string() }))
-      .output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ repoKey: z.string() })).output(z.object({ ok: z.boolean() })),
   },
 
   plugins: {
-    list: oc
-      .input(z.object({ conversationId: z.string().uuid() }))
-      .output(z.array(PluginSchema)),
+    list: oc.input(z.object({ conversationId: z.string().uuid() })).output(z.array(PluginSchema)),
 
     create: oc
-      .input(z.object({
-        conversationId: z.string().uuid(),
-        name: z.string().min(1),
-        transport: z.enum(['stdio', 'http']),
-        command: z.string().optional(),
-        url: z.string().url().optional(),
-        env: z.record(z.string()).optional(),
-      }))
+      .input(
+        z.object({
+          conversationId: z.string().uuid(),
+          name: z.string().min(1),
+          transport: z.enum(['stdio', 'http']),
+          command: z.string().optional(),
+          url: z.string().url().optional(),
+          env: z.record(z.string()).optional(),
+        }),
+      )
       .output(PluginSchema),
 
     toggle: oc
       .input(z.object({ id: z.string().uuid(), enabled: z.boolean() }))
       .output(PluginSchema),
 
-    delete: oc
-      .input(z.object({ id: z.string().uuid() }))
-      .output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
   },
 };
 

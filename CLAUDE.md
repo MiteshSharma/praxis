@@ -142,7 +142,7 @@ Zero changes to orchestrator, learning pass, or prompt building.
 
 ## What this is
 
-Praxis orchestrates multi-step AI coding jobs against GitHub repos: plan → user review → execute → check → publish PR. Two services coordinate: `backend` (control-plane + pg-boss worker) and `sandbox-worker` (runs inside an ephemeral workspace, calls Claude).
+Praxis orchestrates multi-step AI coding jobs against GitHub repos: plan → user review → execute → check → publish PR. Two services coordinate: `backend` (control-plane + pg-boss worker) and `sandbox-worker` (runs inside an ephemeral workspace, calls Claude or OpenAI depending on the configured model).
 
 ---
 
@@ -155,7 +155,7 @@ Praxis orchestrates multi-step AI coding jobs against GitHub repos: plan → use
 | RPC | oRPC 1.9 (contract → handler → client) |
 | DB | Drizzle ORM 0.36 + Postgres |
 | Queue | pg-boss 10 |
-| AI | @anthropic-ai/claude-agent-sdk |
+| AI | @anthropic-ai/claude-agent-sdk (Claude), openai@6 (GPT / Codex) |
 | Frontend | React 18, AntD 5, TanStack Query 5, React Router 6 |
 | Lint/format | Biome 1.9 |
 | Tests | Vitest 2.1 (installed, **no config yet**) |
@@ -205,7 +205,7 @@ services/
       notify-dispatch.ts                 consumer — fans out SSE events
       recover-stuck.ts                   cron — detects hung jobs
     control-plane/mcp/
-      submit-plan.ts                     POST /mcp/submit_plan
+      submit-plan.ts                     POST /mcp/submit_plan + POST /mcp/query_memory
     middleware/
       cors.ts
       error-handler.ts
@@ -221,15 +221,25 @@ services/
     lib/env.ts
     routes/
       index.ts
-      prompt.ts                          POST /prompt — runs Claude agent, streams SSE
+      prompt.ts                          POST /prompt — resolves provider, streams SSE
       exec.ts                            POST /exec — runs shell command
       publish.ts                         POST /publish — commit + push + open PR
       abort.ts                           POST /abort/:sessionId
       health.ts
     services/
-      agent.service.ts                   calls claude-agent-sdk; wires in-process MCP tools
+      agent.service.ts                   delegates to ProviderRegistry.resolve(model)
       exec.service.ts
       publish.service.ts                 git commit/push + Octokit PR creation
+    providers/
+      types.ts                           AgentProvider interface + normalized SSE format
+      registry.ts                        ProviderRegistry — ordered (matcher, factory) pairs
+      index.ts                           barrel: imports claude, openai, demo in priority order
+      claude.ts                          ClaudeProvider — handles claude-* models; self-registers
+      openai.ts                          OpenAIProvider — handles gpt-*, o-series, codex-*; self-registers
+      demo.ts                            DemoProvider — deterministic catch-all; self-registers last
+      tools/
+        definitions.ts                   tool schemas in OpenAI function-calling format
+        executor.ts                      executes read_file, write_file, edit_file, bash, glob, grep, submit_plan, query_memory
     middleware/
       error-handler.ts
       validate.ts
@@ -318,11 +328,12 @@ shared/
       job-timeline.ts                   immutable event log
       agents.ts                         agents + agent_versions + agent_skills
       workflows.ts                      workflows + workflow_versions
-      conversations.ts                  conversations + messages
+      conversations.ts                  conversations + messages; model column for per-conversation model override
       plugins.ts                        MCP stdio/http plugins per conversation
       artifacts.ts
       sandboxes.ts
       repo-memories.ts                  one row per repo — repoKey, contentUri, sizeBytes, entryCount
+      jobs.ts                           jobs table; model column for per-job model override
     drizzle/
       0001_init.sql
       0002_add_plans.sql
@@ -330,6 +341,11 @@ shared/
       0004_add_conversations_plugins.sql
       0005_add_skills.sql
       0006_add_repo_memories.sql
+      0007_add_costs.sql
+      0008_add_plan_review_channels.sql
+      0009_rename_plan_review_to_channels.sql
+      0010_memory_backends.sql
+      0011_model_selection.sql
 
   workflows/src/
     index.ts
@@ -421,9 +437,11 @@ const jobsMyAction = os.jobs.myAction.handler(({ input }) =>
 
 ## Adding an internal MCP tool (control-plane)
 
-1. In `services/sandbox-worker/src/services/agent.service.ts`, create a `tool(name, description, schema, handler)` and add it to `internalTools[]`.  
+1. In `services/sandbox-worker/src/providers/claude.ts`, create a `tool(name, description, schema, handler)` and add it to `internalTools[]`.  
    Tool name → auto-whitelisted as `mcp__praxis-control-plane__<name>`.
 2. Add the HTTP handler in `services/backend/src/control-plane/mcp/` and register it in `registerMcpRoutes`.
+
+Note: internal MCP tools are Claude-specific (the Claude SDK has a native `tool()` helper). For OpenAI or other providers, tool calls go through `providers/tools/executor.ts` instead.
 
 ---
 
@@ -460,6 +478,7 @@ await emitNotification(boss, jobId, seq, { kind: 'chunk', raw: data });
 | `DATABASE_URL` | Postgres connection |
 | `REDIS_URL` | Redis (pg-boss + plan-event pub/sub) |
 | `ANTHROPIC_API_KEY` | Claude API key (forwarded to sandbox-worker) |
+| `OPENAI_API_KEY` | OpenAI API key — used for `gpt-*`, `o1`/`o3`/`o4-*`, `codex-*` models |
 | `GITHUB_TOKEN` | Clone repos + open PRs |
 | `MCP_SHARED_SECRET` | Signs MCP JWTs — must be ≥ 32 chars |
 | `CONTROL_PLANE_MCP_URL` | URL sandbox calls for MCP, e.g. `http://localhost:3000/mcp` |
@@ -468,18 +487,20 @@ await emitNotification(boss, jobId, seq, { kind: 'chunk', raw: data });
 | `STORAGE_BUCKET` | Bucket name, default `praxis` |
 | `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | MinIO credentials |
 | `STORAGE_REGION` | Region, default `us-east-1` |
+| `MEMORY_BACKEND` | `s3` (default), `builtin`, `qmd`, or `honcho` — see CLAUDE.md memory section |
 
 ---
 
 ## Key conventions & pitfalls
 
 - **MCP JWT TTL** is 30 min (`shared/core/src/mcp/auth.ts`). Plan sessions can run long — don't reduce this.
-- **`bypassPermissions`** covers built-in Claude Code tools. In-process MCP tools must also be in `allowedTools` — handled automatically via the `internalTools` array in `agent.service.ts`.
+- **`bypassPermissions`** covers built-in Claude Code tools. In-process MCP tools must also be in `allowedTools` — handled automatically via the `internalTools` array in `claude.ts`.
 - **State transitions** must exist in `JOB_TRANSITIONS` before calling `transitionJob`/`assertTransition` — it throws otherwise.
 - **Branch created at clone time** (`praxis/job-<8-char-id>`) by `JobOrchestrator.cloneRepo`. The execute agent writes to this branch; `/publish` just commits + pushes it — never runs `git checkout -b`.
 - **SSE error propagation**: if `agent.service.ts` throws, the sandbox-worker emits `{ type: 'error', error: '...' }` into the stream. `callSandboxPrompt` in step-runner detects this and re-throws, which `failJob` catches and transitions to `failed`.
-- **Repo memory**: stored in MinIO at `memory/<repo_key>/MEMORY.md`. Injected into the plan-session system prompt (not execute). Hard limit 32 KB / 20 entries per section. Learning pass runs after all steps as a single-turn agent call; failures are logged at warn and do NOT fail the job.
-- **Storage not configured**: `@shared/storage` throws `StorageNotConfiguredError` when STORAGE_* env vars are absent. `loadMemoryFile` returns `null`, `runLearningPass` logs warn and skips. Jobs still complete normally.
+- **Repo memory**: storage backend is selected by `MEMORY_BACKEND` env var (`s3` by default). Memory is injected into the plan-session system prompt; the `query_memory` MCP tool also makes it available during execute phase. Hard limit 32 KB / 20 entries per section. Learning pass runs after all steps as a single-turn agent call; failures are logged at warn and do NOT fail the job.
+- **Provider selection by model prefix**: `claude-*` → `ClaudeProvider`, `gpt-*`/`o1*`/`o3*`/`o4*`/`codex-*` → `OpenAIProvider`, anything else → `DemoProvider`. Resolved at runtime by `ProviderRegistry` in `providers/index.ts`.
+- **Storage not configured**: when `MEMORY_BACKEND=s3` (default) and STORAGE_* env vars are absent, `@shared/storage` throws `StorageNotConfiguredError`. `loadMemoryFile` returns `null`, `runLearningPass` logs warn and skips. Jobs still complete normally. Use `MEMORY_BACKEND=builtin` to avoid this dependency entirely.
 - **Adding a shared utility**: place in `shared/<existing-package>/src/`, re-export from its `index.ts`. Only create a new package for genuinely independent concerns.
 - **Tests**: `vitest` is installed but no `vitest.config.ts` exists yet. Create one at repo root and place test files as `*.test.ts` beside source files.
 - **Lint/format**: `npm run lint` (Biome check), `npm run format` (Biome write).

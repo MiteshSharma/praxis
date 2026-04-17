@@ -6,8 +6,11 @@ export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey().default(sql`uuidv7()`),
   title: text('title').notNull(),
   defaultGithubUrl: text('default_github_url'),
-  defaultWorkflowId: uuid('default_workflow_id').references(() => workflows.id, { onDelete: 'set null' }),
+  defaultWorkflowId: uuid('default_workflow_id').references(() => workflows.id, {
+    onDelete: 'set null',
+  }),
   planHoldHours: integer('plan_hold_hours').notNull().default(24),
+  model: text('model'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

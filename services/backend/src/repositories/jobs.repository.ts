@@ -10,11 +10,7 @@ export class JobsRepository {
   }
 
   async findMany(limit: number): Promise<JobDto[]> {
-    const rows = await this.db
-      .select()
-      .from(jobs)
-      .orderBy(desc(jobs.createdAt))
-      .limit(limit);
+    const rows = await this.db.select().from(jobs).orderBy(desc(jobs.createdAt)).limit(limit);
     return rows.map(toJobDto);
   }
 
@@ -82,6 +78,7 @@ export function toJobDto(row: typeof jobs.$inferSelect): JobDto {
     updatedAt: row.updatedAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
+    model: row.model ?? null,
     totalInputTokens: row.totalInputTokens ?? null,
     totalOutputTokens: row.totalOutputTokens ?? null,
     totalCostUsd: row.totalCostUsd ?? null,

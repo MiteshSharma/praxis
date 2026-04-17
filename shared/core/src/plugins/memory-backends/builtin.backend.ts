@@ -31,9 +31,9 @@ class BuiltinMemoryBackend implements MemoryBackend {
         `,
       );
 
-      if (rows.rows.length > 0) {
+      if (rows.length > 0) {
         // Reassemble in original order
-        const sorted = [...rows.rows].sort((a, b) => a.chunk_index - b.chunk_index);
+        const sorted = [...rows].sort((a, b) => a.chunk_index - b.chunk_index);
         const content = sorted.map((r) => r.content).join('\n\n');
         return { content, source: 'fts', truncated: true };
       }

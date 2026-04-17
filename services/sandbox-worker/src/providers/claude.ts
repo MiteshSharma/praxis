@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { PromptBody } from '../dto/agent.dto';
+import { registerProvider } from './registry.js';
 import type { AgentProvider } from './types';
 
 /**
@@ -176,3 +177,8 @@ export class ClaudeProvider implements AgentProvider {
     }
   }
 }
+
+registerProvider(
+  (model, env) => model.startsWith('claude-') || !!env.ANTHROPIC_API_KEY,
+  () => new ClaudeProvider(),
+);
