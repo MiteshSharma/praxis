@@ -558,7 +558,82 @@ export function JobView() {
           {promptModal?.text}
         </Typography.Paragraph>
       </Modal>
+<<<<<<< HEAD
 >>>>>>> 4397a20 (feat: plugin framework, memory backends, and query_memory tool (phases 06–07))
+=======
+
+      {/* Read-only plan drawer */}
+      <Drawer
+        title={
+          <Space>
+            <span>{latestPlanQuery.data?.data.title ?? 'Plan'}</span>
+            <Tag color={PLAN_STATUS_COLOR[latestPlanQuery.data?.status ?? ''] ?? 'default'}>
+              v{latestPlanQuery.data?.version} · {latestPlanQuery.data?.status?.toUpperCase()}
+            </Tag>
+          </Space>
+        }
+        open={planDrawerOpen}
+        onClose={() => setPlanDrawerOpen(false)}
+        width={640}
+      >
+        {latestPlanQuery.data && (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {/* Summary */}
+            <Typography.Text>{latestPlanQuery.data.data.summary}</Typography.Text>
+
+            {/* Affected paths */}
+            {latestPlanQuery.data.data.affectedPaths.length > 0 && (
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Affected files</Typography.Text>
+                {latestPlanQuery.data.data.affectedPaths.map((p) => (
+                  <Tag key={p} style={{ marginBottom: 2 }}>{p}</Tag>
+                ))}
+              </div>
+            )}
+
+            {/* Risks */}
+            {(latestPlanQuery.data.data.risks ?? []).length > 0 && (
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Risks</Typography.Text>
+                {(latestPlanQuery.data.data.risks ?? []).map((r, i) => (
+                  <Tag color="orange" key={i} style={{ marginBottom: 2 }}>{r}</Tag>
+                ))}
+              </div>
+            )}
+
+            {/* Steps */}
+            {latestPlanQuery.data.data.steps.length > 0 && (
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Steps</Typography.Text>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {latestPlanQuery.data.data.steps.map((step) => (
+                    <li key={step.id} style={{ marginBottom: 6, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ color: step.status === 'done' ? '#52c41a' : step.status === 'skipped' ? '#aaa' : undefined }}>
+                        {step.status === 'done' ? '✓' : step.status === 'skipped' ? '—' : '○'}
+                      </span>
+                      <Typography.Text type={step.status === 'skipped' ? 'secondary' : undefined}>
+                        {step.content}
+                      </Typography.Text>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Full plan body */}
+            <Collapse ghost items={[{
+              key: 'body',
+              label: 'Full plan details',
+              children: (
+                <div style={{ maxHeight: 480, overflow: 'auto' }}>
+                  <Markdown>{latestPlanQuery.data.data.bodyMarkdown}</Markdown>
+                </div>
+              ),
+            }]} />
+          </Space>
+        )}
+      </Drawer>
+>>>>>>> 063ae62 (feat: add view plan button to jobs page)
     </Space>
   );
 }
