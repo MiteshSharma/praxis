@@ -50,8 +50,12 @@ export class ConversationsService {
     await this.repo.delete(id);
   }
 
-  async listMessages(conversationId: string): Promise<MessageDto[]> {
-    return this.repo.findMessages(conversationId);
+  async listMessages(
+    conversationId: string,
+    limit: number,
+    before?: string,
+  ): Promise<{ messages: MessageDto[]; hasMore: boolean }> {
+    return this.repo.findMessages(conversationId, limit, before);
   }
 
   async sendMessage(input: SendMessageInput): Promise<{ messageId: string; jobId: string | null }> {

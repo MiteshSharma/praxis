@@ -40,6 +40,10 @@ export class JobsRepository {
     }));
   }
 
+  async delete(jobId: string): Promise<void> {
+    await this.db.delete(jobs).where(eq(jobs.id, jobId));
+  }
+
   async findArtifactsByJobId(jobId: string): Promise<ArtifactDto[]> {
     const rows = await this.db
       .select()
@@ -61,6 +65,7 @@ export class JobsRepository {
 export function toJobDto(row: typeof jobs.$inferSelect): JobDto {
   return {
     id: row.id,
+    conversationId: row.conversationId ?? null,
     source: row.source,
     externalId: row.externalId,
     externalUrl: row.externalUrl,

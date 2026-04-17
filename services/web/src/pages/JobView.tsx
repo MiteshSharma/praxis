@@ -1,7 +1,7 @@
 import type { JobStatus } from '@shared/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, Descriptions, Space, Tag, Timeline, Typography } from 'antd';
+import { Alert, Button, Card, Descriptions, Dropdown, Modal, Space, Tag, Timeline, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { JobPhaseBar } from '../components/JobPhaseBar';
@@ -150,6 +150,14 @@ export function JobView() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => rpc.jobs.delete({ jobId: jobId ?? '' }),
+    onSuccess: () => {
+      const conversationId = jobQuery.data?.conversationId;
+      navigate(conversationId ? `/conversations/${conversationId}` : '/conversations');
+    },
+  });
+
   const artifactsQuery = useQuery({
     queryKey: ['job', jobId, 'artifacts'],
     queryFn: () => rpc.jobs.listArtifacts({ jobId: jobId ?? '' }),
@@ -264,8 +272,29 @@ export function JobView() {
   const showPlanReview = PLAN_REVIEW_STATUSES.has(job.status);
   const showStream = STREAM_STATUSES.has(job.status) || items.length > 0;
 
+  const handleDelete = () => {
+    Modal.confirm({
+      title: 'Delete this job?',
+      content: 'This cannot be undone.',
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      onOk: () => deleteMutation.mutate(),
+    });
+  };
+
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      {/* Back to conversation */}
+      {job.conversationId && (
+        <Button
+          type="link"
+          style={{ padding: 0 }}
+          onClick={() => navigate(`/conversations/${job.conversationId}`)}
+        >
+          ← Back to conversation
+        </Button>
+      )}
+
       {/* Phase progress bar */}
       <JobPhaseBar status={job.status as JobStatus} />
 
@@ -282,6 +311,21 @@ export function JobView() {
             >
               Restart
             </Button>
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'delete',
+                    label: 'Delete job',
+                    danger: true,
+                    onClick: handleDelete,
+                  },
+                ],
+              }}
+              trigger={['click']}
+            >
+              <Button size="small">···</Button>
+            </Dropdown>
           </Space>
         }
       >

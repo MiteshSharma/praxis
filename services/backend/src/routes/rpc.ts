@@ -41,6 +41,10 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const jobsRestart = os.jobs.restart.handler(({ input }) =>
     deps.jobsService.restart(input.jobId),
   );
+  const jobsDelete = os.jobs.delete.handler(async ({ input }) => {
+    await deps.jobsService.delete(input.jobId);
+    return { ok: true };
+  });
 
   const jobsGetLatestPlan = os.jobs.getLatestPlan.handler(({ input }) =>
     deps.plansService.getLatestPlan(input.jobId),
@@ -117,7 +121,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     deps.conversationsService.sendMessage(input),
   );
   const conversationsListMessages = os.conversations.listMessages.handler(({ input }) =>
-    deps.conversationsService.listMessages(input.conversationId),
+    deps.conversationsService.listMessages(input.conversationId, input.limit ?? 20, input.before),
   );
 
   const pluginsList = os.plugins.list.handler(({ input }) =>
@@ -164,6 +168,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       listArtifacts: jobsListArtifacts,
       listSteps: jobsListSteps,
       restart: jobsRestart,
+      delete: jobsDelete,
       getLatestPlan: jobsGetLatestPlan,
       listPlans: jobsListPlans,
       approvePlan: jobsApprovePlan,

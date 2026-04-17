@@ -64,6 +64,10 @@ export class JobsService {
     return this.repo.findStepsByJobId(jobId);
   }
 
+  async delete(jobId: string): Promise<void> {
+    await this.repo.delete(jobId);
+  }
+
   async restart(jobId: string): Promise<{ jobId: string }> {
     const original = await this.repo.findById(jobId);
     if (!original) throw new ORPCError('NOT_FOUND', { message: 'job not found' });

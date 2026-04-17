@@ -1,7 +1,7 @@
 import type { ConversationDto, MessageDto, PluginDto } from '@shared/contracts';
 import type { Database } from '@shared/db';
 import { conversations, messages, plugins } from '@shared/db';
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, lt } from 'drizzle-orm';
 
 export function toConversationDto(row: typeof conversations.$inferSelect): ConversationDto {
   return {
@@ -80,13 +80,25 @@ export class ConversationsRepository {
     await this.db.delete(conversations).where(eq(conversations.id, id));
   }
 
-  async findMessages(conversationId: string): Promise<MessageDto[]> {
+  async findMessages(
+    conversationId: string,
+    limit: number,
+    before?: string,
+  ): Promise<{ messages: MessageDto[]; hasMore: boolean }> {
+    const whereClause = before
+      ? and(eq(messages.conversationId, conversationId), lt(messages.createdAt, new Date(before)))
+      : eq(messages.conversationId, conversationId);
+
     const rows = await this.db
       .select()
       .from(messages)
-      .where(eq(messages.conversationId, conversationId))
-      .orderBy(asc(messages.createdAt));
-    return rows.map(toMessageDto);
+      .where(whereClause)
+      .orderBy(desc(messages.createdAt))
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit).reverse();
+    return { messages: page.map(toMessageDto), hasMore };
   }
 
   async insertMessage(data: {
