@@ -57,6 +57,8 @@ export const JobSchema = z.object({
   status: JobStatusSchema,
   errorMessage: z.string().nullable(),
   errorCategory: z.string().nullable(),
+  totalInputTokens: z.number().int().nullable().optional(),
+  totalOutputTokens: z.number().int().nullable().optional(),
   totalCostUsd: z.number().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),

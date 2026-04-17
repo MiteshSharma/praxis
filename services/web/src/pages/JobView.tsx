@@ -274,11 +274,6 @@ export function JobView() {
         title={job.title}
         extra={
           <Space>
-            {job.totalCostUsd != null && (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                ${job.totalCostUsd.toFixed(4)}
-              </Typography.Text>
-            )}
             <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>
             <Button
               size="small"
@@ -306,6 +301,18 @@ export function JobView() {
           )}
           {job.githubCommitSha && (
             <Descriptions.Item label="Commit">{job.githubCommitSha.slice(0, 12)}</Descriptions.Item>
+          )}
+          {job.totalCostUsd != null && (
+            <Descriptions.Item label="Cost">
+              <Space size="middle">
+                <Typography.Text strong>${job.totalCostUsd.toFixed(4)}</Typography.Text>
+                {job.totalInputTokens != null && (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {job.totalInputTokens.toLocaleString()} in · {(job.totalOutputTokens ?? 0).toLocaleString()} out
+                  </Typography.Text>
+                )}
+              </Space>
+            </Descriptions.Item>
           )}
           {job.errorMessage && (
             <Descriptions.Item label="Error">
