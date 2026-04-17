@@ -15,6 +15,7 @@ interface SendMessageInput {
     githubUrl?: string;
     workflowVersionId?: string;
     title?: string;
+    autoApprove?: boolean;
   };
 }
 
@@ -132,6 +133,7 @@ export class ConversationsService {
       parentJobId: parentJobId ?? undefined,
       workflowVersionId,
       model: conv.model ?? null,
+      autoApprove: input.jobOverrides?.autoApprove ?? false,
     });
 
     // Backfill message with jobId

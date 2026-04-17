@@ -78,6 +78,7 @@ export function toJobDto(row: typeof jobs.$inferSelect): JobDto {
     updatedAt: row.updatedAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
+    autoApprove: row.autoApprove,
     model: row.model ?? null,
     totalInputTokens: row.totalInputTokens ?? null,
     totalOutputTokens: row.totalOutputTokens ?? null,

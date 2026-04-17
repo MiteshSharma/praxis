@@ -4,6 +4,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Descriptions,
   Drawer,
   Form,
@@ -220,6 +221,7 @@ export function ConversationDetail() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [githubUrlOverride, setGithubUrlOverride] = useState('');
+  const [autoApprove, setAutoApprove] = useState(false);
 
   const toggleExpand = (msgId: string) => {
     setExpandedIds((prev) => {
@@ -281,7 +283,9 @@ export function ConversationDetail() {
         conversationId: id ?? '',
         content,
         triggersJob: true,
-        jobOverrides: githubUrlOverride ? { githubUrl: githubUrlOverride } : undefined,
+        jobOverrides: (githubUrlOverride || autoApprove)
+          ? { githubUrl: githubUrlOverride || undefined, autoApprove: autoApprove || undefined }
+          : undefined,
       }),
     onSuccess: ({ jobId }) => {
       qc.invalidateQueries({ queryKey: ['conversation', id, 'messages'] });
@@ -398,14 +402,19 @@ export function ConversationDetail() {
             />
           )}
           {sendMutation.error && <Alert type="error" message={String(sendMutation.error)} />}
-          <Button
-            type="primary"
-            loading={sendMutation.isPending}
-            onClick={handleSend}
-            disabled={!messageInput.trim()}
-          >
-            Send (⌘↵)
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Checkbox checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)}>
+              Auto-approve plan
+            </Checkbox>
+            <Button
+              type="primary"
+              loading={sendMutation.isPending}
+              onClick={handleSend}
+              disabled={!messageInput.trim()}
+            >
+              Send (⌘↵)
+            </Button>
+          </div>
         </Space>
       </Card>
 

@@ -264,6 +264,13 @@ export class StepRunner {
     // Dispatch plan-review notifications to configured channels (fire-and-forget)
     await this.dispatchReviewNotifications(job, holdHours, log);
 
+    // Auto-approve: skip hold, proceed immediately
+    if (job.autoApprove) {
+      await this.mustTransition(job.id, 'plan_review', 'preparing');
+      log.info('plan auto-approved — skipping review hold');
+      return;
+    }
+
     const action = await this.holdForPlanReview(job.id, sandboxInfo, holdHours, log);
 
     switch (action.kind) {

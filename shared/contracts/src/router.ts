@@ -212,6 +212,7 @@ export const contract = {
               githubUrl: z.string().url().optional(),
               workflowVersionId: z.string().uuid().optional(),
               title: z.string().optional(),
+              autoApprove: z.boolean().optional(),
             })
             .optional(),
         }),
