@@ -1,4 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ArtifactDto, JobDto, MessageDto } from '@shared/contracts';
 import {
   Alert,
   Button,
@@ -13,11 +14,10 @@ import {
   Tabs,
   Typography,
 } from 'antd';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PluginsPanel } from '../components/PluginsPanel';
 import { rpc } from '../rpc';
-import type { ArtifactDto, JobDto } from '@shared/contracts';
 
 const STATUS_COLORS: Record<string, string> = {
   queued: 'default',
@@ -107,6 +107,9 @@ export function ConversationDetail() {
   const [githubUrlOverride, setGithubUrlOverride] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [olderMessages, setOlderMessages] = useState<MessageDto[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const toggleExpand = (msgId: string) => {
     setExpandedIds((prev) => {
@@ -123,12 +126,39 @@ export function ConversationDetail() {
     refetchInterval: 5000,
   });
 
+  // Newest 20 messages — polled every 3 s
   const messagesQuery = useQuery({
     queryKey: ['conversation', id, 'messages'],
-    queryFn: () => rpc.conversations.listMessages({ conversationId: id ?? '' }),
+    queryFn: async () => {
+      const result = await rpc.conversations.listMessages({ conversationId: id ?? '', limit: 20 });
+      // On first load, initialise hasMore from the response
+      setHasMore(result.hasMore);
+      return result;
+    },
     enabled: !!id,
     refetchInterval: 3000,
   });
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!id) return;
+    // Oldest message we currently have (from olderMessages, else from latest page)
+    const allLoaded = [...olderMessages, ...(messagesQuery.data?.messages ?? [])];
+    const oldest = allLoaded[0];
+    if (!oldest) return;
+
+    setLoadingOlder(true);
+    try {
+      const result = await rpc.conversations.listMessages({
+        conversationId: id,
+        limit: 20,
+        before: oldest.createdAt,
+      });
+      setOlderMessages((prev) => [...result.messages, ...prev]);
+      setHasMore(result.hasMore);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [id, olderMessages, messagesQuery.data]);
 
   const workflowsQuery = useQuery({
     queryKey: ['workflows'],
@@ -159,7 +189,8 @@ export function ConversationDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['conversation', id] }),
   });
 
-  const messages = messagesQuery.data ?? [];
+  // Combine older pages (prepended) with the latest page
+  const messages = [...olderMessages, ...(messagesQuery.data?.messages ?? [])];
 
   // Collect unique job IDs from messages — must be before any early returns (Rules of Hooks)
   const jobIds = [...new Set(messages.flatMap((m) => (m.jobId ? [m.jobId] : [])))];
@@ -271,6 +302,18 @@ export function ConversationDetail() {
           <Typography.Text type="secondary">No messages yet. Start the conversation above.</Typography.Text>
         ) : (
           <Space direction="vertical" size={0} style={{ width: '100%' }}>
+            {/* Load older messages */}
+            {hasMore && (
+              <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                <Button
+                  size="small"
+                  loading={loadingOlder}
+                  onClick={loadOlderMessages}
+                >
+                  Load older messages
+                </Button>
+              </div>
+            )}
             {messages.map((msg) => {
               const isExpanded = expandedIds.has(msg.id);
               const isLong = msg.content.split('\n').length > 5 || msg.content.length > 400;

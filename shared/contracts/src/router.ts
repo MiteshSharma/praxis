@@ -64,6 +64,10 @@ export const contract = {
     restart: oc
       .input(z.object({ jobId: z.string().uuid() }))
       .output(z.object({ jobId: z.string().uuid() })),
+
+    delete: oc
+      .input(z.object({ jobId: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
   },
 
   workflows: {
@@ -203,8 +207,15 @@ export const contract = {
       })),
 
     listMessages: oc
-      .input(z.object({ conversationId: z.string().uuid() }))
-      .output(z.array(MessageSchema)),
+      .input(z.object({
+        conversationId: z.string().uuid(),
+        limit: z.number().int().positive().max(100).default(20),
+        before: z.string().datetime().optional(),
+      }))
+      .output(z.object({
+        messages: z.array(MessageSchema),
+        hasMore: z.boolean(),
+      })),
   },
 
   memories: {

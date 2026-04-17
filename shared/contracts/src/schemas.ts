@@ -45,6 +45,7 @@ export type PlanDto = z.infer<typeof PlanSchema>;
 
 export const JobSchema = z.object({
   id: z.string().uuid(),
+  conversationId: z.string().uuid().nullable().optional(),
   source: z.string(),
   externalId: z.string().nullable(),
   externalUrl: z.string().nullable(),
