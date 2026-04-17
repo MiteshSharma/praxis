@@ -7,6 +7,7 @@ import type { ConversationsService } from '../services/conversations.service';
 import type { JobsService } from '../services/jobs.service';
 import { MemoriesService } from '../services/memories.service';
 import type { PlansService } from '../services/plans.service';
+import type { ChannelsService } from '../services/channels.service';
 import type { PluginsService } from '../services/plugins.service';
 import type { WorkflowsService } from '../services/workflows.service';
 
@@ -18,6 +19,7 @@ interface RpcDeps {
   conversationsService: ConversationsService;
   pluginsService: PluginsService;
   memoriesService: MemoriesService;
+  channelsService: ChannelsService;
 }
 
 /**
@@ -141,6 +143,20 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     return { ok: true };
   });
 
+  const channelsList = os.channels.list.handler(({ input }) =>
+    deps.channelsService.list(input.conversationId),
+  );
+  const channelsCreate = os.channels.create.handler(({ input }) =>
+    deps.channelsService.create(input),
+  );
+  const channelsToggle = os.channels.toggle.handler(({ input }) =>
+    deps.channelsService.toggle(input.id, input.enabled),
+  );
+  const channelsDelete = os.channels.delete.handler(async ({ input }) => {
+    await deps.channelsService.delete(input.id);
+    return { ok: true };
+  });
+
   const memoriesListRepos = os.memories.listRepos.handler(() =>
     deps.memoriesService.listRepos(),
   );
@@ -213,6 +229,12 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       create: pluginsCreate,
       toggle: pluginsToggle,
       delete: pluginsDelete,
+    },
+    channels: {
+      list: channelsList,
+      create: channelsCreate,
+      toggle: channelsToggle,
+      delete: channelsDelete,
     },
   };
 

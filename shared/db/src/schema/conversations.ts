@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { workflows } from './workflows';
 
 export const conversations = pgTable('conversations', {
@@ -7,6 +7,7 @@ export const conversations = pgTable('conversations', {
   title: text('title').notNull(),
   defaultGithubUrl: text('default_github_url'),
   defaultWorkflowId: uuid('default_workflow_id').references(() => workflows.id, { onDelete: 'set null' }),
+  planHoldHours: integer('plan_hold_hours').notNull().default(24),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

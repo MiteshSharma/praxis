@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract';
 import { z } from 'zod';
-import { AgentSchema, ArtifactSchema, ConversationSchema, JobSchema, JobStepSchema, MessageSchema, PlanSchema, PluginSchema, RepoMemoryListItemSchema, RepoMemorySchema, WorkflowSchema } from './schemas';
+import { AgentSchema, ArtifactSchema, ConversationChannelSchema, ConversationSchema, JobSchema, JobStepSchema, MessageSchema, PlanSchema, PluginSchema, RepoMemoryListItemSchema, RepoMemorySchema, WorkflowSchema } from './schemas';
 
 /**
  * The contract. Handlers are implemented in services/backend via oRPC's
@@ -187,6 +187,7 @@ export const contract = {
         title: z.string().optional(),
         defaultGithubUrl: z.string().url().nullable().optional(),
         defaultWorkflowId: z.string().uuid().nullable().optional(),
+        planHoldHours: z.number().int().min(1).max(168).optional(),
       }))
       .output(ConversationSchema),
 
@@ -220,6 +221,29 @@ export const contract = {
         messages: z.array(MessageSchema),
         hasMore: z.boolean(),
       })),
+  },
+
+  channels: {
+    list: oc
+      .input(z.object({ conversationId: z.string().uuid() }))
+      .output(z.array(ConversationChannelSchema)),
+
+    create: oc
+      .input(z.object({
+        conversationId: z.string().uuid(),
+        type: z.enum(['webhook']),
+        name: z.string().min(1),
+        config: z.record(z.unknown()),
+      }))
+      .output(ConversationChannelSchema),
+
+    toggle: oc
+      .input(z.object({ id: z.string().uuid(), enabled: z.boolean() }))
+      .output(ConversationChannelSchema),
+
+    delete: oc
+      .input(z.object({ id: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
   },
 
   memories: {

@@ -1,7 +1,7 @@
 import { ORPCError } from '@orpc/server';
 import type { ArtifactDto, JobDto, JobStepDto } from '@shared/contracts';
 import { JOB_EXECUTE_QUEUE, TaskIngestService, splitWebInput } from '@shared/core';
-import { type Database, jobs, plans } from '@shared/db';
+import { type Database, jobs, messages, plans } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
 import { and, eq } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
@@ -103,6 +103,15 @@ export class JobsService {
       workflowVersionId: original.workflowVersionId ?? undefined,
       conversationId: original.conversationId ?? undefined,
     });
+
+    // Re-point any conversation messages that referenced the old job to the new one,
+    // so the conversation thread shows the latest run instead of the failed one.
+    if (original.conversationId) {
+      await this.db
+        .update(messages)
+        .set({ jobId: id })
+        .where(eq(messages.jobId, original.id));
+    }
 
     return { jobId: id };
   }

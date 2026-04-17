@@ -1,14 +1,12 @@
-import { type Database, repoMemories } from '@shared/db';
-import {
-  InvalidMemoryFormatError,
-  MemoryTooLargeError,
-  loadMemoryFile,
-  saveMemoryFile,
-} from '@shared/memory';
+import { type Database, memoryChunks, repoMemories } from '@shared/db';
+import { InvalidMemoryFormatError, MemoryTooLargeError, type MemoryBackend } from '@shared/memory';
 import { desc, eq } from 'drizzle-orm';
 
 export class MemoriesService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly memoryBackend: MemoryBackend,
+  ) {}
 
   async listRepos(): Promise<
     { repoKey: string; sizeBytes: number; entryCount: number; updatedAt: string }[]
@@ -34,12 +32,13 @@ export class MemoriesService {
     });
     if (!row) return null;
 
-    const content = await loadMemoryFile(this.db, repoKey);
-    if (content === null) return null;
+    // Empty query returns full content regardless of backend
+    const memory = await this.memoryBackend.loadForJob(repoKey, '');
+    if (!memory) return null;
 
     return {
       repoKey: row.repoKey,
-      content,
+      content: memory.content,
       sizeBytes: row.sizeBytes,
       entryCount: row.entryCount,
       updatedAt: row.updatedAt.toISOString(),
@@ -50,7 +49,7 @@ export class MemoriesService {
     repoKey: string,
     content: string,
   ): Promise<{ sizeBytes: number; entryCount: number }> {
-    return saveMemoryFile(this.db, repoKey, content);
+    return this.memoryBackend.save(repoKey, content);
   }
 
   /** Re-throws InvalidMemoryFormatError and MemoryTooLargeError — callers convert to HTTP errors. */
@@ -59,7 +58,7 @@ export class MemoriesService {
   }
 
   async delete(repoKey: string): Promise<void> {
-    // Delete the storage object (best-effort; do not fail if storage is unconfigured)
+    // Best-effort S3 delete (no-op when storage is unconfigured or backend is builtin)
     try {
       const { storage } = await import('@shared/storage');
       const row = await this.db.query.repoMemories.findFirst({
@@ -69,9 +68,11 @@ export class MemoriesService {
         await storage.deleteObject(row.contentUri);
       }
     } catch {
-      /* storage may not be configured — DB row still gets deleted */
+      /* storage may not be configured */
     }
 
+    // Delete chunks (builtin backend stores content here; harmless for s3)
+    await this.db.delete(memoryChunks).where(eq(memoryChunks.repoKey, repoKey));
     await this.db.delete(repoMemories).where(eq(repoMemories.repoKey, repoKey));
   }
 }

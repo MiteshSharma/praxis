@@ -85,6 +85,11 @@ export const NotifyEventSchema = z.discriminatedUnion('kind', [
     error: z.string(),
     errorCategory: z.string(),
   }),
+  z.object({
+    kind: z.literal('prompt-snapshot'),
+    phase: z.string(),
+    systemPrompt: z.string(),
+  }),
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEventSchema>;
 
@@ -95,3 +100,25 @@ export const NotifyPayloadSchema = z.object({
   event: NotifyEventSchema,
 });
 export type NotifyPayload = z.infer<typeof NotifyPayloadSchema>;
+
+// ── PraxisEvent — typed vocabulary for all external communications ────────────
+
+export type PraxisEvent =
+  | {
+      type: 'plan.ready';
+      job: { id: string; title: string; description: string | null; githubUrl: string };
+      plan: {
+        title: string;
+        summary: string;
+        bodyMarkdown: string;
+        steps: Array<{ id: string; content: string; status: string }>;
+        affectedPaths: string[];
+        risks: string[];
+      };
+      callbackToken: string;
+      callbackUrl: string;
+    }
+  | { type: 'job.completed'; job: { id: string; title: string; githubUrl: string }; prUrl: string }
+  | { type: 'job.failed'; job: { id: string; title: string; githubUrl: string }; error: string };
+
+export type PraxisEventType = PraxisEvent['type'];

@@ -1,4 +1,6 @@
 export { normalizeRepoKey } from './repo-key';
+export type { MemoryBackend, MemoryContext } from './types';
+export { S3MemoryBackend } from './s3-backend';
 export {
   validateMemoryFormat,
   InvalidMemoryFormatError,

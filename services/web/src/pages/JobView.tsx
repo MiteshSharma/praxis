@@ -2,7 +2,7 @@ import type { JobStatus } from '@shared/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Collapse, Descriptions, Drawer, Dropdown, Modal, Space, Tag, Timeline, Typography } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import { JobPhaseBar } from '../components/JobPhaseBar';
@@ -143,6 +143,8 @@ export function JobView() {
   const [items, setItems] = useState<StreamItem[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [planDrawerOpen, setPlanDrawerOpen] = useState(false);
+  const [promptModal, setPromptModal] = useState<{ phase: string; text: string } | null>(null);
+  const showPrompt = useCallback((phase: string, text: string) => setPromptModal({ phase, text }), []);
 
   const restartMutation = useMutation({
     mutationFn: () => rpc.jobs.restart({ jobId: jobId ?? '' }),
@@ -242,6 +244,27 @@ export function JobView() {
               </>
             ),
           }];
+        } else if (kind === 'prompt-snapshot') {
+          const ev = item.event as { phase?: string; systemPrompt?: string };
+          const phase = ev.phase ?? 'unknown';
+          const text = ev.systemPrompt ?? '';
+          return [{
+            key: `${item.id}-${idx}`,
+            color: 'purple',
+            children: (
+              <Space>
+                <Typography.Text strong>System prompt ({phase})</Typography.Text>
+                <Button
+                  size="small"
+                  type="link"
+                  style={{ padding: 0, height: 'auto' }}
+                  onClick={() => showPrompt(phase, text)}
+                >
+                  View
+                </Button>
+              </Space>
+            ),
+          }];
         } else if (kind === 'artifact-created') {
           const ev = item.event as { artifactKind?: string; url?: string };
           description = `${ev.artifactKind}: ${ev.url ?? ''}`;
@@ -271,7 +294,7 @@ export function JobView() {
           ),
         }];
       }),
-    [items],
+    [items, showPrompt],
   );
 
   // PR URL — prefer live stream (appears as soon as publishing finishes),
@@ -439,6 +462,7 @@ export function JobView() {
         </Card>
       )}
 
+<<<<<<< HEAD
       {/* Read-only plan drawer */}
       <Drawer
         title={
@@ -510,6 +534,31 @@ export function JobView() {
           </Space>
         )}
       </Drawer>
+=======
+      {/* System prompt viewer */}
+      <Modal
+        title={`System prompt — ${promptModal?.phase}`}
+        open={!!promptModal}
+        onCancel={() => setPromptModal(null)}
+        footer={null}
+        width={720}
+      >
+        <Typography.Paragraph
+          style={{
+            whiteSpace: 'pre-wrap',
+            fontFamily: 'monospace',
+            fontSize: 12,
+            maxHeight: '60vh',
+            overflowY: 'auto',
+            background: '#fafafa',
+            padding: 12,
+            borderRadius: 6,
+          }}
+        >
+          {promptModal?.text}
+        </Typography.Paragraph>
+      </Modal>
+>>>>>>> 4397a20 (feat: plugin framework, memory backends, and query_memory tool (phases 06–07))
     </Space>
   );
 }

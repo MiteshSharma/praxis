@@ -27,6 +27,10 @@ const EnvSchema = z.object({
   MCP_SHARED_SECRET: z.string().min(32).optional(),
   /** Where the sandbox-worker calls submit_plan. Optional in dev. */
   CONTROL_PLANE_MCP_URL: z.string().url().optional(),
+  /** Public base URL of this control-plane, used in plan-review callback URLs. Defaults to http://localhost:PORT. */
+  CONTROL_PLANE_URL: z.string().url().optional(),
+  /** Memory backend. 's3' requires STORAGE_* vars; 'builtin' uses Postgres only. */
+  MEMORY_BACKEND: z.enum(['s3', 'builtin']).default('s3'),
   /** MinIO / S3-compatible storage for memory files and artifacts. All optional in dev. */
   STORAGE_ENDPOINT: z.string().url().optional(),
   STORAGE_BUCKET: z.string().default('praxis'),

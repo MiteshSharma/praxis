@@ -1,8 +1,9 @@
 import { ORPCError } from '@orpc/server';
 import type { ConversationDto, MessageDto } from '@shared/contracts';
 import { TaskIngestService, splitWebInput } from '@shared/core';
-import type { Database } from '@shared/db';
+import { type Database, workflowVersions } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
+import { desc, eq } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
 import { ConversationsRepository } from '../repositories/conversations.repository';
 
@@ -21,7 +22,11 @@ export class ConversationsService {
   private readonly repo: ConversationsRepository;
   private readonly ingest: TaskIngestService;
 
-  constructor(db: Database, boss: PgBoss, log: Logger) {
+  constructor(
+    private readonly db: Database,
+    boss: PgBoss,
+    log: Logger,
+  ) {
     this.repo = new ConversationsRepository(db);
     this.ingest = new TaskIngestService(db, boss, log);
   }
@@ -40,7 +45,7 @@ export class ConversationsService {
     return this.repo.create(data);
   }
 
-  async update(id: string, patch: { title?: string; defaultGithubUrl?: string | null; defaultWorkflowId?: string | null }): Promise<ConversationDto> {
+  async update(id: string, patch: { title?: string; defaultGithubUrl?: string | null; defaultWorkflowId?: string | null; planHoldHours?: number }): Promise<ConversationDto> {
     const result = await this.repo.update(id, patch);
     if (!result) throw new ORPCError('NOT_FOUND', { message: 'conversation not found' });
     return result;
@@ -90,6 +95,18 @@ export class ConversationsService {
       ? { title: titleOverride, description: input.content }
       : splitWebInput(input.content);
 
+    // Resolve workflowVersionId: explicit override → conversation default → undefined (system default)
+    let workflowVersionId = input.jobOverrides?.workflowVersionId;
+    if (!workflowVersionId && conv.defaultWorkflowId) {
+      const [latest] = await this.db
+        .select({ id: workflowVersions.id })
+        .from(workflowVersions)
+        .where(eq(workflowVersions.workflowId, conv.defaultWorkflowId))
+        .orderBy(desc(workflowVersions.version))
+        .limit(1);
+      workflowVersionId = latest?.id;
+    }
+
     const { id: jobId } = await this.ingest.ingest({
       source: 'web',
       triggerKind: 'user_prompt',
@@ -100,7 +117,7 @@ export class ConversationsService {
       githubBranch: 'main',
       conversationId: input.conversationId,
       parentJobId: parentJobId ?? undefined,
-      workflowVersionId: input.jobOverrides?.workflowVersionId ?? undefined,
+      workflowVersionId,
     });
 
     // Backfill message with jobId
