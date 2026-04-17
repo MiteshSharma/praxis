@@ -209,8 +209,6 @@ export function ConversationDetail() {
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [messageInput, setMessageInput] = useState('');
-  const [githubUrlOverride, setGithubUrlOverride] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [olderMessages, setOlderMessages] = useState<MessageDto[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -276,14 +274,10 @@ export function ConversationDetail() {
         conversationId: id ?? '',
         content,
         triggersJob: true,
-        jobOverrides: githubUrlOverride
-          ? { githubUrl: githubUrlOverride }
-          : undefined,
       }),
     onSuccess: ({ jobId }) => {
       qc.invalidateQueries({ queryKey: ['conversation', id, 'messages'] });
       setMessageInput('');
-      setGithubUrlOverride('');
       if (jobId) navigate(`/jobs/${jobId}`);
     },
   });
@@ -327,9 +321,9 @@ export function ConversationDetail() {
   const handleSend = () => {
     const content = messageInput.trim();
     if (!content) return;
-    const githubUrl = githubUrlOverride.trim() || conv.defaultGithubUrl;
+    const githubUrl = conv.defaultGithubUrl;
     if (!githubUrl) {
-      alert('No GitHub URL set. Add one in the conversation settings or enter one below.');
+      alert('No GitHub URL set. Add one in the conversation settings.');
       return;
     }
     sendMutation.mutate(content);
@@ -376,21 +370,6 @@ export function ConversationDetail() {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
             }}
           />
-          <Button
-            type="link"
-            size="small"
-            onClick={() => setShowAdvanced((v) => !v)}
-            style={{ padding: 0 }}
-          >
-            {showAdvanced ? 'Hide' : 'Show'} advanced options
-          </Button>
-          {showAdvanced && (
-            <Input
-              placeholder="GitHub URL override (leave blank to use conversation default)"
-              value={githubUrlOverride}
-              onChange={(e) => setGithubUrlOverride(e.target.value)}
-            />
-          )}
           {sendMutation.error && (
             <Alert type="error" message={String(sendMutation.error)} />
           )}
