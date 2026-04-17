@@ -6,3 +6,6 @@ export * from './task-tracker';
 export * from './prompts';
 export * from './defaults';
 export * from './http/res';
+export * from './plan-review';
+export * from './plugins';
+export * from './channels';

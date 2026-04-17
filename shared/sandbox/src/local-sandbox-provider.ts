@@ -40,6 +40,7 @@ export class LocalSandboxProvider implements SandboxProvider {
       providerId,
       endpoint: this.endpoint,
       createdAt: new Date(),
+      workspacePath: workspace,
     };
   }
 
@@ -59,14 +60,8 @@ export class LocalSandboxProvider implements SandboxProvider {
     }
   }
 
-  workspaceFor(providerId: string): string {
-    const ws = this.workspaces.get(providerId);
-    if (!ws) throw new Error(`unknown sandbox ${providerId}`);
-    return ws;
-  }
-
   async exec(providerId: string, command: string, opts: ExecOptions = {}): Promise<ExecResult> {
-    const workspace = this.workspaceFor(providerId);
+    const workspace = this.workspaces.get(providerId) ?? '';
     const cwd = opts.cwd ?? workspace;
     const started = Date.now();
     try {

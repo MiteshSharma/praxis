@@ -162,6 +162,7 @@ export const ConversationSchema = z.object({
   title: z.string(),
   defaultGithubUrl: z.string().nullable(),
   defaultWorkflowId: z.string().uuid().nullable(),
+  planHoldHours: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -181,6 +182,19 @@ export const RepoMemorySchema = RepoMemoryListItemSchema.extend({
   content: z.string(),
 });
 export type RepoMemoryDto = z.infer<typeof RepoMemorySchema>;
+
+// ── Conversation channels ─────────────────────────────────────────────────────
+
+export const ConversationChannelSchema = z.object({
+  id: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  type: z.enum(['webhook']),
+  name: z.string(),
+  config: z.record(z.unknown()),
+  enabled: z.boolean(),
+  createdAt: z.string(),
+});
+export type ConversationChannelDto = z.infer<typeof ConversationChannelSchema>;
 
 // ── Plugins ───────────────────────────────────────────────────────────────────
 

@@ -9,3 +9,5 @@ export * from './workflows';
 export * from './conversations';
 export * from './plugins';
 export * from './repo-memories';
+export * from './memory-chunks';
+export * from './conversation-channels';

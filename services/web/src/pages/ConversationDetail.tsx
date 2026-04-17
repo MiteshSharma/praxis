@@ -8,8 +8,11 @@ import {
   Drawer,
   Form,
   Input,
+  InputNumber,
+  Popconfirm,
   Space,
   Spin,
+  Switch,
   Tag,
   Tabs,
   Typography,
@@ -95,6 +98,108 @@ function JobInfoPanel({
         )}
       </Space>
     </div>
+  );
+}
+
+function PlanReviewChannelsPanel({ conversationId }: { conversationId: string }) {
+  const qc = useQueryClient();
+  const [newName, setNewName] = useState('');
+  const [newUrl, setNewUrl] = useState('');
+
+  const channelsQuery = useQuery({
+    queryKey: ['channels', conversationId],
+    queryFn: () => rpc.channels.list({ conversationId }),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      rpc.channels.create({
+        conversationId,
+        type: 'webhook',
+        name: newName.trim(),
+        config: { url: newUrl.trim() },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', conversationId] });
+      setNewName('');
+      setNewUrl('');
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      rpc.channels.toggle({ id, enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', conversationId] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => rpc.channels.delete({ id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', conversationId] }),
+  });
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }}>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        When a plan is ready for review, Praxis POSTs the plan data + a signed callback token to
+        each enabled webhook. The receiver calls <code>POST /plan-review/respond</code> to approve,
+        revise, or reject.
+      </Typography.Text>
+
+      {channelsQuery.data?.map((ch) => (
+        <Card key={ch.id} size="small" style={{ borderColor: '#f0f0f0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <Typography.Text strong style={{ fontSize: 13 }}>{ch.name}</Typography.Text>
+              <br />
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {(ch.config as { url?: string }).url ?? '—'}
+              </Typography.Text>
+            </div>
+            <Space>
+              <Switch
+                size="small"
+                checked={ch.enabled}
+                onChange={(enabled) => toggleMutation.mutate({ id: ch.id, enabled })}
+              />
+              <Popconfirm
+                title="Delete this channel?"
+                onConfirm={() => deleteMutation.mutate(ch.id)}
+                okText="Delete"
+                okButtonProps={{ danger: true }}
+              >
+                <Button size="small" danger type="text">✕</Button>
+              </Popconfirm>
+            </Space>
+          </div>
+        </Card>
+      ))}
+
+      <Typography.Text strong style={{ fontSize: 12 }}>Add webhook</Typography.Text>
+      <Input
+        placeholder="Name (e.g. Slack bot)"
+        value={newName}
+        onChange={(e) => setNewName(e.target.value)}
+        size="small"
+      />
+      <Input
+        placeholder="Webhook URL"
+        value={newUrl}
+        onChange={(e) => setNewUrl(e.target.value)}
+        size="small"
+      />
+      {createMutation.error && (
+        <Alert type="error" message={String(createMutation.error)} />
+      )}
+      <Button
+        size="small"
+        type="primary"
+        loading={createMutation.isPending}
+        disabled={!newName.trim() || !newUrl.trim()}
+        onClick={() => createMutation.mutate()}
+      >
+        Add
+      </Button>
+    </Space>
   );
 }
 
@@ -184,7 +289,7 @@ export function ConversationDetail() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (patch: { defaultGithubUrl?: string | null; defaultWorkflowId?: string | null }) =>
+    mutationFn: (patch: { defaultGithubUrl?: string | null; defaultWorkflowId?: string | null; planHoldHours?: number }) =>
       rpc.conversations.update({ id: id ?? '', ...patch }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['conversation', id] }),
   });
@@ -232,6 +337,10 @@ export function ConversationDetail() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Button type="link" style={{ padding: 0 }} onClick={() => navigate('/conversations')}>
+        ← Back to conversations
+      </Button>
+
       {/* Header */}
       <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -302,19 +411,7 @@ export function ConversationDetail() {
           <Typography.Text type="secondary">No messages yet. Start the conversation above.</Typography.Text>
         ) : (
           <Space direction="vertical" size={0} style={{ width: '100%' }}>
-            {/* Load older messages */}
-            {hasMore && (
-              <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                <Button
-                  size="small"
-                  loading={loadingOlder}
-                  onClick={loadOlderMessages}
-                >
-                  Load older messages
-                </Button>
-              </div>
-            )}
-            {messages.map((msg) => {
+            {[...messages].reverse().map((msg) => {
               const isExpanded = expandedIds.has(msg.id);
               const isLong = msg.content.split('\n').length > 5 || msg.content.length > 400;
               const job = msg.jobId ? jobMap[msg.jobId] : undefined;
@@ -358,6 +455,7 @@ export function ConversationDetail() {
                                 display: '-webkit-box',
                                 WebkitLineClamp: 5,
                                 WebkitBoxOrient: 'vertical',
+                                lineClamp: 5,
                               }),
                         }}
                       >
@@ -383,6 +481,18 @@ export function ConversationDetail() {
                 </Card>
               );
             })}
+            {/* Load older messages */}
+            {hasMore && (
+              <div style={{ textAlign: 'center', marginTop: 12 }}>
+                <Button
+                  size="small"
+                  loading={loadingOlder}
+                  onClick={loadOlderMessages}
+                >
+                  Load older messages
+                </Button>
+              </div>
+            )}
           </Space>
         )}
       </Card>
@@ -427,8 +537,31 @@ export function ConversationDetail() {
                       </option>
                     ))}
                   </select>
+
+                  <Typography.Text strong>Plan review hold (hours)</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    How long to wait for plan approval before timing out. Max 168h (7 days).
+                  </Typography.Text>
+                  <InputNumber
+                    min={1}
+                    max={168}
+                    defaultValue={conv.planHoldHours}
+                    onBlur={(e) => {
+                      const val = Number.parseInt(e.target.value, 10);
+                      if (!Number.isNaN(val) && val >= 1 && val <= 168) {
+                        updateMutation.mutate({ planHoldHours: val });
+                      }
+                    }}
+                    style={{ width: '100%' }}
+                    addonAfter="hours"
+                  />
                 </Space>
               ),
+            },
+            {
+              key: 'channels',
+              label: 'Review channels',
+              children: id ? <PlanReviewChannelsPanel conversationId={id} /> : null,
             },
             {
               key: 'plugins',

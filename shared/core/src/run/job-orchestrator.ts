@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { JobStatus, NotifyEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
 import { type Database, type Job, artifacts, jobSteps, jobs, plans, sandboxes, workflowVersions } from '@shared/db';
-import { EMPTY_MEMORY_TEMPLATE, loadMemoryFile, normalizeRepoKey } from '@shared/memory';
-import type { LocalSandboxProvider, SandboxInfo } from '@shared/sandbox';
+import { type MemoryBackend, S3MemoryBackend, normalizeRepoKey } from '@shared/memory';
+import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
 import type { WorkflowDefinition } from '@shared/workflows';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -22,15 +22,19 @@ export type ResumeMode = 'execute' | 'revise';
 export interface JobOrchestratorDeps {
   db: Database;
   boss: PgBoss;
-  sandbox: LocalSandboxProvider;
+  sandbox: SandboxProvider;
   log: Logger;
   redisUrl: string;
   /** MCP endpoint the sandbox-worker calls for submit_plan */
   mcpEndpoint?: string;
   /** Secret used to mint MCP JWTs — required when mcpEndpoint is set */
   mcpSecret?: string;
+  /** Public base URL of this control-plane, used to build plan-review callback URLs */
+  controlPlaneUrl?: string;
   /** Override task tracker for testing */
   taskTracker?: TaskTracker;
+  /** Memory backend — defaults to S3MemoryBackend when omitted */
+  memoryBackend?: MemoryBackend;
 }
 
 export class JobOrchestrator {
@@ -48,6 +52,7 @@ export class JobOrchestrator {
       redisUrl: deps.redisUrl,
       mcpEndpoint: deps.mcpEndpoint,
       mcpSecret: deps.mcpSecret,
+      controlPlaneUrl: deps.controlPlaneUrl,
     });
   }
 
@@ -89,7 +94,7 @@ export class JobOrchestrator {
 
       await this.mustTransition(jobId, 'provisioning', 'preparing');
 
-      const workspace = sandbox.workspaceFor(sandboxInfo.providerId);
+      const workspace = sandboxInfo.workspacePath ?? '';
       await this.cloneRepo(jobRow, sandboxInfo, workspace, jobLog);
 
       // ── Load repo memory ─────────────────────────────────────────────────
@@ -178,7 +183,7 @@ export class JobOrchestrator {
       const fromStatus = mode === 'execute' ? 'plan_review' : 'plan_revising';
       await this.mustTransition(jobId, fromStatus as JobStatus, 'preparing');
 
-      const workspace = sandbox.workspaceFor(sandboxInfo.providerId);
+      const workspace = sandboxInfo.workspacePath ?? '';
       await this.cloneRepo(jobRow, sandboxInfo, workspace, log);
 
       if (mode === 'execute') {
@@ -242,16 +247,19 @@ export class JobOrchestrator {
 
   private async loadRepoMemory(job: Job, log: Logger): Promise<string | null> {
     const { db } = this.deps;
+    const backend = this.deps.memoryBackend ?? new S3MemoryBackend(db);
     try {
       const repoKey = normalizeRepoKey(job.githubUrl);
-      const memoryMarkdown = await loadMemoryFile(db, repoKey);
-      const sizeBytes = memoryMarkdown ? Buffer.byteLength(memoryMarkdown, 'utf-8') : 0;
+      const query = [job.title, job.description].filter(Boolean).join('\n');
+      const ctx = await backend.loadForJob(repoKey, query);
+      const sizeBytes = ctx ? Buffer.byteLength(ctx.content, 'utf-8') : 0;
       await appendTimeline(db, job.id, 'memory-loaded', {
-        hasMemory: memoryMarkdown !== null,
+        hasMemory: ctx !== null,
         sizeBytes,
+        source: ctx?.source,
       });
-      log.info({ repoKey, hasMemory: memoryMarkdown !== null, sizeBytes }, 'repo memory loaded');
-      return memoryMarkdown;
+      log.info({ repoKey, hasMemory: ctx !== null, sizeBytes, source: ctx?.source }, 'repo memory loaded');
+      return ctx?.content ?? null;
     } catch (err) {
       log.warn({ err, jobId: job.id }, 'could not load repo memory; continuing without it');
       return null;

@@ -7,6 +7,8 @@ export const repoMemories = pgTable(
     id: uuid('id').primaryKey().default(sql`uuidv7()`),
     repoKey: text('repo_key').notNull().unique(),
     contentUri: text('content_uri').notNull(),
+    /** Full markdown content — populated by BuiltinBackend; null when S3 backend is used. */
+    content: text('content'),
     sizeBytes: integer('size_bytes').notNull().default(0),
     entryCount: integer('entry_count').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

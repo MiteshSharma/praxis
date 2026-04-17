@@ -8,6 +8,8 @@ export interface SandboxInfo {
   providerId: string;
   endpoint: string;
   createdAt: Date;
+  /** Absolute path to the workspace on the host. Populated by LocalSandboxProvider. */
+  workspacePath?: string;
 }
 
 export interface ExecOptions {

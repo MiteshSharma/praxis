@@ -9,6 +9,7 @@ export function toConversationDto(row: typeof conversations.$inferSelect): Conve
     title: row.title,
     defaultGithubUrl: row.defaultGithubUrl,
     defaultWorkflowId: row.defaultWorkflowId,
+    planHoldHours: row.planHoldHours,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -67,7 +68,7 @@ export class ConversationsRepository {
     return toConversationDto(row);
   }
 
-  async update(id: string, patch: { title?: string; defaultGithubUrl?: string | null; defaultWorkflowId?: string | null }): Promise<ConversationDto | null> {
+  async update(id: string, patch: { title?: string; defaultGithubUrl?: string | null; defaultWorkflowId?: string | null; planHoldHours?: number }): Promise<ConversationDto | null> {
     const [row] = await this.db
       .update(conversations)
       .set({ ...patch, updatedAt: new Date() })

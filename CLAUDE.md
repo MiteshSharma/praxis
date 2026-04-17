@@ -61,6 +61,85 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ---
 
+## Core design principles
+
+Four principles govern all extension points (channels, sandbox providers, memory backends):
+
+1. **Interface contracts first** — extension points typed to interfaces, never concrete classes
+2. **Factory registry** — `PluginRegistry<T>` owns all implementations; core never imports them directly
+3. **Self-registration via barrel** — each plugin registers itself on import; core iterates the registry
+4. **Dependency injection via `Deps`** — subsystems receive what they need, never reach for globals
+
+### Plugin directory layout
+
+```
+shared/core/src/plugins/
+  registry.ts                    generic PluginRegistry<T,C>
+  index.ts                       re-exports registries + triggers built-in channel registration
+  channels/
+    registry.ts                  channelRegistry + registerChannel + validateChannelConfig
+    webhook.channel.ts           WebhookChannel; self-registers as 'webhook'
+    index.ts                     barrel: imports webhook.channel.ts
+shared/core/src/channels/
+  types.ts                       PraxisChannel + PraxisChannelMeta interfaces
+  dispatch.ts                    dispatchEvent + dispatchToConversation
+  index.ts                       barrel
+shared/memory/src/
+  types.ts                       MemoryBackend + MemoryContext interfaces
+  s3-backend.ts                  S3MemoryBackend (default)
+```
+
+### Adding a new channel type
+
+1. `shared/core/src/plugins/channels/<name>.channel.ts`
+   — implement `PraxisChannel`, call `registerChannel(type, factory, validateFn)` at module level
+   — implement only the optional event handlers you need (`onPlanReady?`, etc.)
+
+2. `shared/core/src/plugins/channels/index.ts`
+   — add: `import './<name>.channel.js'`
+
+3. `shared/contracts/src/schemas.ts`
+   — add `'<name>'` to the `ConversationChannelSchema` type enum
+
+No other files change.
+
+### Adding a new Praxis event type
+
+1. `shared/contracts/src/events.ts` — add to `PraxisEvent` union
+2. `shared/core/src/channels/types.ts` — add optional method `onYourEvent?` to `PraxisChannel`
+3. `shared/core/src/channels/dispatch.ts` — add `case 'your.event': return channel.onYourEvent?.(event);`
+
+Existing channels are unaffected — new method is optional.
+
+### Memory backend selection
+
+Set `MEMORY_BACKEND` env var to choose the memory backend:
+
+| Value     | Description                                        | Extra env vars required            |
+|-----------|----------------------------------------------------|------------------------------------|
+| `s3`      | Default. Stores MEMORY.md in MinIO/S3.             | STORAGE_* vars                     |
+| `builtin` | Postgres FTS. No extra infra beyond Postgres.      | None                               |
+| `qmd`     | QMD sidecar. Better recall quality, local-first.   | QMD_SIDECAR_URL                    |
+| `honcho`  | Honcho API. Cross-job AI-native memory.            | HONCHO_BASE_URL, HONCHO_APP_ID     |
+
+### Adding a new memory backend
+
+1. `shared/core/src/plugins/memory-backends/<name>.backend.ts`
+   — implement `MemoryBackend`, call `registerMemoryBackend(type, factory)` at module level
+
+2. `shared/core/src/plugins/memory-backends/index.ts`
+   — add: `import './<name>.backend.js'`
+
+3. `services/backend/src/lib/env.ts`
+   — add `'<name>'` to the `MEMORY_BACKEND` enum
+
+4. `services/backend/src/queues/job-execute.ts`
+   — handle new type in `buildMemoryBackendConfig()`
+
+Zero changes to orchestrator, learning pass, or prompt building.
+
+---
+
 ## What this is
 
 Praxis orchestrates multi-step AI coding jobs against GitHub repos: plan → user review → execute → check → publish PR. Two services coordinate: `backend` (control-plane + pg-boss worker) and `sandbox-worker` (runs inside an ephemeral workspace, calls Claude).

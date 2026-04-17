@@ -3,10 +3,10 @@ import { type Database, jobs } from '@shared/db';
 import {
   EMPTY_MEMORY_TEMPLATE,
   InvalidMemoryFormatError,
+  type MemoryBackend,
   MemoryTooLargeError,
-  loadMemoryFile,
+  S3MemoryBackend,
   normalizeRepoKey,
-  saveMemoryFile,
 } from '@shared/memory';
 import { StorageNotConfiguredError } from '@shared/storage';
 import type { SandboxInfo } from '@shared/sandbox';
@@ -33,9 +33,10 @@ export async function runLearningPass(
   jobId: string,
   sandboxInfo: SandboxInfo,
   workspace: string,
-  deps: { db: Database; log: Logger },
+  deps: { db: Database; log: Logger; memoryBackend?: MemoryBackend },
 ): Promise<LearningCost> {
   const { db, log } = deps;
+  const memoryBackend = deps.memoryBackend ?? new S3MemoryBackend(db);
 
   const zeroCost: LearningCost = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
@@ -54,7 +55,8 @@ export async function runLearningPass(
   }
 
   // Load current memory (or empty template for first job on this repo)
-  const currentMemory = (await loadMemoryFile(db, repoKey)) ?? EMPTY_MEMORY_TEMPLATE(repoKey);
+  const ctx = await memoryBackend.loadForJob(repoKey, job.title ?? '');
+  const currentMemory = ctx?.content ?? EMPTY_MEMORY_TEMPLATE(repoKey);
   const jobContext = await gatherJobContext(jobId, db);
 
   const userPrompt = `Current memory file:
@@ -103,7 +105,7 @@ Please return the updated memory file in full. Use job id "${job.id.substring(0,
   }
 
   try {
-    const { sizeBytes, entryCount } = await saveMemoryFile(db, repoKey, newMarkdown);
+    const { sizeBytes, entryCount } = await memoryBackend.save(repoKey, newMarkdown);
     const seq = await appendTimeline(db, jobId, 'memory-saved', { repoKey, sizeBytes, entryCount });
     log.info({ jobId, repoKey, sizeBytes, entryCount, seq }, 'memory file updated');
   } catch (err) {

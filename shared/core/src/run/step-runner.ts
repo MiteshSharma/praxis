@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { JobStatus, NotifyEvent, PlanWakeEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
-import { type Database, type Job, type JobStep, agentSkills, agentVersions, artifacts, jobSteps, jobs } from '@shared/db';
-import type { LocalSandboxProvider, SandboxInfo } from '@shared/sandbox';
+import { type Database, type Job, type JobStep, agentSkills, agentVersions, artifacts, conversations, jobSteps, jobs } from '@shared/db';
+import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
 import type { AgentRef } from '@shared/workflows';
 import { asc, desc, eq } from 'drizzle-orm';
@@ -10,19 +10,21 @@ import Redis from 'ioredis';
 import type PgBoss from 'pg-boss';
 import { emitNotification } from '../egress/notify';
 import { DEFAULT_AGENT } from '../defaults/default-agent';
+import { mintCallbackToken } from '../plan-review/auth';
+import { dispatchToConversation } from '../channels/dispatch';
 import { buildExecuteSystemPrompt } from '../prompts/execute-session';
 import { buildMemorySection, buildPlanSessionSystemPrompt } from '../prompts/plan-session';
 import { buildRevisionSystemPrompt } from '../prompts/revision-session';
 import type { TaskTracker } from '../task-tracker/task-tracker';
 import { appendTimeline, transitionJob } from './transitions';
 
-const PLAN_HOLD_MS = 10 * 60 * 1000; // 10 minutes
+const DEFAULT_PLAN_HOLD_HOURS = 24;
 
 
 export interface StepRunnerDeps {
   db: Database;
   boss: PgBoss;
-  sandbox: LocalSandboxProvider;
+  sandbox: SandboxProvider;
   taskTracker: TaskTracker;
   log: Logger;
   redisUrl: string;
@@ -30,6 +32,8 @@ export interface StepRunnerDeps {
   mcpSecret?: string;
   /** Repo memory markdown loaded during the preparing phase. Injected into plan-session prompts. */
   memoryMarkdown?: string | null;
+  /** Public base URL of this control-plane, e.g. http://localhost:3000. Used to build callback URLs for plan review channels. */
+  controlPlaneUrl?: string;
 }
 
 export class CheckFailedError extends Error {
@@ -80,7 +84,7 @@ export class StepRunner {
   async run(job: Job, sandboxInfo: SandboxInfo): Promise<void> {
     const { db } = this.deps;
     const log = this.deps.log.child({ jobId: job.id });
-    const workspace = this.deps.sandbox.workspaceFor(sandboxInfo.providerId);
+    const workspace = sandboxInfo.workspacePath ?? '';
 
     const steps = await db.query.jobSteps.findMany({
       where: eq(jobSteps.jobId, job.id),
@@ -232,6 +236,9 @@ export class StepRunner {
       ? `${basePrompt}\n\n${resolved.systemPrompt}${memorySection}`
       : `${basePrompt}${memorySection}`;
 
+    const planPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'plan', systemPrompt });
+    await this.emit(job.id, planPromptSeq, { kind: 'prompt-snapshot', phase: 'plan', systemPrompt });
+
     await this.callSandboxPrompt(
       job,
       sandboxInfo,
@@ -251,7 +258,13 @@ export class StepRunner {
     await this.mustTransition(job.id, 'building', 'plan_ready');
     await this.mustTransition(job.id, 'plan_ready', 'plan_review');
 
-    const action = await this.holdForPlanReview(job.id, sandboxInfo, log);
+    // Load hold hours from conversation (falls back to default)
+    const holdHours = await this.getHoldHours(job);
+
+    // Dispatch plan-review notifications to configured channels (fire-and-forget)
+    await this.dispatchReviewNotifications(job, holdHours, log);
+
+    const action = await this.holdForPlanReview(job.id, sandboxInfo, holdHours, log);
 
     switch (action.kind) {
       case 'approve': {
@@ -264,6 +277,8 @@ export class StepRunner {
         await this.runRevisionSession(job, sandboxInfo, workspace, log);
         await this.mustTransition(job.id, 'plan_revising', 'plan_ready');
         await this.mustTransition(job.id, 'plan_ready', 'plan_review');
+        // Dispatch notifications for the revised plan
+        await this.dispatchReviewNotifications(job, holdHours, log);
         // Recurse into another review cycle
         // Reload job to get updated planRevisionCount
         const refreshed = await db.query.jobs.findFirst({ where: eq(jobs.id, job.id) });
@@ -313,6 +328,11 @@ export class StepRunner {
       systemPrompt = `${systemPrompt}\n\n${resolved.systemPrompt}`;
     }
 
+    const execPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'execute', systemPrompt });
+    await this.emit(job.id, execPromptSeq, { kind: 'prompt-snapshot', phase: 'execute', systemPrompt });
+
+    const mcpToken = await this.mintToken(job.id);
+
     await this.mustTransition(job.id, 'preparing', 'executing');
     await this.callSandboxPrompt(
       job,
@@ -322,6 +342,8 @@ export class StepRunner {
         systemPrompt,
         allowedTools: resolved?.allowedTools,
         workingDir: workspace,
+        mcpToken,
+        mcpEndpoint: this.deps.mcpEndpoint,
         sessionPhase: 'execute',
         plugins: resolvedPlugins,
       },
@@ -337,7 +359,7 @@ export class StepRunner {
     _workspace: string,
     log: Logger,
   ): Promise<void> {
-    const { db, sandbox } = this.deps;
+    const { db } = this.deps;
     const cfg = step.config as { command: string; timeoutSeconds?: number; capture?: string };
 
     log.info({ command: cfg.command }, 'running check step');
@@ -452,21 +474,23 @@ export class StepRunner {
   private async holdForPlanReview(
     jobId: string,
     _sandboxInfo: SandboxInfo,
+    holdHours: number,
     log: Logger,
   ): Promise<PlanWakeEvent | { kind: 'timeout' }> {
     const { db } = this.deps;
-    const holdUntil = new Date(Date.now() + PLAN_HOLD_MS);
+    const holdMs = holdHours * 60 * 60 * 1000;
+    const holdUntil = new Date(Date.now() + holdMs);
 
     await db
       .update(jobs)
       .set({ planReviewHoldUntil: holdUntil, updatedAt: new Date() })
       .where(eq(jobs.id, jobId));
 
-    log.info({ holdUntil }, 'entering hot hold for plan review');
+    log.info({ holdUntil, holdHours }, 'entering hot hold for plan review');
 
     const result = await Promise.race([
       this.waitForWake(jobId),
-      sleep(PLAN_HOLD_MS).then((): { kind: 'timeout' } => ({ kind: 'timeout' })),
+      sleep(holdMs).then((): { kind: 'timeout' } => ({ kind: 'timeout' })),
     ]);
 
     if (result.kind !== 'timeout') {
@@ -644,6 +668,62 @@ export class StepRunner {
       systemPrompt: [basePrompt, ...skillInstructions].filter(Boolean).join('\n\n'),
       allowedTools: [...new Set([...baseTools, ...skillTools])],
     };
+  }
+
+  // ── Plan review helpers ────────────────────────────────────────────────────
+
+  private async getHoldHours(job: Job): Promise<number> {
+    if (!job.conversationId) return DEFAULT_PLAN_HOLD_HOURS;
+    const conv = await this.deps.db.query.conversations.findFirst({
+      where: eq(conversations.id, job.conversationId),
+    });
+    return conv?.planHoldHours ?? DEFAULT_PLAN_HOLD_HOURS;
+  }
+
+  private async dispatchReviewNotifications(job: Job, holdHours: number, log: Logger): Promise<void> {
+    if (!job.conversationId) return;
+    if (!this.deps.mcpSecret || !this.deps.controlPlaneUrl) return;
+
+    const plan = await this.deps.taskTracker.getLatestPlanForJob(job.id);
+    if (!plan) return;
+
+    const planData = plan.data as {
+      title?: string; summary?: string; bodyMarkdown?: string;
+      steps?: Array<{ id: string; content: string; status: string }>;
+      affectedPaths?: string[]; risks?: string[];
+    };
+
+    try {
+      const callbackToken = await mintCallbackToken(job.id, this.deps.mcpSecret, holdHours);
+      const callbackUrl = `${this.deps.controlPlaneUrl}/plan-review/respond`;
+
+      await dispatchToConversation(
+        this.deps.db,
+        job.conversationId,
+        {
+          type: 'plan.ready',
+          job: {
+            id: job.id,
+            title: job.title,
+            description: job.description,
+            githubUrl: job.githubUrl,
+          },
+          plan: {
+            title: planData.title ?? job.title,
+            summary: planData.summary ?? '',
+            bodyMarkdown: planData.bodyMarkdown ?? '',
+            steps: planData.steps ?? [],
+            affectedPaths: planData.affectedPaths ?? [],
+            risks: planData.risks ?? [],
+          },
+          callbackToken,
+          callbackUrl,
+        },
+        log,
+      );
+    } catch (err) {
+      log.warn({ err, jobId: job.id }, 'failed to dispatch plan review notifications');
+    }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

@@ -35,13 +35,14 @@ export class ClaudeProvider implements AgentProvider {
     if (body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
     if (body.allowedTools?.length) options.allowedTools = body.allowedTools;
 
-    // Wire up the in-process submit_plan MCP tool
+    // Wire up in-process MCP tools (submit_plan for planning phases, query_memory always)
     if (body.mcpToken && body.mcpEndpoint) {
       const mcpEndpoint = body.mcpEndpoint;
       const mcpToken = body.mcpToken;
       const INTERNAL_MCP_SERVER = 'praxis-control-plane';
+      const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
 
-      const submitPlanTool = tool(
+      const submitPlanTool = isPlanPhase ? tool(
         'submit_plan',
         'Submit a structured implementation plan for user review. Call this once you have analysed the codebase and are ready to propose a plan.',
         {
@@ -105,9 +106,37 @@ export class ClaudeProvider implements AgentProvider {
             ],
           };
         },
+      ) : null;
+
+      const queryMemoryTool = tool(
+        'query_memory',
+        'Query the repository\'s memory for past design decisions, architectural patterns, and conventions. Use this when you need context about how similar problems were solved before or to stay consistent with existing patterns.',
+        { query: z.string().describe('Natural language question about the codebase design or conventions') },
+        async (args) => {
+          const res = await fetch(`${mcpEndpoint}/query_memory`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${mcpToken}`,
+            },
+            body: JSON.stringify({ query: args.query }),
+          });
+
+          if (!res.ok) {
+            return { content: [{ type: 'text' as const, text: `query_memory failed (${res.status})` }], isError: true };
+          }
+
+          const data = (await res.json()) as { content: string | null; source: string | null; truncated: boolean };
+          if (!data.content) {
+            return { content: [{ type: 'text' as const, text: 'No memory found for this repository.' }] };
+          }
+
+          const suffix = data.truncated ? `\n\n*(results filtered to most relevant chunks — source: ${data.source})*` : '';
+          return { content: [{ type: 'text' as const, text: `${data.content}${suffix}` }] };
+        },
       );
 
-      const internalTools = [submitPlanTool];
+      const internalTools = [queryMemoryTool, ...(submitPlanTool ? [submitPlanTool] : [])];
       options.mcpServers = {
         [INTERNAL_MCP_SERVER]: createSdkMcpServer({
           name: INTERNAL_MCP_SERVER,
