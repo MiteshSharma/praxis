@@ -57,11 +57,24 @@ export class HoldTimeoutError extends Error {
 }
 
 export class StepRunner {
+  private _totalInputTokens = 0;
+  private _totalOutputTokens = 0;
+  private _totalCostUsd = 0;
+
   constructor(private readonly deps: StepRunnerDeps) {}
 
   /** Called by JobOrchestrator after loading repo memory during the preparing phase. */
   setMemory(memoryMarkdown: string | null): void {
     this.deps.memoryMarkdown = memoryMarkdown;
+  }
+
+  /** Returns accumulated token + cost totals across all steps run so far. */
+  getCostSummary(): { inputTokens: number; outputTokens: number; costUsd: number } {
+    return {
+      inputTokens: this._totalInputTokens,
+      outputTokens: this._totalOutputTokens,
+      costUsd: this._totalCostUsd,
+    };
   }
 
   async run(job: Job, sandboxInfo: SandboxInfo): Promise<void> {
@@ -666,7 +679,10 @@ export class StepRunner {
         systemPrompt: opts.systemPrompt,
         allowedTools: opts.allowedTools,
         sessionPhase: opts.sessionPhase,
-        env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '' },
+        env: {
+          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+        },
         mcpToken: opts.mcpToken,
         mcpEndpoint: opts.mcpEndpoint,
         plugins: opts.plugins ?? [],
@@ -694,11 +710,18 @@ export class StepRunner {
         /* leave as string */
       }
 
-      // Surface agent-level errors (e.g. "Credit balance is too low") as job failures.
       if (parsed !== null && typeof parsed === 'object') {
         const msg = parsed as Record<string, unknown>;
+        // Surface agent-level errors (e.g. "Credit balance is too low") as job failures.
         if (msg.type === 'error' && typeof msg.error === 'string') {
           throw new Error(`Agent error: ${msg.error}`);
+        }
+        // Accumulate cost from the SDK's final result message.
+        if (msg.type === 'result' && msg.subtype === 'success') {
+          const usage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+          this._totalInputTokens += usage?.input_tokens ?? 0;
+          this._totalOutputTokens += usage?.output_tokens ?? 0;
+          this._totalCostUsd += typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : 0;
         }
       }
 

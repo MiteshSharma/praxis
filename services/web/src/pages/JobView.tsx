@@ -274,6 +274,11 @@ export function JobView() {
         title={job.title}
         extra={
           <Space>
+            {job.totalCostUsd != null && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                ${job.totalCostUsd.toFixed(4)}
+              </Typography.Text>
+            )}
             <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>
             <Button
               size="small"

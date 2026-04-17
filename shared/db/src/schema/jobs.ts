@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -44,6 +45,10 @@ export const jobs = pgTable(
     maxRetries: integer('max_retries').notNull().default(2),
     errorMessage: text('error_message'),
     errorCategory: text('error_category'),
+
+    totalInputTokens: integer('total_input_tokens'),
+    totalOutputTokens: integer('total_output_tokens'),
+    totalCostUsd: real('total_cost_usd'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

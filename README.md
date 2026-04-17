@@ -1,154 +1,203 @@
 # Praxis
 
-Self-hosted platform where you point an AI agent at a GitHub repo, give it a
-task, and get reviewable work back. Work is produced inside an isolated sandbox
-by a pipeline of agents and deterministic checks, with a human-in-the-loop plan
-review at the front and a learning step at the end that improves the system for
-the same repo on subsequent runs.
+> *praxis* (n.) — from Greek πρᾶξις: the process by which theory is enacted and made real through deliberate, reflective action. Aristotle distinguished *praxis* from mere *poiesis* (making things) — praxis is action that carries meaning and learns from itself.
 
-Praxis sits between two existing patterns:
+Praxis is a self-hosted platform that turns natural-language tasks into reviewed, tested, and merged pull requests. You point it at a GitHub repo, describe what you want, and an AI agent plans the work, waits for your approval, implements it, verifies it with your own checks, then opens a PR — and learns from every run so the next one is better.
 
-- **A chat agent with tools** — like Cursor or Claude Desktop, but with durable
-  state, multi-step pipelines, and a reviewable plan.
-- **A CI pipeline** — like GitHub Actions, but where the "scripts" are AI
-  sessions and the input is natural language.
-
-The opinionated core: **build a plan, review the plan, execute the plan, verify
-with deterministic checks, learn from the result.**
+**The cycle mirrors the word:** plan → review → execute → verify → publish → learn → repeat.
 
 ---
 
-## Current status — scaffold
+## How it works
 
-The repo currently implements the scaffold phase: the plumbing is in place and
-every service boots, logs, and responds to health checks. No business logic yet.
+```
+You submit a task
+       │
+       ▼
+  [ planning ]   Agent reads the repo and the repo's memory file,
+                 proposes a structured plan with steps and open questions.
+       │
+       ▼
+  [ plan review ] You approve, ask for revisions, or reject.
+       │
+       ▼
+  [ executing ]  Agent implements the plan, editing files in an isolated sandbox.
+       │
+       ▼
+  [ checking ]   Your own shell commands run as deterministic checks (tests,
+                 lint, type-check). Failures trigger a recovery execute step.
+       │
+       ▼
+  [ publishing ] Git commit + push + GitHub PR opened automatically.
+       │
+       ▼
+  [ learning ]   A single-turn agent pass updates a per-repo MEMORY.md file
+                 in object storage so future jobs on the same repo start smarter.
+       │
+       ▼
+  [ completed ]  PR link available. Cost recorded.
+```
 
-What's wired up:
+Every status transition is streamed live to the UI via SSE.
 
-- **Monorepo layout** with `shared/*` path alias (`@shared/telemetry`,
-  `@shared/contracts`, …) and a single root `package.json`.
-- **Three services**
-  - `services/backend` — Hono + oRPC + pg-boss, one codebase with a `MODE` env
-    var dispatcher that can run as `control-plane`, `worker`, or `all`.
-  - `services/sandbox-worker` — Hono server that will later execute jobs inside
-    a sandbox container. Currently only exposes health endpoints and stub
-    `/prompt` and `/exec` routes.
-  - `services/web` — Vite + React + AntD + TanStack Query, calling the backend
-    through an end-to-end typed oRPC client.
-- **Infra via docker compose** — Postgres 18, Redis 7, MinIO.
-- **Shared telemetry** — pino structured logging, Zod-validated env,
-  OpenTelemetry SDK (opt-in), graceful shutdown, request-id middleware.
-- **Auto-generated API docs** — `@orpc/openapi` + Scalar at `/docs`.
-- **Smoke test** — `scripts/smoke.ts` exercises every scaffold exit criterion
-  in one command.
+---
 
-### Service endpoints
+## Features
 
-| Service | URL | Notes |
+- **Plan-first workflow** — agent always proposes a structured plan (title, summary, steps, affected paths, risks, open questions) before touching any code.
+- **Human-in-the-loop review** — hot hold (10 min) waits for approve / revise / reject before executing. Cold resume if the hold expires.
+- **Repo memory** — per-repo `MEMORY.md` stored in MinIO. Injected into the plan prompt so agents accumulate knowledge across jobs on the same repo.
+- **Multi-step workflows** — configurable plan / execute / check step sequences. Recovery execute steps run automatically after a failed check.
+- **Live timeline** — SSE stream shows every agent turn, tool call, status transition, and artifact in real time.
+- **Phase progress bar** — visual indicator across Planning → Plan review → Executing → Publishing PR → Learning → Done.
+- **Cost tracking** — input tokens, output tokens, and estimated USD cost stored per job and displayed in the header.
+- **Multi-provider sandbox** — provider-agnostic architecture; Claude (Anthropic) ships today, OpenAI/Codex slot in without touching the orchestrator.
+- **MCP plugins** — per-conversation MCP servers (stdio or HTTP) wired into agent sessions.
+- **Restart** — any failed job can be restarted with one click; a new job is created from the same inputs.
+
+---
+
+## Services
+
+| Service | URL | Role |
 |---|---|---|
-| Backend control-plane | http://localhost:3000 | `/health`, `/ready`, `/rpc/*`, `/openapi.json`, `/docs` |
-| Backend worker health | http://localhost:3101 | `/health`, `/ready` (pg-boss consumer runs in the same process) |
-| Sandbox-worker | http://localhost:8787 | `/health`, `/ready`; `/prompt`, `/exec` return `501` for now |
-| Web (Vite dev) | http://localhost:5173 | Single page calling `rpc.health()` |
-| Postgres | localhost:5433 | user `praxis` / pass `praxis` / db `praxis` |
-| Redis | localhost:6379 | |
-| MinIO S3 | http://localhost:9000 | |
-| MinIO console | http://localhost:9001 | `minioadmin` / `minioadmin` |
+| Backend (control-plane) | http://localhost:3000 | oRPC API, SSE, MCP endpoint |
+| Backend (worker health) | http://localhost:3101 | pg-boss consumer health check |
+| Sandbox-worker | http://localhost:8787 | Runs agent sessions inside the sandbox |
+| Web (Vite dev) | http://localhost:5173 | React UI |
+| Postgres | localhost:5433 | Primary database |
+| Redis | localhost:6379 | pg-boss queue + plan-event pub/sub |
+| MinIO S3 | http://localhost:9000 | Artifact + memory file storage |
+| MinIO console | http://localhost:9001 | Bucket browser (`minioadmin` / `minioadmin`) |
+| API docs (Scalar) | http://localhost:3000/docs | Auto-generated from oRPC contract |
 
 ---
 
-## Running it
+## Prerequisites
 
-Everything is driven through the `Makefile`. `make help` prints the full menu.
+- macOS or Linux
+- [nvm](https://github.com/nvm-sh/nvm) (installed by `make setup`)
+- Node 24 (pinned in `.nvmrc`, selected automatically by make targets)
+- pnpm 10 (installed by `make setup`)
+- Docker Desktop or equivalent
 
-### One-time setup
+---
+
+## Getting started
+
+### 1. Clone and install
 
 ```bash
-make setup      # installs nvm, node (from .nvmrc), and pnpm globally
+git clone https://github.com/MiteshSharma/praxis.git
+cd praxis
+make setup      # installs nvm, node 24, pnpm 10
 make prepare    # pnpm install --frozen-lockfile
-cp .env.example .env.local    # backend reads this automatically at boot
 ```
 
-### Day-to-day
+### 2. Configure
 
 ```bash
-make up         # infra-up (docker compose) + dev (all three services)
+cp .env.example .env.local
 ```
 
-That runs Postgres/Redis/MinIO in docker and starts web + backend (MODE=all) +
-sandbox-worker with hot reload. In another terminal:
+Edit `.env.local` — at minimum set:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+GITHUB_TOKEN=github_pat_...
+MCP_SHARED_SECRET=at-least-32-random-characters-here
+```
+
+### 3. Start infrastructure
 
 ```bash
-make smoke      # 6 checks — prints "smoke test passed" if everything is green
+make infra-up   # starts Postgres, Redis, MinIO (and creates the praxis bucket)
 ```
 
-### Individual services
+### 4. Run database migrations
 
 ```bash
-make dev-backend          # MODE=all
-make dev-sandbox-worker
-make dev-web
+# Apply all migrations in shared/db/drizzle/
+psql $DATABASE_URL -f shared/db/drizzle/0001_init.sql
+psql $DATABASE_URL -f shared/db/drizzle/0002_add_plans.sql
+psql $DATABASE_URL -f shared/db/drizzle/0003_add_workflows.sql
+psql $DATABASE_URL -f shared/db/drizzle/0004_add_conversations_plugins.sql
+psql $DATABASE_URL -f shared/db/drizzle/0005_add_skills.sql
+psql $DATABASE_URL -f shared/db/drizzle/0006_add_repo_memories.sql
+psql $DATABASE_URL -f shared/db/drizzle/0007_add_costs.sql
 ```
 
-To exercise the multi-process split (control-plane and worker as separate
-processes):
+### 5. Start all services
 
 ```bash
-pnpm dev:backend:control-plane   # in one terminal
-pnpm dev:backend:worker          # in another
+make dev        # web + backend (MODE=all) + sandbox-worker, all with hot reload
 ```
 
-### Infra lifecycle
+Or start everything at once (infra + dev):
 
 ```bash
-make infra-up         # start postgres / redis / minio
-make infra-ps         # status
-make infra-logs       # tail
-make infra-down       # stop
-make infra-reset      # stop + wipe volumes (clean slate)
+make up
 ```
 
-### Quality
-
-```bash
-make typecheck
-make lint
-make format
-```
-
-### Cleanup
-
-```bash
-make clean            # node_modules, dist, .vite
-```
+Open http://localhost:5173 and submit a job.
 
 ---
 
 ## Configuration
 
-Backend reads `.env.local` (then `.env`) via Node 24's built-in
-`process.loadEnvFile` before Zod validation. See `.env.example` for the full
-set. Key vars:
+Backend reads `.env.local` (then `.env`) at startup via Node 24's built-in `process.loadEnvFile`.
 
-| Var | Default | Purpose |
+| Variable | Default | Purpose |
 |---|---|---|
 | `MODE` | `all` | `control-plane`, `worker`, or `all` |
 | `DATABASE_URL` | `postgres://praxis:praxis@localhost:5433/praxis` | Postgres connection |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection |
+| `REDIS_URL` | `redis://localhost:6379` | Redis (pg-boss + plan-event pub/sub) |
 | `PORT` | `3000` | Control-plane HTTP port |
-| `WORKER_HEALTH_PORT` | `3101` | Worker role health port |
+| `WORKER_HEALTH_PORT` | `3101` | Worker health port |
 | `LOG_LEVEL` | `info` | pino log level |
-| `OTEL_TRACES` | `off` (dev) | `off`, `console`, or `otlp` — see below |
+| `ANTHROPIC_API_KEY` | — | Required for Claude agent sessions |
+| `GITHUB_TOKEN` | — | Clone repos + open PRs |
+| `MCP_SHARED_SECRET` | — | Signs MCP JWTs (≥ 32 chars) |
+| `CONTROL_PLANE_MCP_URL` | `http://localhost:3000/mcp` | URL the sandbox calls for `submit_plan` |
+| `STORAGE_ENDPOINT` | `http://localhost:9000` | MinIO/S3 endpoint |
+| `STORAGE_BUCKET` | `praxis` | Bucket for artifacts and repo memory |
+| `STORAGE_ACCESS_KEY` | `minioadmin` | MinIO access key |
+| `STORAGE_SECRET_KEY` | `minioadmin` | MinIO secret key |
+| `STORAGE_REGION` | `us-east-1` | Storage region |
+| `OPENAI_API_KEY` | — | Optional — reserved for OpenAI provider (not yet active) |
+| `OTEL_TRACES` | `off` | `off`, `console`, or `otlp` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Required when `OTEL_TRACES=otlp` |
 
-### Traces
+---
 
-OpenTelemetry tracing is **opt-in during development** to keep the console
-quiet. Flip it on when you're debugging something:
+## Development commands
 
 ```bash
-OTEL_TRACES=console make dev     # dump spans to stdout
-OTEL_TRACES=otlp OTEL_EXPORTER_OTLP_ENDPOINT=https://… make dev
+make up                  # full local stack (infra + all services)
+make dev                 # services only (assumes infra already running)
+make dev-backend         # backend only (MODE=all)
+make dev-sandbox-worker  # sandbox-worker only
+make dev-web             # Vite dev server only
+
+make typecheck           # tsc --noEmit across the workspace
+make lint                # Biome check
+make format              # Biome format --write
+make smoke               # end-to-end smoke test against a running stack
+
+make infra-up            # start Postgres / Redis / MinIO
+make infra-down          # stop infra
+make infra-reset         # stop + wipe volumes (clean slate)
+make infra-logs          # tail infra container logs
+make infra-ps            # show container status
+
+make clean               # remove node_modules, dist, .vite
+```
+
+To run control-plane and worker as separate processes:
+
+```bash
+pnpm dev:backend:control-plane   # terminal 1
+pnpm dev:backend:worker          # terminal 2
 ```
 
 ---
@@ -157,21 +206,110 @@ OTEL_TRACES=otlp OTEL_EXPORTER_OTLP_ENDPOINT=https://… make dev
 
 ```
 praxis/
-├── Makefile                # all dev commands
+├── Makefile
 ├── docker/
-│   └── docker-compose.dev.yml
+│   └── docker-compose.dev.yml     Postgres 18, Redis 7, MinIO
 ├── scripts/
-│   ├── dev.ts              # concurrently runs web + backend + sandbox
-│   └── smoke.ts            # end-to-end smoke test
+│   ├── dev.ts                     concurrently: web + backend + sandbox-worker
+│   └── smoke.ts                   end-to-end smoke test
+│
 ├── shared/
-│   ├── contracts/          # oRPC router (shared types between backend + web)
-│   └── telemetry/          # pino, OTel, shutdown, request-id
+│   ├── contracts/                 oRPC contract + Zod DTOs + event types
+│   ├── core/                      job orchestrator, step runner, learning pass,
+│   │                              prompts, MCP auth, default agent/workflow
+│   ├── db/                        Drizzle ORM schema + migrations + client
+│   ├── memory/                    repo-key normalisation, MEMORY.md load/save/validate
+│   ├── storage/                   S3-compatible storage singleton (MinIO)
+│   ├── mcp/                       MCP plugin registry
+│   ├── sandbox/                   local sandbox provider
+│   ├── telemetry/                 pino, OpenTelemetry, graceful shutdown
+│   └── workflows/                 workflow definition types, parser, loader
+│
 └── services/
-    ├── backend/            # Hono + oRPC + pg-boss (MODE=control-plane|worker|all)
-    ├── sandbox-worker/     # Hono server baked into the sandbox image
-    └── web/                # Vite + React + AntD
+    ├── backend/                   Hono + oRPC + pg-boss
+    │   └── src/
+    │       ├── control-plane.ts   mounts RPC, SSE, health, MCP routes
+    │       ├── worker.ts          pg-boss consumer
+    │       ├── routes/            rpc.ts, sse.ts, health.ts
+    │       └── services/          jobs, plans, workflows, agents,
+    │                              conversations, plugins, memories
+    │
+    ├── sandbox-worker/            Hono server running inside the sandbox
+    │   └── src/
+    │       ├── routes/            /prompt, /exec, /publish, /abort, /health
+    │       ├── services/          agent, exec, publish
+    │       └── providers/         AgentProvider interface + Claude, OpenAI (stub), Demo
+    │           └── tools/         ToolDefinition schemas + ToolExecutor (for non-Claude providers)
+    │
+    └── web/                       Vite + React + AntD + TanStack Query
+        └── src/
+            ├── pages/             JobView, CreateJob, MemoryList, MemoryEditor,
+            │                      ConversationDetail, AgentBrowse, WorkflowBrowse
+            └── components/        JobPhaseBar, StepProgress, PlanReviewCard, PluginsPanel
 ```
 
-Other `shared/*` directories (`core`, `db`, `sandbox`, `agent-runtime`,
-`stream`, `storage`, `skills`, `mcp`, `memory`) are placeholders — they get
-filled in as features land.
+---
+
+## Job state machine
+
+```
+queued → provisioning → preparing → building → plan_ready → plan_review
+                                                                 │
+                                              ┌──────────────────┤
+                                              │                  │
+                                        plan_revising      preparing
+                                              │                  │
+                                         plan_ready         executing ←──┐
+                                              │                  │       │
+                                         plan_review         checking    │
+                                              │                  │       │
+                                        plan_rejected       preparing ───┘
+                                                                 │
+                                                            publishing
+                                                           (PR created)
+                                                                 │
+                                                            learning
+                                                           (memory update)
+                                                                 │
+                                                            completed
+```
+
+Terminal states: `completed`, `plan_rejected`, `failed`.  
+All valid transitions are defined in `shared/contracts/src/events.ts` → `JOB_TRANSITIONS`.
+
+---
+
+## Adding a new provider
+
+The sandbox-worker uses a provider abstraction — each AI provider is one file behind the `AgentProvider` interface:
+
+```
+providers/
+  types.ts           AgentProvider interface + normalized SSE format spec
+  claude.ts          Anthropic Claude (active)
+  openai.ts          OpenAI / Codex (stub — see implementation guide inside)
+  demo.ts            Deterministic demo agent (no API key needed)
+  tools/
+    definitions.ts   Tool schemas in OpenAI function-calling format
+    executor.ts      Executes read_file, write_file, edit_file, bash, glob, grep, submit_plan
+```
+
+To add a new provider: implement `AgentProvider.run()`, emit normalized SSE messages, add a model-prefix case in `agent.service.ts → resolveProvider()`. The orchestrator, step-runner, and UI need no changes.
+
+---
+
+## Tech stack
+
+| Concern | Choice |
+|---|---|
+| Runtime | Node 24, TypeScript 5.6 strict |
+| HTTP framework | Hono 4.6 |
+| RPC | oRPC 1.9 (contract → handler → client, end-to-end typed) |
+| Database | Postgres 18 + Drizzle ORM 0.36 |
+| Queue | pg-boss 10 (Postgres-backed job queue) |
+| Pub/sub | Redis 7 (plan-event wake signals) |
+| AI (Claude) | @anthropic-ai/claude-agent-sdk |
+| Object storage | MinIO (S3-compatible) via @aws-sdk/client-s3 |
+| Frontend | React 18, Ant Design 5, TanStack Query 5, React Router 6 |
+| Lint / format | Biome 1.9 |
+| Tests | Vitest 2.1 (installed; test suite forthcoming) |

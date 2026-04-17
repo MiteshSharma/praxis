@@ -23,18 +23,26 @@ import { appendTimeline } from './transitions';
  * This is orchestrator-level (not a workflow step). Failures are logged at
  * warn and do NOT fail the job — the previous memory is kept intact.
  */
+export interface LearningCost {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
 export async function runLearningPass(
   jobId: string,
   sandboxInfo: SandboxInfo,
   workspace: string,
   deps: { db: Database; log: Logger },
-): Promise<void> {
+): Promise<LearningCost> {
   const { db, log } = deps;
+
+  const zeroCost: LearningCost = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
   const job = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
   if (!job) {
     log.warn({ jobId }, 'learning pass: job not found, skipping');
-    return;
+    return zeroCost;
   }
 
   let repoKey: string;
@@ -42,7 +50,7 @@ export async function runLearningPass(
     repoKey = normalizeRepoKey(job.githubUrl);
   } catch (err) {
     log.warn({ jobId, githubUrl: job.githubUrl, err }, 'learning pass: cannot normalize repo key, skipping');
-    return;
+    return zeroCost;
   }
 
   // Load current memory (or empty template for first job on this repo)
@@ -64,9 +72,9 @@ ${jobContext}
 Please return the updated memory file in full. Use job id "${job.id.substring(0, 8)}" for any new entries you add.`;
 
   // Call the sandbox /prompt endpoint with maxTurns: 1
-  let responseText: string;
+  let callResult: { text: string } & LearningCost;
   try {
-    responseText = await callSandboxForText(sandboxInfo, {
+    callResult = await callSandboxForText(sandboxInfo, {
       sessionId: `${jobId}:learning`,
       jobId,
       title: `Learning pass for job ${job.id.substring(0, 8)}`,
@@ -75,17 +83,23 @@ Please return the updated memory file in full. Use job id "${job.id.substring(0,
       model: LEARNING_AGENT.model,
       systemPrompt: LEARNING_AGENT.systemPrompt,
       maxTurns: 1,
-      env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '' },
+      env: {
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+      },
     });
   } catch (err) {
     log.warn({ err, jobId, repoKey }, 'learning pass: LLM call failed; keeping previous memory');
-    return;
+    return zeroCost;
   }
+
+  const { text: responseText, inputTokens, outputTokens, costUsd } = callResult;
+  const cost: LearningCost = { inputTokens, outputTokens, costUsd };
 
   const newMarkdown = responseText.trim();
   if (!newMarkdown) {
     log.warn({ jobId, repoKey }, 'learning pass: empty response; keeping previous memory');
-    return;
+    return cost;
   }
 
   try {
@@ -105,15 +119,17 @@ Please return the updated memory file in full. Use job id "${job.id.substring(0,
         errors: err instanceof InvalidMemoryFormatError ? err.errors : [err.message],
       });
       log.warn({ jobId, seq }, 'memory-rejected event appended');
-      return;
+      return cost;
     }
     if (err instanceof StorageNotConfiguredError) {
       log.warn({ jobId, repoKey }, 'learning pass: storage not configured; skipping memory save');
-      return;
+      return cost;
     }
     // Any other storage error (e.g. NoSuchBucket) — warn and skip, never fail the job
     log.warn({ jobId, repoKey, err }, 'learning pass: storage error saving memory; keeping previous');
   }
+
+  return cost;
 }
 
 // ── Internals ──────────────────────────────────────────────────────────────
@@ -131,7 +147,7 @@ async function callSandboxForText(
     maxTurns: number;
     env: Record<string, string>;
   },
-): Promise<string> {
+): Promise<{ text: string } & LearningCost> {
   const requestId = randomUUID();
   const response = await fetch(`${sandboxInfo.endpoint}/prompt`, {
     method: 'POST',
@@ -144,8 +160,12 @@ async function callSandboxForText(
   }
 
   // The SDK emits a final { type: 'result', subtype: 'success', result: '<text>' } message.
-  // Collect it from the SSE stream.
-  let resultText = '';
+  // Collect text and cost from the SSE stream.
+  let text = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let costUsd = 0;
+
   for await (const chunk of parseSSE(response.body)) {
     let parsed: unknown = chunk;
     try {
@@ -161,7 +181,11 @@ async function callSandboxForText(
       }
       if (msg.type === 'result') {
         if (msg.subtype === 'success' && typeof msg.result === 'string') {
-          resultText = msg.result;
+          text = msg.result;
+          const usage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+          inputTokens = usage?.input_tokens ?? 0;
+          outputTokens = usage?.output_tokens ?? 0;
+          costUsd = typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : 0;
         } else if (typeof msg.subtype === 'string' && msg.subtype.startsWith('error')) {
           throw new Error(`Agent ended with error: ${msg.subtype}`);
         }
@@ -169,7 +193,7 @@ async function callSandboxForText(
     }
   }
 
-  return resultText;
+  return { text, inputTokens, outputTokens, costUsd };
 }
 
 async function saveRejectedArtifact(

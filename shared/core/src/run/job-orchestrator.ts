@@ -106,14 +106,24 @@ export class JobOrchestrator {
       await this.finalize(jobRow, sandboxInfo, workspace, jobLog);
 
       // ── Learning pass (after PR) ─────────────────────────────────────────
+      const stepCost = this.stepRunner.getCostSummary();
+      let totalInputTokens = stepCost.inputTokens;
+      let totalOutputTokens = stepCost.outputTokens;
+      let totalCostUsd = stepCost.costUsd;
+
       const freshJob = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
       if (!freshJob?.disableLearning) {
         await this.mustTransition(jobId, 'publishing', 'learning');
-        await runLearningPass(jobId, sandboxInfo, workspace, { db, log: jobLog });
+        const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log: jobLog });
+        totalInputTokens += learningCost.inputTokens;
+        totalOutputTokens += learningCost.outputTokens;
+        totalCostUsd += learningCost.costUsd;
         await this.mustTransition(jobId, 'learning', 'completed', { completedAt: new Date() });
       } else {
         await this.mustTransition(jobId, 'publishing', 'completed', { completedAt: new Date() });
       }
+
+      await db.update(jobs).set({ totalInputTokens, totalOutputTokens, totalCostUsd }).where(eq(jobs.id, jobId));
       await this.emitCompleted(jobId);
     } catch (err) {
       if (err instanceof PlanRejectedError) {
@@ -186,14 +196,24 @@ export class JobOrchestrator {
         await this.finalize(jobRow, sandboxInfo, workspace, log);
 
         // ── Learning pass (after PR) ───────────────────────────────────────
+        const stepCost = this.stepRunner.getCostSummary();
+        let totalInputTokens = stepCost.inputTokens;
+        let totalOutputTokens = stepCost.outputTokens;
+        let totalCostUsd = stepCost.costUsd;
+
         const freshJob = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
         if (!freshJob?.disableLearning) {
           await this.mustTransition(jobId, 'publishing', 'learning');
-          await runLearningPass(jobId, sandboxInfo, workspace, { db, log });
+          const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log });
+          totalInputTokens += learningCost.inputTokens;
+          totalOutputTokens += learningCost.outputTokens;
+          totalCostUsd += learningCost.costUsd;
           await this.mustTransition(jobId, 'learning', 'completed', { completedAt: new Date() });
         } else {
           await this.mustTransition(jobId, 'publishing', 'completed', { completedAt: new Date() });
         }
+
+        await db.update(jobs).set({ totalInputTokens, totalOutputTokens, totalCostUsd }).where(eq(jobs.id, jobId));
         await this.emitCompleted(jobId);
       } else {
         // Revise: re-run from current position in step runner (plan step will handle revision)
