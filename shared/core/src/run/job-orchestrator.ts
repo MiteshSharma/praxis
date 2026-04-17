@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { JobStatus, NotifyEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
-import { type Database, type Job, artifacts, jobSteps, jobs, sandboxes, workflowVersions } from '@shared/db';
+import { type Database, type Job, artifacts, jobSteps, jobs, plans, sandboxes, workflowVersions } from '@shared/db';
 import { EMPTY_MEMORY_TEMPLATE, loadMemoryFile, normalizeRepoKey } from '@shared/memory';
 import type { LocalSandboxProvider, SandboxInfo } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
 import type { WorkflowDefinition } from '@shared/workflows';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import type { Plan } from '@shared/db';
 import type PgBoss from 'pg-boss';
 import { emitNotification } from '../egress/notify';
 import { DEFAULT_WORKFLOW } from '../defaults/default-workflow';
@@ -95,8 +96,11 @@ export class JobOrchestrator {
       const memoryMarkdown = await this.loadRepoMemory(jobRow, jobLog);
       this.stepRunner.setMemory(memoryMarkdown);
 
-      // ── Materialise steps ────────────────────────────────────────────────
-      await this.prepareSteps(jobRow);
+      // ── Materialise steps (or restore from checkpoint) ───────────────────
+      const isCheckpoint = await this.restoreCheckpointOrPrepare(jobRow);
+      if (isCheckpoint) {
+        jobLog.info('resuming from approved plan checkpoint — skipping plan phase');
+      }
 
       // ── Run steps ────────────────────────────────────────────────────────
       await this.stepRunner.run(jobRow, sandboxInfo);
@@ -401,6 +405,10 @@ export class JobOrchestrator {
       return null;
     }
 
+    const plan = await this.loadApprovedPlan(job.id);
+    const prTitle = await this.generatePrTitle(job, plan, sandboxInfo, log);
+    const prBody = buildPrBody(job, plan);
+
     const requestId = randomUUID();
     const response = await fetch(`${sandboxInfo.endpoint}/publish`, {
       method: 'POST',
@@ -410,9 +418,9 @@ export class JobOrchestrator {
         repoUrl: job.githubUrl,
         baseBranch: job.githubBranch,
         branchName: `praxis/job-${job.id.substring(0, 8)}`,
-        commitMessage: job.title,
-        prTitle: job.title,
-        prBody: `${job.description ?? ''}\n\nCreated by Praxis (job ${job.id}).`,
+        commitMessage: prTitle,
+        prTitle,
+        prBody,
         githubToken,
         gitAuthor: { name: 'praxis[bot]', email: 'bot@praxis.local' },
         workingDir: sandboxInfo.providerId.replace(/^local:\/\//, ''),
@@ -430,6 +438,104 @@ export class JobOrchestrator {
       prNumber: number;
       prUrl: string;
     };
+  }
+
+  /**
+   * If the job already has an approved plan from a previous run (checkpoint
+   * resume), marks all plan steps as passed and resets failed/running steps
+   * to pending so the step runner skips planning and retries from the execute
+   * phase. Returns true if checkpoint mode was activated, false for a fresh run.
+   */
+  private async restoreCheckpointOrPrepare(job: Job): Promise<boolean> {
+    const { db } = this.deps;
+    const approvedPlan = await this.loadApprovedPlan(job.id);
+    const existingStep = await db.query.jobSteps.findFirst({
+      where: eq(jobSteps.jobId, job.id),
+    });
+
+    if (!approvedPlan || !existingStep) {
+      await this.prepareSteps(job);
+      return false;
+    }
+
+    // Mark plan steps as passed so the step runner skips them
+    await db
+      .update(jobSteps)
+      .set({ status: 'passed', completedAt: new Date() })
+      .where(and(eq(jobSteps.jobId, job.id), eq(jobSteps.kind, 'plan')));
+
+    // Reset failed/running steps to pending so they are retried
+    await db
+      .update(jobSteps)
+      .set({ status: 'pending', startedAt: null, completedAt: null, errorMessage: null })
+      .where(
+        and(
+          eq(jobSteps.jobId, job.id),
+          inArray(jobSteps.status, ['failed', 'running']),
+        ),
+      );
+
+    const seq = await appendTimeline(db, job.id, 'checkpoint-resume', {
+      planId: approvedPlan.id,
+      planVersion: approvedPlan.version,
+    });
+    await this.emit(job.id, seq, {
+      kind: 'chunk',
+      raw: { type: 'checkpoint-resume', message: 'Resuming from approved plan — skipping planning phase' },
+    });
+
+    return true;
+  }
+
+  private async loadApprovedPlan(jobId: string): Promise<Plan | null> {
+    const plan = await this.deps.db.query.plans.findFirst({
+      where: and(eq(plans.jobId, jobId), eq(plans.status, 'approved')),
+      orderBy: desc(plans.version),
+    });
+    return plan ?? null;
+  }
+
+  /**
+   * Single-turn LLM call: given job + plan, return a conventional commit title.
+   * Falls back to job.title on any failure.
+   */
+  private async generatePrTitle(
+    job: Job,
+    plan: Plan | null,
+    sandboxInfo: SandboxInfo,
+    log: Logger,
+  ): Promise<string> {
+    const context = [
+      `Task: ${job.title}`,
+      job.description ? `Description: ${job.description}` : null,
+      plan ? `Plan summary: ${plan.data.summary}` : null,
+      plan?.data.affectedPaths.length
+        ? `Affected paths: ${plan.data.affectedPaths.slice(0, 6).join(', ')}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      const result = await callSandboxSingleTurn(sandboxInfo, {
+        sessionId: `${job.id}:pr-title`,
+        jobId: job.id,
+        title: 'Generate PR title',
+        description: context,
+        model: 'claude-haiku-4-5-20251001',
+        systemPrompt: PR_TITLE_SYSTEM_PROMPT,
+        env: {
+          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+        },
+      });
+      const generated = result.trim();
+      if (generated) return generated;
+    } catch (err) {
+      log.warn({ err, jobId: job.id }, 'PR title generation failed; falling back to job title');
+    }
+
+    return job.title;
   }
 
   private async transition(
@@ -503,6 +609,111 @@ export class JobOrchestrator {
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
+
+const PR_TITLE_SYSTEM_PROMPT = `You generate pull request titles using conventional commits format.
+Respond with ONLY the title — no explanation, no markdown, no punctuation at the end.
+Format: <type>: <short description>
+Types: feat (new feature), fix (bug fix), refactor (code restructure without behavior change),
+chore (maintenance, deps, config), docs (documentation), test (tests), perf (performance).
+Keep the description under 72 characters total.`;
+
+/**
+ * Builds a markdown PR body from the job description and approved plan.
+ */
+function buildPrBody(job: Job, plan: Plan | null): string {
+  const parts: string[] = [];
+
+  if (job.description) {
+    parts.push(`## Task\n\n${job.description}`);
+  }
+
+  if (plan) {
+    parts.push(`## Plan\n\n**${plan.data.title}**\n\n${plan.data.summary}`);
+
+    if (plan.data.steps.length > 0) {
+      const steps = plan.data.steps
+        .map((s) => `- [${s.status === 'done' ? 'x' : ' '}] ${s.content}`)
+        .join('\n');
+      parts.push(`### Steps\n\n${steps}`);
+    }
+
+    if (plan.data.affectedPaths.length > 0) {
+      parts.push(`### Affected files\n\n${plan.data.affectedPaths.map((p) => `- \`${p}\``).join('\n')}`);
+    }
+
+    if (plan.data.risks && plan.data.risks.length > 0) {
+      parts.push(`### Risks\n\n${plan.data.risks.map((r) => `- ${r}`).join('\n')}`);
+    }
+
+    if (plan.data.bodyMarkdown) {
+      parts.push(`### Full plan\n\n${plan.data.bodyMarkdown}`);
+    }
+  }
+
+  parts.push(`---\n_Created by [Praxis](https://github.com/MiteshSharma/praxis) · job \`${job.id.substring(0, 8)}\`_`);
+
+  return parts.join('\n\n');
+}
+
+/**
+ * Makes a single-turn call to the sandbox /prompt endpoint and returns the text result.
+ */
+async function callSandboxSingleTurn(
+  sandboxInfo: SandboxInfo,
+  body: {
+    sessionId: string;
+    jobId: string;
+    title: string;
+    description: string;
+    model: string;
+    systemPrompt: string;
+    env: Record<string, string>;
+  },
+): Promise<string> {
+  const response = await fetch(`${sandboxInfo.endpoint}/prompt`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-request-id': randomUUID() },
+    body: JSON.stringify({ ...body, workingDir: '/', maxTurns: 1 }),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`sandbox /prompt failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let text = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx: number;
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic stream frame split
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const data = frame
+          .split('\n')
+          .filter((l) => l.startsWith('data: '))
+          .map((l) => l.slice(6))
+          .join('\n');
+        if (!data) continue;
+        try {
+          const msg = JSON.parse(data) as Record<string, unknown>;
+          if (msg.type === 'result' && msg.subtype === 'success' && typeof msg.result === 'string') {
+            text = msg.result;
+          }
+        } catch { /* non-JSON frame */ }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return text;
+}
 
 function injectToken(url: string): string {
   const token = process.env.GITHUB_TOKEN;

@@ -1,8 +1,9 @@
 import { ORPCError } from '@orpc/server';
 import type { ArtifactDto, JobDto, JobStepDto } from '@shared/contracts';
-import { TaskIngestService, splitWebInput } from '@shared/core';
-import type { Database } from '@shared/db';
+import { JOB_EXECUTE_QUEUE, TaskIngestService, splitWebInput } from '@shared/core';
+import { type Database, jobs, plans } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
+import { and, eq } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
 import { JobsRepository, toJobDto } from '../repositories/jobs.repository';
 
@@ -24,7 +25,7 @@ export class JobsService {
 
   constructor(
     private readonly db: Database,
-    boss: PgBoss,
+    private readonly boss: PgBoss,
     log: Logger,
   ) {
     this.ingest = new TaskIngestService(db, boss, log);
@@ -66,6 +67,25 @@ export class JobsService {
 
   async delete(jobId: string): Promise<void> {
     await this.repo.delete(jobId);
+  }
+
+  async resumeFromPlan(jobId: string): Promise<{ jobId: string }> {
+    const row = await this.repo.findById(jobId);
+    if (!row) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
+    if (row.status !== 'failed') {
+      throw new ORPCError('BAD_REQUEST', { message: 'only failed jobs can be resumed from a plan checkpoint' });
+    }
+
+    const plan = await this.db.query.plans.findFirst({
+      where: and(eq(plans.jobId, jobId), eq(plans.status, 'approved')),
+    });
+    if (!plan) {
+      throw new ORPCError('BAD_REQUEST', { message: 'no approved plan found — use Restart to run from scratch' });
+    }
+
+    await this.db.update(jobs).set({ status: 'queued', updatedAt: new Date() }).where(eq(jobs.id, jobId));
+    await this.boss.send(JOB_EXECUTE_QUEUE, { jobId });
+    return { jobId };
   }
 
   async restart(jobId: string): Promise<{ jobId: string }> {

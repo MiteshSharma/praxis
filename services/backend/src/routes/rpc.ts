@@ -45,6 +45,9 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     await deps.jobsService.delete(input.jobId);
     return { ok: true };
   });
+  const jobsResumeFromPlan = os.jobs.resumeFromPlan.handler(({ input }) =>
+    deps.jobsService.resumeFromPlan(input.jobId),
+  );
 
   const jobsGetLatestPlan = os.jobs.getLatestPlan.handler(({ input }) =>
     deps.plansService.getLatestPlan(input.jobId),
@@ -169,6 +172,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       listSteps: jobsListSteps,
       restart: jobsRestart,
       delete: jobsDelete,
+      resumeFromPlan: jobsResumeFromPlan,
       getLatestPlan: jobsGetLatestPlan,
       listPlans: jobsListPlans,
       approvePlan: jobsApprovePlan,

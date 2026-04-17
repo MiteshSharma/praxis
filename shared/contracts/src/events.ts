@@ -28,7 +28,7 @@ export const JOB_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   building: ['plan_ready', 'failed'],
   plan_ready: ['plan_review'],
   plan_review: ['plan_revising', 'preparing', 'executing', 'plan_rejected', 'failed'],
-  plan_revising: ['plan_ready', 'failed'],
+  plan_revising: ['plan_ready', 'preparing', 'failed'],
   executing: ['checking', 'executing', 'preparing', 'learning', 'publishing', 'failed'],
   checking: ['checking', 'executing', 'learning', 'publishing', 'failed'],
   learning: ['completed', 'failed'],

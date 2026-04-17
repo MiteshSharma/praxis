@@ -68,6 +68,10 @@ export const contract = {
     delete: oc
       .input(z.object({ jobId: z.string().uuid() }))
       .output(z.object({ ok: z.boolean() })),
+
+    resumeFromPlan: oc
+      .input(z.object({ jobId: z.string().uuid() }))
+      .output(z.object({ jobId: z.string().uuid() })),
   },
 
   workflows: {

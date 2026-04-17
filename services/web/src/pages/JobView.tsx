@@ -139,6 +139,11 @@ export function JobView() {
     onSuccess: ({ jobId: newJobId }) => navigate(`/jobs/${newJobId}`),
   });
 
+  const resumeMutation = useMutation({
+    mutationFn: () => rpc.jobs.resumeFromPlan({ jobId: jobId ?? '' }),
+    onSuccess: () => jobQuery.refetch(),
+  });
+
   const jobQuery = useQuery({
     queryKey: ['job', jobId],
     queryFn: () => rpc.jobs.get({ jobId: jobId ?? '' }),
@@ -156,6 +161,12 @@ export function JobView() {
       const conversationId = jobQuery.data?.conversationId;
       navigate(conversationId ? `/conversations/${conversationId}` : '/conversations');
     },
+  });
+
+  const latestPlanQuery = useQuery({
+    queryKey: ['job', jobId, 'plan'],
+    queryFn: () => rpc.jobs.getLatestPlan({ jobId: jobId ?? '' }),
+    enabled: !!jobId && jobQuery.data?.status === 'failed',
   });
 
   const artifactsQuery = useQuery({
@@ -304,6 +315,16 @@ export function JobView() {
         extra={
           <Space>
             <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>
+            {job.status === 'failed' && latestPlanQuery.data?.status === 'approved' && (
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => resumeMutation.mutate()}
+                loading={resumeMutation.isPending}
+              >
+                Resume from plan
+              </Button>
+            )}
             <Button
               size="small"
               onClick={() => restartMutation.mutate()}
