@@ -1,8 +1,9 @@
 import type { JobStatus } from '@shared/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, Descriptions, Dropdown, Modal, Space, Tag, Timeline, Typography } from 'antd';
+import { Alert, Button, Card, Collapse, Descriptions, Drawer, Dropdown, Modal, Space, Tag, Timeline, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import Markdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import { JobPhaseBar } from '../components/JobPhaseBar';
 import { PlanReviewCard } from '../components/PlanReviewCard';
@@ -119,6 +120,14 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'error',
 };
 
+const PLAN_STATUS_COLOR: Record<string, string> = {
+  draft: 'default',
+  ready: 'blue',
+  needs_answers: 'orange',
+  approved: 'success',
+  rejected: 'error',
+};
+
 /** Statuses where the live stream view is relevant */
 const STREAM_STATUSES = new Set([
   'provisioning', 'preparing', 'building', 'plan_revising',
@@ -133,6 +142,7 @@ export function JobView() {
   const navigate = useNavigate();
   const [items, setItems] = useState<StreamItem[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [planDrawerOpen, setPlanDrawerOpen] = useState(false);
 
   const restartMutation = useMutation({
     mutationFn: () => rpc.jobs.restart({ jobId: jobId ?? '' }),
@@ -163,10 +173,12 @@ export function JobView() {
     },
   });
 
+  // Enable once the job has passed the pre-plan phase
+  const PRE_PLAN_STATUSES = new Set(['queued', 'provisioning', 'preparing', 'building']);
   const latestPlanQuery = useQuery({
     queryKey: ['job', jobId, 'plan'],
     queryFn: () => rpc.jobs.getLatestPlan({ jobId: jobId ?? '' }),
-    enabled: !!jobId && jobQuery.data?.status === 'failed',
+    enabled: !!jobId && !!jobQuery.data && !PRE_PLAN_STATUSES.has(jobQuery.data.status),
   });
 
   const artifactsQuery = useQuery({
@@ -325,6 +337,11 @@ export function JobView() {
                 Resume from plan
               </Button>
             )}
+            {latestPlanQuery.data && (
+              <Button size="small" onClick={() => setPlanDrawerOpen(true)}>
+                View Plan
+              </Button>
+            )}
             <Button
               size="small"
               onClick={() => restartMutation.mutate()}
@@ -421,6 +438,78 @@ export function JobView() {
           )}
         </Card>
       )}
+
+      {/* Read-only plan drawer */}
+      <Drawer
+        title={
+          <Space>
+            <span>{latestPlanQuery.data?.data.title ?? 'Plan'}</span>
+            <Tag color={PLAN_STATUS_COLOR[latestPlanQuery.data?.status ?? ''] ?? 'default'}>
+              v{latestPlanQuery.data?.version} · {latestPlanQuery.data?.status?.toUpperCase()}
+            </Tag>
+          </Space>
+        }
+        open={planDrawerOpen}
+        onClose={() => setPlanDrawerOpen(false)}
+        width={640}
+      >
+        {latestPlanQuery.data && (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {/* Summary */}
+            <Typography.Text>{latestPlanQuery.data.data.summary}</Typography.Text>
+
+            {/* Affected paths */}
+            {latestPlanQuery.data.data.affectedPaths.length > 0 && (
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Affected files</Typography.Text>
+                {latestPlanQuery.data.data.affectedPaths.map((p) => (
+                  <Tag key={p} style={{ marginBottom: 2 }}>{p}</Tag>
+                ))}
+              </div>
+            )}
+
+            {/* Risks */}
+            {(latestPlanQuery.data.data.risks ?? []).length > 0 && (
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Risks</Typography.Text>
+                {(latestPlanQuery.data.data.risks ?? []).map((r, i) => (
+                  <Tag color="orange" key={i} style={{ marginBottom: 2 }}>{r}</Tag>
+                ))}
+              </div>
+            )}
+
+            {/* Steps */}
+            {latestPlanQuery.data.data.steps.length > 0 && (
+              <div>
+                <Typography.Text strong style={{ display: 'block', marginBottom: 4 }}>Steps</Typography.Text>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {latestPlanQuery.data.data.steps.map((step) => (
+                    <li key={step.id} style={{ marginBottom: 6, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ color: step.status === 'done' ? '#52c41a' : step.status === 'skipped' ? '#aaa' : undefined }}>
+                        {step.status === 'done' ? '✓' : step.status === 'skipped' ? '—' : '○'}
+                      </span>
+                      <Typography.Text type={step.status === 'skipped' ? 'secondary' : undefined}>
+                        {step.content}
+                      </Typography.Text>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Full plan body */}
+            <Collapse ghost items={[{
+              key: 'body',
+              label: 'Full plan details',
+              children: (
+                <div style={{ maxHeight: 480, overflow: 'auto' }}>
+                  <Markdown>{latestPlanQuery.data.data.bodyMarkdown}</Markdown>
+                </div>
+              ),
+            }]} />
+          </Space>
+        )}
+      </Drawer>
     </Space>
   );
 }
