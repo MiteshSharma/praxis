@@ -30,6 +30,7 @@ export const jobs = pgTable(
     workflowId: uuid('workflow_id'),
     workflowVersionId: uuid('workflow_version_id'),
     disableLearning: boolean('disable_learning').notNull().default(false),
+    model: text('model'),
 
     githubUrl: text('github_url').notNull(),
     githubBranch: text('github_branch').notNull().default('main'),

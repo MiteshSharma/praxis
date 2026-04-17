@@ -2,28 +2,33 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { ExecService } from '../../services/exec.service';
 
-export interface SubmitPlanConfig {
-  mcpEndpoint: string;
-  mcpToken: string;
+export interface ToolExecutorConfig {
+  workingDir: string;
+  mcpEndpoint?: string;
+  mcpToken?: string;
 }
 
 /**
  * Executes tool calls by name + args for non-Claude providers.
  *
  * Mirrors the built-in tools Claude gets from the SDK:
- *   read_file, write_file, edit_file, bash, glob, grep, submit_plan
+ *   read_file, write_file, edit_file, bash, glob, grep, submit_plan, query_memory
  *
- * submit_plan makes a direct HTTP POST to the control-plane endpoint —
- * no MCP involved. Claude uses MCP wiring to reach the same endpoint;
- * this executor calls it directly.
+ * submit_plan and query_memory make direct HTTP POSTs to the control-plane MCP
+ * endpoint — no MCP SDK involved. Claude uses in-process MCP wiring to reach
+ * the same endpoints; this executor calls them directly.
  */
 export class ToolExecutor {
   private readonly exec = new ExecService();
+  private readonly workingDir: string;
+  private readonly mcpEndpoint?: string;
+  private readonly mcpToken?: string;
 
-  constructor(
-    private readonly workingDir: string,
-    private readonly submitPlanConfig?: SubmitPlanConfig,
-  ) {}
+  constructor(config: ToolExecutorConfig) {
+    this.workingDir = config.workingDir;
+    this.mcpEndpoint = config.mcpEndpoint;
+    this.mcpToken = config.mcpToken;
+  }
 
   async execute(name: string, args: Record<string, unknown>): Promise<string> {
     switch (name) {
@@ -45,6 +50,8 @@ export class ToolExecutor {
         );
       case 'submit_plan':
         return this.submitPlan(args);
+      case 'query_memory':
+        return this.queryMemory(String(args.query));
       default:
         return `Unknown tool: ${name}`;
     }
@@ -104,10 +111,10 @@ export class ToolExecutor {
   }
 
   private async submitPlan(args: Record<string, unknown>): Promise<string> {
-    if (!this.submitPlanConfig) {
+    if (!this.mcpEndpoint || !this.mcpToken) {
       return 'Error: submit_plan is not available — mcpEndpoint and mcpToken are required';
     }
-    const { mcpEndpoint, mcpToken } = this.submitPlanConfig;
+    const { mcpEndpoint, mcpToken } = this;
     const res = await fetch(`${mcpEndpoint}/submit_plan`, {
       method: 'POST',
       headers: {
@@ -122,5 +129,24 @@ export class ToolExecutor {
     }
     const data = (await res.json()) as { planId: string; version: number };
     return `Plan submitted. planId=${data.planId} version=${data.version}. Waiting for user review.`;
+  }
+
+  private async queryMemory(query: string): Promise<string> {
+    if (!this.mcpEndpoint || !this.mcpToken) {
+      return 'Error: query_memory is not available — mcpEndpoint and mcpToken are required';
+    }
+    const res = await fetch(`${this.mcpEndpoint}/query_memory`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${this.mcpToken}`,
+      },
+      body: JSON.stringify({ query }),
+    });
+    if (!res.ok) return `query_memory failed (${res.status})`;
+    const data = (await res.json()) as { content: string | null; source: string | null; truncated: boolean };
+    if (!data.content) return 'No memory found for this repository.';
+    const suffix = data.truncated ? `\n\n*(filtered to most relevant chunks — source: ${data.source})*` : '';
+    return `${data.content}${suffix}`;
   }
 }

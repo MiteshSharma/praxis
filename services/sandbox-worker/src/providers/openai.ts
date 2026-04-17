@@ -1,60 +1,157 @@
-import type { PromptBody } from '../dto/agent.dto';
-import type { AgentProvider } from './types';
+import OpenAI from 'openai';
+import type { PromptBody } from '../dto/agent.dto.js';
+import { registerProvider } from './registry.js';
+import type { AgentProvider } from './types.js';
+import { ToolExecutor } from './tools/executor.js';
+import { FILE_TOOLS, MEMORY_TOOLS, PLAN_TOOLS, type ToolDefinition } from './tools/definitions.js';
 
 /**
- * OpenAI provider — Codex / GPT-4o / o-series models.
- *
- * NOT YET IMPLEMENTED. Use a claude-* model.
- *
- * ── Implementation guide ──────────────────────────────────────────────────
- *
- * Infrastructure already in place:
- *   providers/tools/definitions.ts  — FILE_TOOLS + PLAN_TOOLS in OpenAI schema format
- *   providers/tools/executor.ts     — ToolExecutor: executes read_file, write_file,
- *                                     edit_file, bash, glob, grep, submit_plan
- *
- * Steps to implement:
- *
- * 1. Build the tool list:
- *      const tools = [...FILE_TOOLS, ...(hasMcp ? PLAN_TOOLS : [])];
- *      // convert ToolDefinition[] to OpenAI ChatCompletionTool[] format
- *
- * 2. Tool loop (POST /v1/chat/completions or /v1/responses):
- *      while (true) {
- *        const response = await openai.chat.completions.create({ model, messages, tools });
- *        emit normalized assistant message
- *        if no tool_calls → break
- *        for each tool_call:
- *          const result = await executor.execute(name, args)
- *          emit normalized user message (tool result)
- *          append to messages
- *      }
- *
- * 3. Emit final result message:
- *      emit({
- *        type: 'result', subtype: 'success',
- *        result: lastTextContent,
- *        total_cost_usd: 0,   // OpenAI doesn't return cost in-response
- *        usage: {
- *          input_tokens: response.usage.prompt_tokens,
- *          output_tokens: response.usage.completion_tokens,
- *        },
- *      });
- *
- * 4. API key: body.env?.OPENAI_API_KEY
- *
- * 5. MCP / plugins: not supported for this provider — ignored.
- *    submit_plan is handled by ToolExecutor via direct HTTP (no MCP needed).
- * ──────────────────────────────────────────────────────────────────────────
+ * OpenAI provider — GPT-4o, o-series, and Codex models.
+ * Uses the openai SDK directly with a manual tool-calling loop.
+ * Tools are passed as OpenAI function-calling format (JSON Schema) — no Zod bridge needed.
  */
 export class OpenAIProvider implements AgentProvider {
   async run(
-    _body: PromptBody,
-    _signal: AbortSignal,
-    _emit: (chunk: unknown) => Promise<void>,
+    body: PromptBody,
+    signal: AbortSignal,
+    emit: (chunk: unknown) => Promise<void>,
   ): Promise<void> {
-    throw new Error(
-      'OpenAI provider is not yet implemented. Use a claude-* model instead.',
-    );
+    const apiKey = body.env?.OPENAI_API_KEY ?? '';
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is required for the OpenAI provider');
+    }
+
+    const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
+    const hasMcp = !!(body.mcpToken && body.mcpEndpoint);
+
+    const executor = new ToolExecutor({
+      workingDir: body.workingDir,
+      mcpEndpoint: body.mcpEndpoint,
+      mcpToken: body.mcpToken,
+    });
+
+    const defs: ToolDefinition[] = [
+      ...FILE_TOOLS,
+      ...(isPlanPhase ? PLAN_TOOLS : []),
+      ...(hasMcp ? MEMORY_TOOLS : []),
+    ];
+
+    const tools: OpenAI.Chat.ChatCompletionTool[] = defs.map((def) => ({
+      type: 'function',
+      function: {
+        name: def.name,
+        description: def.description,
+        parameters: def.parameters as OpenAI.FunctionParameters,
+      },
+    }));
+
+    const model = body.model ?? 'gpt-4o';
+    const userPrompt = [body.title, body.description ?? ''].filter(Boolean).join('\n\n');
+    const client = new OpenAI({ apiKey });
+
+    await emit({ type: 'system', model, cwd: body.workingDir });
+
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    if (body.systemPrompt) messages.push({ role: 'system', content: body.systemPrompt });
+    messages.push({ role: 'user', content: userPrompt });
+
+    const maxTurns = body.maxTurns ?? 100;
+    let turns = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let finalText = '';
+
+    try {
+      while (turns < maxTurns) {
+        if (signal.aborted) break;
+        turns++;
+
+        const response = await client.chat.completions.create({
+          model,
+          messages,
+          ...(tools.length > 0 && { tools, tool_choice: 'auto' }),
+        });
+
+        const choice = response.choices[0];
+        if (!choice) break;
+
+        inputTokens += response.usage?.prompt_tokens ?? 0;
+        outputTokens += response.usage?.completion_tokens ?? 0;
+
+        const msg = choice.message;
+        messages.push(msg as OpenAI.Chat.ChatCompletionMessageParam);
+
+        // Only process function-type tool calls (filter out custom tool calls)
+        const fnCalls = (msg.tool_calls ?? []).filter(
+          (tc): tc is OpenAI.Chat.ChatCompletionMessageFunctionToolCall => tc.type === 'function',
+        );
+
+        // Emit normalized assistant message
+        await emit({
+          type: 'assistant',
+          message: {
+            content: [
+              ...(msg.content ? [{ type: 'text', text: msg.content }] : []),
+              ...fnCalls.map((tc) => ({
+                type: 'tool_use',
+                id: tc.id,
+                name: tc.function.name,
+                input: parseJson(tc.function.arguments),
+              })),
+            ],
+          },
+        });
+
+        if (!fnCalls.length) {
+          finalText = msg.content ?? '';
+          break;
+        }
+
+        // Execute each tool call and collect results
+        const toolResults: OpenAI.Chat.ChatCompletionToolMessageParam[] = [];
+        for (const tc of fnCalls) {
+          const args = parseJson(tc.function.arguments) as Record<string, unknown>;
+          const result = await executor.execute(tc.function.name, args);
+          const content = typeof result === 'string' ? result : JSON.stringify(result);
+
+          toolResults.push({ role: 'tool', tool_call_id: tc.id, content });
+
+          await emit({
+            type: 'user',
+            message: { content: [{ type: 'tool_result', tool_use_id: tc.id, content }] },
+          });
+        }
+
+        messages.push(...toolResults);
+      }
+
+      await emit({
+        type: 'result',
+        subtype: 'success',
+        result: finalText,
+        total_cost_usd: 0,
+        usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+      });
+    } catch (err) {
+      await emit({ type: 'error', error: err instanceof Error ? err.message : String(err) });
+    }
   }
 }
+
+function parseJson(s: string): unknown {
+  try {
+    return JSON.parse(s || '{}');
+  } catch {
+    return {};
+  }
+}
+
+registerProvider(
+  (model) =>
+    model.startsWith('gpt-') ||
+    model.startsWith('o1') ||
+    model.startsWith('o3') ||
+    model.startsWith('o4') ||
+    model.startsWith('codex-'),
+  () => new OpenAIProvider(),
+);

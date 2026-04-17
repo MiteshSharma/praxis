@@ -227,7 +227,7 @@ export class StepRunner {
       );
     }
 
-    const resolved = await this.resolveStepAgent(_step);
+    const resolved = await this.resolveStepAgent(_step, job.model ?? undefined);
     const basePrompt = buildPlanSessionSystemPrompt(parentContext, workspace);
     const memorySection = this.deps.memoryMarkdown
       ? buildMemorySection(this.deps.memoryMarkdown)
@@ -323,7 +323,7 @@ export class StepRunner {
     const registry = new PluginRegistry(this.deps.db);
     const resolvedPlugins = await registry.resolveForConversation(job.conversationId ?? undefined);
 
-    const resolved = await this.resolveStepAgent(step);
+    const resolved = await this.resolveStepAgent(step, job.model ?? undefined);
     if (resolved) {
       systemPrompt = `${systemPrompt}\n\n${resolved.systemPrompt}`;
     }
@@ -595,7 +595,7 @@ export class StepRunner {
    * step-level skill override. Returns null when the step has no agent/skill
    * config, signalling the caller to fall back to the default prompts.
    */
-  private async resolveStepAgent(step: JobStep): Promise<{
+  private async resolveStepAgent(step: JobStep, jobModel?: string): Promise<{
     model: string;
     systemPrompt: string;
     allowedTools: string[];
@@ -607,7 +607,7 @@ export class StepRunner {
 
     if (!cfg.agent && !cfg.skillId) return null;
 
-    let model = DEFAULT_AGENT.model;
+    let model = jobModel ?? DEFAULT_AGENT.model;
     let basePrompt = '';
     let baseTools: string[] = [...DEFAULT_AGENT.allowedTools];
 

@@ -58,6 +58,7 @@ export const JobSchema = z.object({
   status: JobStatusSchema,
   errorMessage: z.string().nullable(),
   errorCategory: z.string().nullable(),
+  model: z.string().nullable().optional(),
   totalInputTokens: z.number().int().nullable().optional(),
   totalOutputTokens: z.number().int().nullable().optional(),
   totalCostUsd: z.number().nullable().optional(),
@@ -163,6 +164,7 @@ export const ConversationSchema = z.object({
   defaultGithubUrl: z.string().nullable(),
   defaultWorkflowId: z.string().uuid().nullable(),
   planHoldHours: z.number().int().positive(),
+  model: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

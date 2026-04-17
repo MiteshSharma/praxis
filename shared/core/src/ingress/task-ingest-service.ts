@@ -49,6 +49,7 @@ export class TaskIngestService {
           workflowId: normalized.workflowId ?? null,
           workflowVersionId: normalized.workflowVersionId ?? null,
           autoApprove: normalized.autoApprove ?? false,
+          model: normalized.model ?? null,
           status: 'queued',
         })
         .returning();

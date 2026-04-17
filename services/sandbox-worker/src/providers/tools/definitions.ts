@@ -97,6 +97,26 @@ export const FILE_TOOLS: ToolDefinition[] = [
   },
 ];
 
+export const MEMORY_TOOLS: ToolDefinition[] = [
+  {
+    name: 'query_memory',
+    description:
+      "Query the repository's memory for past design decisions, architectural patterns, and " +
+      'conventions. Use this when you need context about how similar problems were solved ' +
+      'before or to stay consistent with existing patterns.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Natural language question about the codebase design or conventions',
+        },
+      },
+      required: ['query'],
+    },
+  },
+];
+
 export const PLAN_TOOLS: ToolDefinition[] = [
   {
     name: 'submit_plan',

@@ -51,7 +51,8 @@ Every status transition is streamed live to the UI via SSE.
 - **Live timeline** — SSE stream shows every agent turn, tool call, status transition, and artifact in real time.
 - **Phase progress bar** — visual indicator across Planning → Plan review → Executing → Publishing PR → Learning → Done.
 - **Cost tracking** — input tokens, output tokens, and estimated USD cost stored per job and displayed in the header.
-- **Multi-provider sandbox** — provider-agnostic architecture; Claude (Anthropic) ships today, OpenAI/Codex slot in without touching the orchestrator.
+- **Multi-provider sandbox** — provider-agnostic architecture; Claude (Anthropic) and OpenAI/Codex are both active. Set model name in conversation settings to switch providers.
+- **Per-conversation model selection** — override the default model per conversation; `claude-*` routes to Claude, `gpt-*`/`o-series`/`codex-*` routes to OpenAI.
 - **MCP plugins** — per-conversation MCP servers (stdio or HTTP) wired into agent sessions.
 - **Restart** — any failed job can be restarted with one click; a new job is created from the same inputs.
 
@@ -125,6 +126,10 @@ psql $DATABASE_URL -f shared/db/drizzle/0004_add_conversations_plugins.sql
 psql $DATABASE_URL -f shared/db/drizzle/0005_add_skills.sql
 psql $DATABASE_URL -f shared/db/drizzle/0006_add_repo_memories.sql
 psql $DATABASE_URL -f shared/db/drizzle/0007_add_costs.sql
+psql $DATABASE_URL -f shared/db/drizzle/0008_add_plan_review_channels.sql
+psql $DATABASE_URL -f shared/db/drizzle/0009_rename_plan_review_to_channels.sql
+psql $DATABASE_URL -f shared/db/drizzle/0010_memory_backends.sql
+psql $DATABASE_URL -f shared/db/drizzle/0011_model_selection.sql
 ```
 
 ### 5. Start all services
@@ -164,7 +169,8 @@ Backend reads `.env.local` (then `.env`) at startup via Node 24's built-in `proc
 | `STORAGE_ACCESS_KEY` | `minioadmin` | MinIO access key |
 | `STORAGE_SECRET_KEY` | `minioadmin` | MinIO secret key |
 | `STORAGE_REGION` | `us-east-1` | Storage region |
-| `OPENAI_API_KEY` | — | Optional — reserved for OpenAI provider (not yet active) |
+| `OPENAI_API_KEY` | — | Optional — used for `gpt-*`, `o1`/`o3`/`o4-*`, `codex-*` models |
+| `MEMORY_BACKEND` | `s3` | `s3` (MinIO/S3), `builtin` (Postgres FTS), `qmd`, or `honcho` |
 | `OTEL_TRACES` | `off` | `off`, `console`, or `otlp` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Required when `OTEL_TRACES=otlp` |
 
@@ -238,7 +244,7 @@ praxis/
     │   └── src/
     │       ├── routes/            /prompt, /exec, /publish, /abort, /health
     │       ├── services/          agent, exec, publish
-    │       └── providers/         AgentProvider interface + Claude, OpenAI (stub), Demo
+    │       └── providers/         AgentProvider interface + ProviderRegistry + Claude, OpenAI, Demo
     │           └── tools/         ToolDefinition schemas + ToolExecutor (for non-Claude providers)
     │
     └── web/                       Vite + React + AntD + TanStack Query
@@ -281,20 +287,22 @@ All valid transitions are defined in `shared/contracts/src/events.ts` → `JOB_T
 
 ## Adding a new provider
 
-The sandbox-worker uses a provider abstraction — each AI provider is one file behind the `AgentProvider` interface:
+The sandbox-worker uses a self-registering provider registry — each AI provider is one file behind the `AgentProvider` interface:
 
 ```
 providers/
   types.ts           AgentProvider interface + normalized SSE format spec
-  claude.ts          Anthropic Claude (active)
-  openai.ts          OpenAI / Codex (stub — see implementation guide inside)
-  demo.ts            Deterministic demo agent (no API key needed)
+  registry.ts        ProviderRegistry — ordered (matcher, factory) pairs; first match wins
+  index.ts           barrel: imports claude, openai, demo in priority order
+  claude.ts          Anthropic Claude — handles claude-* models
+  openai.ts          OpenAI / Codex — handles gpt-*, o1/o3/o4-*, codex-* models
+  demo.ts            Deterministic demo agent (no API key needed) — catch-all
   tools/
     definitions.ts   Tool schemas in OpenAI function-calling format
     executor.ts      Executes read_file, write_file, edit_file, bash, glob, grep, submit_plan
 ```
 
-To add a new provider: implement `AgentProvider.run()`, emit normalized SSE messages, add a model-prefix case in `agent.service.ts → resolveProvider()`. The orchestrator, step-runner, and UI need no changes.
+To add a new provider: create `providers/<name>.ts`, implement `AgentProvider.run()`, call `registerProvider(matcherFn, factory)` at module level, add the import to `providers/index.ts`. The orchestrator, step-runner, and UI need no changes.
 
 ---
 
@@ -308,7 +316,7 @@ To add a new provider: implement `AgentProvider.run()`, emit normalized SSE mess
 | Database | Postgres 18 + Drizzle ORM 0.36 |
 | Queue | pg-boss 10 (Postgres-backed job queue) |
 | Pub/sub | Redis 7 (plan-event wake signals) |
-| AI (Claude) | @anthropic-ai/claude-agent-sdk |
+| AI | @anthropic-ai/claude-agent-sdk (Claude), openai@6 (GPT / Codex) |
 | Object storage | MinIO (S3-compatible) via @aws-sdk/client-s3 |
 | Frontend | React 18, Ant Design 5, TanStack Query 5, React Router 6 |
 | Lint / format | Biome 1.9 |

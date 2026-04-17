@@ -10,6 +10,7 @@ export function toConversationDto(row: typeof conversations.$inferSelect): Conve
     defaultGithubUrl: row.defaultGithubUrl,
     defaultWorkflowId: row.defaultWorkflowId,
     planHoldHours: row.planHoldHours,
+    model: row.model ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -54,21 +55,41 @@ export class ConversationsRepository {
   }
 
   async findById(id: string): Promise<ConversationDto | null> {
-    const [row] = await this.db.select().from(conversations).where(eq(conversations.id, id)).limit(1);
+    const [row] = await this.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, id))
+      .limit(1);
     return row ? toConversationDto(row) : null;
   }
 
-  async create(data: { title: string; defaultGithubUrl?: string; defaultWorkflowId?: string }): Promise<ConversationDto> {
-    const [row] = await this.db.insert(conversations).values({
-      title: data.title,
-      defaultGithubUrl: data.defaultGithubUrl ?? null,
-      defaultWorkflowId: data.defaultWorkflowId ?? null,
-    }).returning();
+  async create(data: {
+    title: string;
+    defaultGithubUrl?: string;
+    defaultWorkflowId?: string;
+  }): Promise<ConversationDto> {
+    const [row] = await this.db
+      .insert(conversations)
+      .values({
+        title: data.title,
+        defaultGithubUrl: data.defaultGithubUrl ?? null,
+        defaultWorkflowId: data.defaultWorkflowId ?? null,
+      })
+      .returning();
     if (!row) throw new Error('conversations insert failed');
     return toConversationDto(row);
   }
 
-  async update(id: string, patch: { title?: string; defaultGithubUrl?: string | null; defaultWorkflowId?: string | null; planHoldHours?: number }): Promise<ConversationDto | null> {
+  async update(
+    id: string,
+    patch: {
+      title?: string;
+      defaultGithubUrl?: string | null;
+      defaultWorkflowId?: string | null;
+      planHoldHours?: number;
+      model?: string | null;
+    },
+  ): Promise<ConversationDto | null> {
     const [row] = await this.db
       .update(conversations)
       .set({ ...patch, updatedAt: new Date() })
@@ -108,12 +129,15 @@ export class ConversationsRepository {
     content: string;
     jobId?: string | null;
   }): Promise<MessageDto> {
-    const [row] = await this.db.insert(messages).values({
-      conversationId: data.conversationId,
-      role: data.role,
-      content: data.content,
-      jobId: data.jobId ?? null,
-    }).returning();
+    const [row] = await this.db
+      .insert(messages)
+      .values({
+        conversationId: data.conversationId,
+        role: data.role,
+        content: data.content,
+        jobId: data.jobId ?? null,
+      })
+      .returning();
     if (!row) throw new Error('message insert failed');
     return toMessageDto(row);
   }

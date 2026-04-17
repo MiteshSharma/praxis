@@ -41,11 +41,24 @@ export class ConversationsService {
     return c;
   }
 
-  async create(data: { title: string; defaultGithubUrl?: string; defaultWorkflowId?: string }): Promise<ConversationDto> {
+  async create(data: {
+    title: string;
+    defaultGithubUrl?: string;
+    defaultWorkflowId?: string;
+  }): Promise<ConversationDto> {
     return this.repo.create(data);
   }
 
-  async update(id: string, patch: { title?: string; defaultGithubUrl?: string | null; defaultWorkflowId?: string | null; planHoldHours?: number }): Promise<ConversationDto> {
+  async update(
+    id: string,
+    patch: {
+      title?: string;
+      defaultGithubUrl?: string | null;
+      defaultWorkflowId?: string | null;
+      planHoldHours?: number;
+      model?: string | null;
+    },
+  ): Promise<ConversationDto> {
     const result = await this.repo.update(id, patch);
     if (!result) throw new ORPCError('NOT_FOUND', { message: 'conversation not found' });
     return result;
@@ -118,6 +131,7 @@ export class ConversationsService {
       conversationId: input.conversationId,
       parentJobId: parentJobId ?? undefined,
       workflowVersionId,
+      model: conv.model ?? null,
     });
 
     // Backfill message with jobId

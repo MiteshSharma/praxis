@@ -86,6 +86,7 @@ function JobInfoPanel({
             💰 {cost}
           </Typography.Text>
         )}
+        {job.model && <Tag style={{ fontSize: 11 }}>{job.model}</Tag>}
         {tokens && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             🔢 {tokens}
@@ -149,7 +150,9 @@ function PlanReviewChannelsPanel({ conversationId }: { conversationId: string })
         <Card key={ch.id} size="small" style={{ borderColor: '#f0f0f0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <Typography.Text strong style={{ fontSize: 13 }}>{ch.name}</Typography.Text>
+              <Typography.Text strong style={{ fontSize: 13 }}>
+                {ch.name}
+              </Typography.Text>
               <br />
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                 {(ch.config as { url?: string }).url ?? '—'}
@@ -167,14 +170,18 @@ function PlanReviewChannelsPanel({ conversationId }: { conversationId: string })
                 okText="Delete"
                 okButtonProps={{ danger: true }}
               >
-                <Button size="small" danger type="text">✕</Button>
+                <Button size="small" danger type="text">
+                  ✕
+                </Button>
               </Popconfirm>
             </Space>
           </div>
         </Card>
       ))}
 
-      <Typography.Text strong style={{ fontSize: 12 }}>Add webhook</Typography.Text>
+      <Typography.Text strong style={{ fontSize: 12 }}>
+        Add webhook
+      </Typography.Text>
       <Input
         placeholder="Name (e.g. Slack bot)"
         value={newName}
@@ -187,9 +194,7 @@ function PlanReviewChannelsPanel({ conversationId }: { conversationId: string })
         onChange={(e) => setNewUrl(e.target.value)}
         size="small"
       />
-      {createMutation.error && (
-        <Alert type="error" message={String(createMutation.error)} />
-      )}
+      {createMutation.error && <Alert type="error" message={String(createMutation.error)} />}
       <Button
         size="small"
         type="primary"
@@ -213,6 +218,8 @@ export function ConversationDetail() {
   const [olderMessages, setOlderMessages] = useState<MessageDto[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [githubUrlOverride, setGithubUrlOverride] = useState('');
 
   const toggleExpand = (msgId: string) => {
     setExpandedIds((prev) => {
@@ -274,6 +281,7 @@ export function ConversationDetail() {
         conversationId: id ?? '',
         content,
         triggersJob: true,
+        jobOverrides: githubUrlOverride ? { githubUrl: githubUrlOverride } : undefined,
       }),
     onSuccess: ({ jobId }) => {
       qc.invalidateQueries({ queryKey: ['conversation', id, 'messages'] });
@@ -283,8 +291,12 @@ export function ConversationDetail() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (patch: { defaultGithubUrl?: string | null; defaultWorkflowId?: string | null; planHoldHours?: number }) =>
-      rpc.conversations.update({ id: id ?? '', ...patch }),
+    mutationFn: (patch: {
+      defaultGithubUrl?: string | null;
+      defaultWorkflowId?: string | null;
+      planHoldHours?: number;
+      model?: string | null;
+    }) => rpc.conversations.update({ id: id ?? '', ...patch }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['conversation', id] }),
   });
 
@@ -370,9 +382,22 @@ export function ConversationDetail() {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
             }}
           />
-          {sendMutation.error && (
-            <Alert type="error" message={String(sendMutation.error)} />
+          <Button
+            type="link"
+            size="small"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{ padding: 0 }}
+          >
+            {showAdvanced ? 'Hide' : 'Show'} advanced options
+          </Button>
+          {showAdvanced && (
+            <Input
+              placeholder="GitHub URL override (leave blank to use conversation default)"
+              value={githubUrlOverride}
+              onChange={(e) => setGithubUrlOverride(e.target.value)}
+            />
           )}
+          {sendMutation.error && <Alert type="error" message={String(sendMutation.error)} />}
           <Button
             type="primary"
             loading={sendMutation.isPending}
@@ -387,7 +412,9 @@ export function ConversationDetail() {
       {/* Message thread */}
       <Card title="Thread">
         {messages.length === 0 ? (
-          <Typography.Text type="secondary">No messages yet. Start the conversation above.</Typography.Text>
+          <Typography.Text type="secondary">
+            No messages yet. Start the conversation above.
+          </Typography.Text>
         ) : (
           <Space direction="vertical" size={0} style={{ width: '100%' }}>
             {[...messages].reverse().map((msg) => {
@@ -411,7 +438,11 @@ export function ConversationDetail() {
                     }}
                   >
                     <Typography.Text strong>
-                      {msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System'}
+                      {msg.role === 'user'
+                        ? 'You'
+                        : msg.role === 'assistant'
+                          ? 'Assistant'
+                          : 'System'}
                     </Typography.Text>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {new Date(msg.createdAt).toLocaleString()}
@@ -463,11 +494,7 @@ export function ConversationDetail() {
             {/* Load older messages */}
             {hasMore && (
               <div style={{ textAlign: 'center', marginTop: 12 }}>
-                <Button
-                  size="small"
-                  loading={loadingOlder}
-                  onClick={loadOlderMessages}
-                >
+                <Button size="small" loading={loadingOlder} onClick={loadOlderMessages}>
                   Load older messages
                 </Button>
               </div>
@@ -507,7 +534,12 @@ export function ConversationDetail() {
                       const val = e.target.value || null;
                       updateMutation.mutate({ defaultWorkflowId: val });
                     }}
-                    style={{ width: '100%', padding: '4px 8px', border: '1px solid #d9d9d9', borderRadius: 6 }}
+                    style={{
+                      width: '100%',
+                      padding: '4px 8px',
+                      border: '1px solid #d9d9d9',
+                      borderRadius: 6,
+                    }}
                   >
                     <option value="">Default (plan → execute)</option>
                     {workflowsQuery.data?.map((wf) => (
@@ -516,6 +548,20 @@ export function ConversationDetail() {
                       </option>
                     ))}
                   </select>
+
+                  <Typography.Text strong>Model</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    Override the default model for all jobs in this conversation. Leave blank to use
+                    the system default (claude-sonnet-4-6).
+                  </Typography.Text>
+                  <Input
+                    defaultValue={conv.model ?? ''}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim() || null;
+                      updateMutation.mutate({ model: val });
+                    }}
+                    placeholder="e.g. gpt-4o or claude-opus-4-6"
+                  />
 
                   <Typography.Text strong>Plan review hold (hours)</Typography.Text>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>

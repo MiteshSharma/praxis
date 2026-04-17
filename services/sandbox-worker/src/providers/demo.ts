@@ -1,6 +1,7 @@
 import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PromptBody } from '../dto/agent.dto';
+import { registerProvider } from './registry.js';
 import type { AgentProvider } from './types';
 
 /**
@@ -36,3 +37,10 @@ export class DemoProvider implements AgentProvider {
     });
   }
 }
+
+// Catch-all — must be registered last so specific providers match first
+registerProvider(
+  () => true,
+  () => new DemoProvider(),
+);
+
