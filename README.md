@@ -118,19 +118,10 @@ make infra-up   # starts Postgres, Redis, MinIO (and creates the praxis bucket)
 ### 4. Run database migrations
 
 ```bash
-# Apply all migrations in shared/db/drizzle/
-psql $DATABASE_URL -f shared/db/drizzle/0001_init.sql
-psql $DATABASE_URL -f shared/db/drizzle/0002_add_plans.sql
-psql $DATABASE_URL -f shared/db/drizzle/0003_add_workflows.sql
-psql $DATABASE_URL -f shared/db/drizzle/0004_add_conversations_plugins.sql
-psql $DATABASE_URL -f shared/db/drizzle/0005_add_skills.sql
-psql $DATABASE_URL -f shared/db/drizzle/0006_add_repo_memories.sql
-psql $DATABASE_URL -f shared/db/drizzle/0007_add_costs.sql
-psql $DATABASE_URL -f shared/db/drizzle/0008_add_plan_review_channels.sql
-psql $DATABASE_URL -f shared/db/drizzle/0009_rename_plan_review_to_channels.sql
-psql $DATABASE_URL -f shared/db/drizzle/0010_memory_backends.sql
-psql $DATABASE_URL -f shared/db/drizzle/0011_model_selection.sql
+make migrate
 ```
+
+This applies all SQL files in `shared/db/drizzle/` in order. Falls back to the default `DATABASE_URL` if the env var is not set.
 
 ### 5. Start all services
 
@@ -180,6 +171,7 @@ Backend reads `.env.local` (then `.env`) at startup via Node 24's built-in `proc
 
 ```bash
 make up                  # full local stack (infra + all services)
+make migrate             # apply all SQL migrations in shared/db/drizzle/
 make dev                 # services only (assumes infra already running)
 make dev-backend         # backend only (MODE=all)
 make dev-sandbox-worker  # sandbox-worker only

@@ -19,6 +19,9 @@ help:
 	@echo "  setup-pnpm         - Install pnpm globally"
 	@echo "  prepare            - pnpm install (frozen lockfile)"
 	@echo ""
+	@echo "Database"
+	@echo "  migrate            - Apply all SQL migrations in shared/db/drizzle/ in order"
+	@echo ""
 	@echo "Infrastructure (Postgres / Redis / MinIO)"
 	@echo "  infra-up           - docker compose up -d --wait"
 	@echo "  infra-down         - docker compose down"
@@ -71,6 +74,16 @@ prepare:
 	@echo "Installing dependencies..."
 	@$(NVM_EXEC) pnpm install --frozen-lockfile
 	@echo "Dependencies installed."
+
+# ---------- database ----------
+
+migrate:
+	@echo "Running migrations..."
+	@for f in shared/db/drizzle/*.sql; do \
+		echo "  applying $$f..."; \
+		psql $${DATABASE_URL:-postgres://praxis:praxis@localhost:5433/praxis} -f $$f; \
+	done
+	@echo "Migrations complete."
 
 # ---------- infrastructure ----------
 
@@ -132,6 +145,7 @@ clean:
 	@echo "Clean complete."
 
 .PHONY: help setup setup-nvm setup-node setup-pnpm prepare \
+        migrate \
         infra-up infra-down infra-reset infra-logs infra-ps \
         dev dev-backend dev-sandbox-worker dev-web up \
         typecheck lint format smoke clean
