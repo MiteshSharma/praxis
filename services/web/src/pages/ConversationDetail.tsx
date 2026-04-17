@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PluginsPanel } from '../components/PluginsPanel';
 import { rpc } from '../rpc';
+import type { ArtifactDto, JobDto } from '@shared/contracts';
 
 const STATUS_COLORS: Record<string, string> = {
   queued: 'default',
@@ -33,6 +34,70 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'error',
 };
 
+function fmtK(n: number | null | undefined): string {
+  if (n == null) return '—';
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function JobInfoPanel({
+  job,
+  artifacts,
+  jobId,
+}: {
+  job: JobDto;
+  artifacts: ArtifactDto[];
+  jobId: string;
+}) {
+  const prArtifact = artifacts.find((a) => a.kind === 'pr');
+  const cost = job.totalCostUsd != null ? `$${job.totalCostUsd.toFixed(4)}` : null;
+  const tokens =
+    job.totalInputTokens != null || job.totalOutputTokens != null
+      ? `${fmtK(job.totalInputTokens)} in / ${fmtK(job.totalOutputTokens)} out`
+      : null;
+
+  return (
+    <div
+      style={{
+        background: '#fafafa',
+        border: '1px solid #e8e8e8',
+        borderRadius: 8,
+        padding: '10px 14px',
+        fontSize: 13,
+        minWidth: 200,
+        maxWidth: 260,
+      }}
+    >
+      <Space direction="vertical" size={6} style={{ width: '100%' }}>
+        <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status}</Tag>
+        <Link to={`/jobs/${jobId}`} style={{ fontSize: 13 }}>
+          View Job →
+        </Link>
+        {prArtifact?.url && (
+          <a href={prArtifact.url} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
+            🔀 View Pull Request
+          </a>
+        )}
+        {cost && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            💰 {cost}
+          </Typography.Text>
+        )}
+        {tokens && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            🔢 {tokens}
+          </Typography.Text>
+        )}
+        {job.completedAt && (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            ✅ {new Date(job.completedAt).toLocaleString()}
+          </Typography.Text>
+        )}
+      </Space>
+    </div>
+  );
+}
+
 export function ConversationDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -41,6 +106,15 @@ export function ConversationDetail() {
   const [messageInput, setMessageInput] = useState('');
   const [githubUrlOverride, setGithubUrlOverride] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (msgId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(msgId) ? next.delete(msgId) : next.add(msgId);
+      return next;
+    });
+  };
 
   const convQuery = useQuery({
     queryKey: ['conversation', id],
@@ -85,12 +159,34 @@ export function ConversationDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['conversation', id] }),
   });
 
+  const messages = messagesQuery.data ?? [];
+
+  // Collect unique job IDs from messages — must be before any early returns (Rules of Hooks)
+  const jobIds = [...new Set(messages.flatMap((m) => (m.jobId ? [m.jobId] : [])))];
+
+  const jobQueries = useQueries({
+    queries: jobIds.map((jid) => ({
+      queryKey: ['job', jid],
+      queryFn: () => rpc.jobs.get({ jobId: jid }),
+      staleTime: 10_000,
+    })),
+  });
+
+  const artifactQueries = useQueries({
+    queries: jobIds.map((jid) => ({
+      queryKey: ['artifacts', jid],
+      queryFn: () => rpc.jobs.listArtifacts({ jobId: jid }),
+      staleTime: 30_000,
+    })),
+  });
+
+  const jobMap = Object.fromEntries(jobIds.map((jid, i) => [jid, jobQueries[i]?.data]));
+  const artifactMap = Object.fromEntries(jobIds.map((jid, i) => [jid, artifactQueries[i]?.data]));
+
   if (convQuery.isLoading) return <Spin />;
   if (convQuery.error) return <Alert type="error" message={String(convQuery.error)} />;
   const conv = convQuery.data;
   if (!conv) return null;
-
-  const messages = messagesQuery.data ?? [];
 
   const handleSend = () => {
     const content = messageInput.trim();
@@ -128,56 +224,14 @@ export function ConversationDetail() {
         </div>
       </Card>
 
-      {/* Message thread */}
-      <Card title="Thread">
-        <Space direction="vertical" style={{ width: '100%' }}>
-          {messages.length === 0 && (
-            <Typography.Text type="secondary">No messages yet. Start the conversation below.</Typography.Text>
-          )}
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                gap: 4,
-              }}
-            >
-              <div
-                style={{
-                  background: msg.role === 'user' ? '#1677ff' : '#f5f5f5',
-                  color: msg.role === 'user' ? 'white' : 'inherit',
-                  borderRadius: 8,
-                  padding: '8px 12px',
-                  maxWidth: '80%',
-                  whiteSpace: 'pre-wrap',
-                }}
-              >
-                {msg.content}
-              </div>
-              {msg.jobId && (
-                <Link to={`/jobs/${msg.jobId}`}>
-                  <Tag color="blue" style={{ cursor: 'pointer' }}>
-                    View job →
-                  </Tag>
-                </Link>
-              )}
-            </div>
-          ))}
-        </Space>
-      </Card>
-
-      {/* Compose */}
+      {/* Compose — above thread */}
       <Card title="Send a message">
         <Space direction="vertical" style={{ width: '100%' }}>
           <Input.TextArea
             rows={4}
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
-            placeholder={
-              'Describe what you want done.\nFirst line becomes the job title.'
-            }
+            placeholder={'Describe what you want done.\nFirst line becomes the job title.'}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
             }}
@@ -209,6 +263,85 @@ export function ConversationDetail() {
             Send (⌘↵)
           </Button>
         </Space>
+      </Card>
+
+      {/* Message thread */}
+      <Card title="Thread">
+        {messages.length === 0 ? (
+          <Typography.Text type="secondary">No messages yet. Start the conversation above.</Typography.Text>
+        ) : (
+          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+            {messages.map((msg) => {
+              const isExpanded = expandedIds.has(msg.id);
+              const isLong = msg.content.split('\n').length > 5 || msg.content.length > 400;
+              const job = msg.jobId ? jobMap[msg.jobId] : undefined;
+              const artifacts = msg.jobId ? (artifactMap[msg.jobId] ?? []) : [];
+
+              return (
+                <Card
+                  key={msg.id}
+                  size="small"
+                  style={{ marginBottom: 12, borderColor: '#f0f0f0' }}
+                >
+                  {/* Header row: role + timestamp */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Typography.Text strong>
+                      {msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System'}
+                    </Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {new Date(msg.createdAt).toLocaleString()}
+                    </Typography.Text>
+                  </div>
+
+                  {/* Body row: message left, job panel right */}
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                    {/* Message text + expand toggle */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Typography.Paragraph
+                        style={{
+                          margin: 0,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          ...(isExpanded
+                            ? {}
+                            : {
+                                overflow: 'hidden',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 5,
+                                WebkitBoxOrient: 'vertical',
+                              }),
+                        }}
+                      >
+                        {msg.content}
+                      </Typography.Paragraph>
+                      {isLong && (
+                        <Button
+                          type="link"
+                          size="small"
+                          onClick={() => toggleExpand(msg.id)}
+                          style={{ padding: 0, height: 'auto', marginTop: 4 }}
+                        >
+                          {isExpanded ? 'Show less' : 'Show more'}
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Job details panel */}
+                    {msg.jobId && job && (
+                      <JobInfoPanel job={job} artifacts={artifacts} jobId={msg.jobId} />
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          </Space>
+        )}
       </Card>
 
       {/* Settings drawer */}
