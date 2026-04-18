@@ -114,6 +114,27 @@ export const contract = {
         }),
       )
       .output(WorkflowSchema),
+
+    update: oc
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          name: z.string().min(1),
+          description: z.string().optional(),
+          steps: z.array(
+            z.object({
+              kind: z.enum(['plan', 'execute', 'check']),
+              name: z.string(),
+              agentId: z.string().uuid().optional(),
+              skillId: z.string().uuid().optional(),
+              condition: z.enum(['previous_check_failed']).optional(),
+              command: z.string().optional(),
+              timeoutSeconds: z.number().int().positive().optional(),
+            }),
+          ),
+        }),
+      )
+      .output(WorkflowSchema),
   },
 
   agents: {
