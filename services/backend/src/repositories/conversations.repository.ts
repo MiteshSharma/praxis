@@ -1,7 +1,7 @@
 import type { ConversationDto, MessageDto, PluginDto } from '@shared/contracts';
 import type { Database } from '@shared/db';
-import { conversations, messages, plugins } from '@shared/db';
-import { and, asc, desc, eq, lt } from 'drizzle-orm';
+import { artifacts, conversations, messages, plugins } from '@shared/db';
+import { and, asc, desc, eq, lt, sql } from 'drizzle-orm';
 
 export function toConversationDto(row: typeof conversations.$inferSelect): ConversationDto {
   return {
@@ -16,13 +16,14 @@ export function toConversationDto(row: typeof conversations.$inferSelect): Conve
   };
 }
 
-export function toMessageDto(row: typeof messages.$inferSelect): MessageDto {
+export function toMessageDto(row: typeof messages.$inferSelect & { prArtifactUrl?: string | null }): MessageDto {
   return {
     id: row.id,
     conversationId: row.conversationId,
     role: row.role as MessageDto['role'],
     content: row.content,
     jobId: row.jobId,
+    prArtifactUrl: row.prArtifactUrl ?? null,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString(),
   };
@@ -112,8 +113,21 @@ export class ConversationsRepository {
       : eq(messages.conversationId, conversationId);
 
     const rows = await this.db
-      .select()
+      .select({
+        id: messages.id,
+        conversationId: messages.conversationId,
+        role: messages.role,
+        content: messages.content,
+        jobId: messages.jobId,
+        metadata: messages.metadata,
+        createdAt: messages.createdAt,
+        prArtifactUrl: artifacts.url,
+      })
       .from(messages)
+      .leftJoin(
+        artifacts,
+        sql`${artifacts.jobId} = ${messages.jobId} AND ${artifacts.kind} = 'pr'`,
+      )
       .where(whereClause)
       .orderBy(desc(messages.createdAt))
       .limit(limit + 1);

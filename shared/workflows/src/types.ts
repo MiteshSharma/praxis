@@ -12,6 +12,8 @@ export const AgentDefinitionSchema = z.object({
   model: z.string().default('claude-sonnet-4-5-20250929'),
   systemPrompt: z.string(),
   allowedTools: z.array(z.string()).default([]),
+  // Skills only: agent IDs whose prompts should be loaded as base context when this skill is used standalone
+  dependsOn: z.array(z.string().uuid()).optional(),
 });
 export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;
 
@@ -21,12 +23,16 @@ export const PlanStepDefSchema = z.object({
   kind: z.literal('plan'),
   name: z.string(),
   agent: AgentRefSchema.optional().nullable(),
+  // Skill used as the primary agent for this step (equivalent to agent)
+  skillId: z.string().uuid().optional(),
 });
 
 export const ExecuteStepDefSchema = z.object({
   kind: z.literal('execute'),
   name: z.string(),
   agent: AgentRefSchema.optional().nullable(),
+  // Skill used as the primary agent for this step (equivalent to agent)
+  skillId: z.string().uuid().optional(),
   condition: z.enum(['previous_check_failed']).optional(),
 });
 

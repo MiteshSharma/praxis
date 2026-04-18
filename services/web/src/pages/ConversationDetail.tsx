@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ArtifactDto, JobDto, MessageDto } from '@shared/contracts';
+import type { JobDto, MessageDto } from '@shared/contracts';
 import {
   Alert,
   Button,
@@ -157,7 +157,6 @@ export function ConversationDetail() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [messageInput, setMessageInput] = useState('');
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [olderMessages, setOlderMessages] = useState<MessageDto[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -165,13 +164,7 @@ export function ConversationDetail() {
   const [githubUrlOverride, setGithubUrlOverride] = useState('');
   const [autoApprove, setAutoApprove] = useState(false);
 
-  const toggleExpand = (msgId: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      next.has(msgId) ? next.delete(msgId) : next.add(msgId);
-      return next;
-    });
-  };
+
 
   const convQuery = useQuery({
     queryKey: ['conversation', id],
@@ -255,16 +248,7 @@ export function ConversationDetail() {
     })),
   });
 
-  const artifactQueries = useQueries({
-    queries: jobIds.map((jid) => ({
-      queryKey: ['artifacts', jid],
-      queryFn: () => rpc.jobs.listArtifacts({ jobId: jid }),
-      staleTime: 30_000,
-    })),
-  });
-
   const jobMap = Object.fromEntries(jobIds.map((jid, i) => [jid, jobQueries[i]?.data]));
-  const artifactMap = Object.fromEntries(jobIds.map((jid, i) => [jid, artifactQueries[i]?.data]));
 
   // Scroll to top when a new message arrives (newest is at top)
   useEffect(() => {
@@ -290,16 +274,20 @@ export function ConversationDetail() {
 
   return (
     <div className="chat-shell">
-      {/* Chat header */}
-      <div className="chat-header">
+      {/* Breadcrumb — above header, matches JobView style */}
+      <div style={{ flexShrink: 0, padding: '16px 28px 0', background: 'var(--c-bg)' }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
           onClick={() => navigate('/conversations')}
-          style={{ marginRight: 4 }}
+          style={{ paddingLeft: 0 }}
         >
-          ← Back
+          ← Back to conversations
         </button>
+      </div>
+
+      {/* Chat header */}
+      <div className="chat-header">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {conv.title}
@@ -386,12 +374,8 @@ export function ConversationDetail() {
         )}
 
         {[...messages].reverse().map((msg) => {
-          const isExpanded = expandedIds.has(msg.id);
-          const isLong = msg.content.split('\n').length > 6 || msg.content.length > 500;
           const job = msg.jobId ? jobMap[msg.jobId] : undefined;
-          const artifacts = msg.jobId ? (artifactMap[msg.jobId] ?? []) : [];
           const isUser = msg.role === 'user';
-          const prArtifact = artifacts.find((a) => a.kind === 'pr');
           const statusStyle = job ? (JOB_STATUS_COLOR[job.status] ?? JOB_STATUS_COLOR.queued) : null;
 
           return (
@@ -409,124 +393,65 @@ export function ConversationDetail() {
                   : undefined
               }
             >
-              {/* Two-column body: message text left, job details right */}
-              <div style={{ display: 'flex', gap: 0 }}>
-
-                {/* Left: role label + content */}
-                <div style={{ flex: 1, minWidth: 0, borderRight: msg.jobId ? '1px solid var(--c-border-subtle)' : 'none' }}>
-                  <div className="msg-card-header">
-                    <span className="msg-card-role">
-                      {isUser ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System'}
-                    </span>
-                    <span className="msg-card-time">
-                      {new Date(msg.createdAt).toLocaleString(undefined, {
-                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                  <div className="msg-card-body">
-                    <p
-                      style={{
-                        margin: 0,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.6,
-                        ...(isExpanded ? {} : {
-                          overflow: 'hidden',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 6,
-                          WebkitBoxOrient: 'vertical',
-                        }),
-                      }}
+              {/* Header: role + status badge + timestamp */}
+              <div className="msg-card-header">
+                <span className="msg-card-role">
+                  {isUser ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System'}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {statusStyle && (
+                    <span
+                      className="msg-job-status"
+                      style={{ background: statusStyle.bg, color: statusStyle.text }}
                     >
-                      {msg.content}
-                    </p>
-                    {isLong && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={(e) => { e.stopPropagation(); toggleExpand(msg.id); }}
-                        style={{ marginTop: 6, padding: 0, fontSize: 12 }}
-                      >
-                        {isExpanded ? 'Show less' : 'Show more'}
-                      </button>
-                    )}
-                  </div>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusStyle.dot, flexShrink: 0 }} />
+                      {job?.status.replace(/_/g, ' ') ?? 'pending'}
+                    </span>
+                  )}
+                  <span className="msg-card-time">
+                    {new Date(msg.createdAt).toLocaleString(undefined, {
+                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                    })}
+                  </span>
                 </div>
-
-                {/* Right: job details panel */}
-                {msg.jobId && (
-                  <div className="msg-job-panel">
-                    {/* Section 1 — Details */}
-                    <div className="msg-job-section">
-                      {statusStyle && (
-                        <span
-                          className="msg-job-status"
-                          style={{ background: statusStyle.bg, color: statusStyle.text }}
-                        >
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusStyle.dot, flexShrink: 0 }} />
-                          {job?.status.replace(/_/g, ' ') ?? 'pending'}
-                        </span>
-                      )}
-
-                      <div className="msg-job-detail-row">
-                        <span className="msg-job-label">Time</span>
-                        <span className="msg-job-value">
-                          {new Date(msg.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-
-                      {job?.model && (
-                        <div className="msg-job-detail-row">
-                          <span className="msg-job-label">Model</span>
-                          <span className="msg-job-value" style={{ fontSize: 11 }}>{job.model.split('/').pop()}</span>
-                        </div>
-                      )}
-
-                      {job?.totalCostUsd != null && (
-                        <div className="msg-job-detail-row">
-                          <span className="msg-job-label">Cost</span>
-                          <span className="msg-job-value">${job.totalCostUsd.toFixed(4)}</span>
-                        </div>
-                      )}
-
-                      {job?.totalInputTokens != null && (
-                        <div className="msg-job-detail-row">
-                          <span className="msg-job-label">Tokens</span>
-                          <span className="msg-job-value">{fmtK(job.totalInputTokens)}↑ {fmtK(job.totalOutputTokens)}↓</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Section 2 — Actions */}
-                    <div className="msg-job-section">
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: 'var(--c-primary)',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
-                        View job →
-                      </span>
-                      {prArtifact?.url && (
-                        <a
-                          href={prArtifact.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          style={{ fontSize: 12, color: 'var(--c-success)', fontWeight: 600, textDecoration: 'none' }}
-                        >
-                          View PR →
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
+
+              {/* Message body */}
+              <div className="msg-card-body">
+                <p style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
+                  {msg.content}
+                </p>
+              </div>
+
+              {/* Job metadata row — model, cost, tokens */}
+              {job && (job.model || job.totalCostUsd != null || job.totalInputTokens != null) && (
+                <div className="msg-card-meta">
+                  {job.model && (
+                    <span className="msg-card-meta-chip">{job.model.split('/').pop()}</span>
+                  )}
+                  {job.totalCostUsd != null && (
+                    <span className="msg-card-meta-chip">${job.totalCostUsd.toFixed(4)}</span>
+                  )}
+                  {job.totalInputTokens != null && (
+                    <span className="msg-card-meta-chip">{fmtK(job.totalInputTokens)}↑ {fmtK(job.totalOutputTokens ?? 0)}↓</span>
+                  )}
+                </div>
+              )}
+
+              {/* PR footer — only when PR exists */}
+              {msg.prArtifactUrl && (
+                <div className="msg-card-pr-footer">
+                  <a
+                    href={msg.prArtifactUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="msg-card-pr-link"
+                  >
+                    View PR →
+                  </a>
+                </div>
+              )}
             </div>
           );
         })}

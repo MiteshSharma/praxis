@@ -30,44 +30,78 @@ const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
 ];
 
-// ── Create (form) modal ───────────────────────────────────────────────────────
+// ── Shared form values ────────────────────────────────────────────────────────
 
-interface CreateFormValues {
+interface AgentFormValues {
   kind: 'agent' | 'skill';
   name: string;
   description?: string;
   model: string;
   systemPrompt: string;
   allowedTools: string[];
+  dependsOn?: string[];
 }
 
-function CreateModal({
+// ── Create / Edit modal ───────────────────────────────────────────────────────
+
+function AgentFormModal({
   open,
   onClose,
-  onCreated,
+  onSaved,
+  editingAgent,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
+  editingAgent?: AgentDto | null;
 }) {
-  const [form] = Form.useForm<CreateFormValues>();
+  const isEdit = !!editingAgent;
+  const [form] = Form.useForm<AgentFormValues>();
   const [error, setError] = useState<string | null>(null);
+  const kind = Form.useWatch('kind', form);
 
-  const mutation = useMutation({
-    mutationFn: (v: CreateFormValues) =>
+  // Load all agents for the dependsOn selector (only relevant when kind=skill)
+  const agentsQuery = useQuery({
+    queryKey: ['agents', { kind: 'agent' }],
+    queryFn: () => rpc.agents.list({ kind: 'agent', limit: 100 }),
+    enabled: open,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (v: AgentFormValues) =>
       rpc.agents.create({ source: 'form', ...v }),
-    onSuccess: () => {
-      onCreated();
-      onClose();
-      setError(null);
-      form.resetFields();
-    },
+    onSuccess: () => { onSaved(); onClose(); setError(null); form.resetFields(); },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (v: AgentFormValues) =>
+      rpc.agents.update({ id: editingAgent!.id, ...v }),
+    onSuccess: () => { onSaved(); onClose(); setError(null); form.resetFields(); },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
+  });
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  const def = editingAgent?.latestVersion?.definition as {
+    model?: string; systemPrompt?: string; allowedTools?: string[]; dependsOn?: string[]
+  } | undefined;
+
+  const initialValues: AgentFormValues = editingAgent
+    ? {
+        kind: editingAgent.kind,
+        name: editingAgent.name,
+        description: editingAgent.description || undefined,
+        model: def?.model ?? 'claude-sonnet-4-6',
+        systemPrompt: def?.systemPrompt ?? '',
+        allowedTools: def?.allowedTools ?? [],
+        dependsOn: def?.dependsOn ?? [],
+      }
+    : { kind: 'agent', model: 'claude-sonnet-4-6', allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'], systemPrompt: '', dependsOn: [] };
+
   return (
     <Modal
-      title="Create agent / skill"
+      title={isEdit ? `Edit ${editingAgent?.kind}` : 'Create agent / skill'}
       open={open}
       onCancel={() => { onClose(); setError(null); form.resetFields(); }}
       footer={null}
@@ -77,18 +111,21 @@ function CreateModal({
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ kind: 'agent', model: 'claude-sonnet-4-6', allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'] }}
-        onFinish={(v) => mutation.mutate(v)}
+        initialValues={initialValues}
+        onFinish={(v) => isEdit ? updateMutation.mutate(v) : createMutation.mutate(v)}
         style={{ marginTop: 16 }}
       >
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
 
         <Form.Item name="kind" label="Kind" rules={[{ required: true }]}>
-          <Select options={[{ value: 'agent', label: 'Agent' }, { value: 'skill', label: 'Skill' }]} />
+          <Select
+            disabled={isEdit}
+            options={[{ value: 'agent', label: 'Agent' }, { value: 'skill', label: 'Skill' }]}
+          />
         </Form.Item>
 
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-          <Input placeholder="e.g. Coder, Code Reviewer, Test Writer" />
+          <Input placeholder="e.g. Coder, Code Reviewer, Plan review loop" />
         </Form.Item>
 
         <Form.Item name="description" label="Description">
@@ -100,18 +137,31 @@ function CreateModal({
         </Form.Item>
 
         <Form.Item name="systemPrompt" label="System prompt" rules={[{ required: true }]}>
-          <Input.TextArea
-            rows={6}
-            placeholder="You are a senior software engineer…"
-          />
+          <Input.TextArea rows={6} placeholder="You are a senior software engineer…" />
         </Form.Item>
 
         <Form.Item name="allowedTools" label="Allowed tools">
           <Select mode="multiple" options={TOOL_OPTIONS} placeholder="Pick tools" />
         </Form.Item>
 
-        <Button type="primary" htmlType="submit" loading={mutation.isPending}>
-          Create
+        {/* dependsOn: only shown for skills — declares which agents form the base context */}
+        {(kind === 'skill' || editingAgent?.kind === 'skill') && (
+          <Form.Item
+            name="dependsOn"
+            label="Depends on (agents)"
+            extra="When this skill is used standalone in a workflow step, these agents' prompts are loaded as base context first."
+          >
+            <Select
+              mode="multiple"
+              placeholder="Select agents this skill depends on"
+              options={(agentsQuery.data ?? []).map((a) => ({ value: a.id, label: a.name }))}
+              loading={agentsQuery.isLoading}
+            />
+          </Form.Item>
+        )}
+
+        <Button type="primary" htmlType="submit" loading={isPending}>
+          {isEdit ? 'Save' : 'Create'}
         </Button>
       </Form>
     </Modal>
@@ -202,7 +252,15 @@ function ImportModal({
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
 
-function AgentDetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+function AgentDetailDrawer({
+  id,
+  onClose,
+  onEdit,
+}: {
+  id: string;
+  onClose: () => void;
+  onEdit: (agent: AgentDto) => void;
+}) {
   const qc = useQueryClient();
 
   const detailQuery = useQuery({
@@ -222,6 +280,13 @@ function AgentDetailDrawer({ id, onClose }: { id: string; onClose: () => void })
     enabled: detailQuery.data?.kind === 'agent',
   });
 
+  // For skills: resolve dependsOn agent names
+  const allAgentsQuery = useQuery({
+    queryKey: ['agents', { kind: 'agent' }],
+    queryFn: () => rpc.agents.list({ kind: 'agent', limit: 100 }),
+    enabled: detailQuery.data?.kind === 'skill',
+  });
+
   const attachMutation = useMutation({
     mutationFn: ({ skillId, position }: { skillId: string; position: number }) =>
       rpc.agents.attachSkill({ agentId: id, skillId, position }),
@@ -237,6 +302,12 @@ function AgentDetailDrawer({ id, onClose }: { id: string; onClose: () => void })
   const attachedIds = new Set((skillsQuery.data ?? []).map((s) => s.id));
   const availableSkills = (allSkillsQuery.data ?? []).filter((s) => !attachedIds.has(s.id));
 
+  const def = agent?.latestVersion?.definition as {
+    dependsOn?: string[];
+  } | undefined;
+  const dependsOnIds: string[] = def?.dependsOn ?? [];
+  const agentMap = Object.fromEntries((allAgentsQuery.data ?? []).map((a) => [a.id, a.name]));
+
   return (
     <Drawer
       title={
@@ -250,6 +321,7 @@ function AgentDetailDrawer({ id, onClose }: { id: string; onClose: () => void })
       open
       onClose={onClose}
       width={480}
+      extra={agent && <Button size="small" onClick={() => onEdit(agent)}>Edit</Button>}
     >
       {!agent ? null : (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -272,6 +344,23 @@ function AgentDetailDrawer({ id, onClose }: { id: string; onClose: () => void })
             </>
           )}
 
+          {/* Skills: show depends-on agents */}
+          {agent.kind === 'skill' && (
+            <>
+              <Typography.Text strong>Depends on</Typography.Text>
+              {dependsOnIds.length === 0 ? (
+                <Typography.Text type="secondary">No agent dependencies.</Typography.Text>
+              ) : (
+                <Space wrap>
+                  {dependsOnIds.map((depId) => (
+                    <Tag key={depId} color="blue">{agentMap[depId] ?? depId}</Tag>
+                  ))}
+                </Space>
+              )}
+            </>
+          )}
+
+          {/* Agents: show attached skills */}
           {agent.kind === 'agent' && (
             <>
               <Typography.Text strong>Attached skills</Typography.Text>
@@ -326,6 +415,7 @@ export function AgentBrowse() {
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [editingAgent, setEditingAgent] = useState<AgentDto | null>(null);
 
   const listQuery = useQuery({
     queryKey: ['agents'],
@@ -375,16 +465,19 @@ export function AgentBrowse() {
     {
       title: '',
       key: 'actions',
-      width: 80,
+      width: 120,
       render: (_: unknown, row: AgentDto) => (
-        <Popconfirm
-          title="Delete?"
-          onConfirm={() => deleteMutation.mutate(row.id)}
-          okText="Delete"
-          okButtonProps={{ danger: true }}
-        >
-          <Button type="text" danger size="small">Delete</Button>
-        </Popconfirm>
+        <Space size={4}>
+          <Button type="link" size="small" onClick={() => setEditingAgent(row)}>Edit</Button>
+          <Popconfirm
+            title="Delete?"
+            onConfirm={() => deleteMutation.mutate(row.id)}
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+          >
+            <Button type="text" danger size="small">Delete</Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -394,7 +487,7 @@ export function AgentBrowse() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Agents &amp; Skills</h1>
-          <p className="page-subtitle">Agents run workflow steps. Skills are reusable modules attached to agents.</p>
+          <p className="page-subtitle">Agents run workflow steps. Skills are reusable modules attached to agents or used standalone.</p>
         </div>
         <Space>
           <Button onClick={() => setShowImport(true)}>Import</Button>
@@ -415,9 +508,28 @@ export function AgentBrowse() {
         />
       </Card>
 
-      {selected && <AgentDetailDrawer id={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <AgentDetailDrawer
+          id={selected}
+          onClose={() => setSelected(null)}
+          onEdit={(agent) => { setSelected(null); setEditingAgent(agent); }}
+        />
+      )}
 
-      <CreateModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={invalidate} />
+      <AgentFormModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onSaved={invalidate}
+      />
+      <AgentFormModal
+        open={!!editingAgent}
+        onClose={() => setEditingAgent(null)}
+        onSaved={() => {
+          invalidate();
+          qc.invalidateQueries({ queryKey: ['agent', editingAgent?.id] });
+        }}
+        editingAgent={editingAgent}
+      />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onCreated={invalidate} />
     </div>
   );

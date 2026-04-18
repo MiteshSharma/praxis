@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { JobStatus, NotifyEvent, PlanWakeEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
-import { type Database, type Job, type JobStep, agentSkills, agentVersions, artifacts, conversations, jobSteps, jobs } from '@shared/db';
+import { type Database, type Job, type JobStep, agentSkills, agentVersions, agents, artifacts, conversations, jobSteps, jobs } from '@shared/db';
 import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
 import type { AgentRef } from '@shared/workflows';
@@ -644,6 +644,44 @@ export class StepRunner {
       }
     }
 
+    // When skill is used standalone (no agent), load its declared dependency agents.
+    // Stored separately so skill instructions appear first in the final prompt —
+    // the skill establishes what to do, the dependency agents provide how to do it.
+    const skillDepSections: string[] = [];
+
+    if (!cfg.agent && cfg.skillId) {
+      const [skillVer] = await this.deps.db
+        .select()
+        .from(agentVersions)
+        .where(eq(agentVersions.agentId, cfg.skillId))
+        .orderBy(desc(agentVersions.version))
+        .limit(1);
+
+      const dependsOn = (skillVer?.definition as { dependsOn?: string[] })?.dependsOn ?? [];
+
+      for (const depId of dependsOn) {
+        const [[depAgent], [depVer]] = await Promise.all([
+          this.deps.db.select().from(agents).where(eq(agents.id, depId)).limit(1),
+          this.deps.db
+            .select()
+            .from(agentVersions)
+            .where(eq(agentVersions.agentId, depId))
+            .orderBy(desc(agentVersions.version))
+            .limit(1),
+        ]);
+
+        if (depVer) {
+          const def = depVer.definition as { model?: string; systemPrompt?: string; allowedTools?: string[] };
+          if (!jobModel && def.model) model = def.model;
+          if (def.systemPrompt) {
+            const label = depAgent ? `# ${depAgent.name}\n\n` : '';
+            skillDepSections.push(`${label}${def.systemPrompt}`);
+          }
+          if (def.allowedTools?.length) baseTools = [...new Set([...baseTools, ...def.allowedTools])];
+        }
+      }
+    }
+
     // Collect skill IDs: agent-attached skills (in position order) + step-level skill
     const skillIds: string[] = [];
 
@@ -660,28 +698,39 @@ export class StepRunner {
       skillIds.push(cfg.skillId);
     }
 
-    // Load each skill's latest version and merge instructions + tools
+    // Load each skill's latest version and merge instructions + tools.
+    // Each skill section is labeled with the skill name so the model knows which
+    // instructions come from which skill.
     const skillInstructions: string[] = [];
     const skillTools: string[] = [];
 
     for (const sid of skillIds) {
-      const [sv] = await this.deps.db
-        .select()
-        .from(agentVersions)
-        .where(eq(agentVersions.agentId, sid))
-        .orderBy(desc(agentVersions.version))
-        .limit(1);
+      const [[skillAgent], [sv]] = await Promise.all([
+        this.deps.db.select().from(agents).where(eq(agents.id, sid)).limit(1),
+        this.deps.db
+          .select()
+          .from(agentVersions)
+          .where(eq(agentVersions.agentId, sid))
+          .orderBy(desc(agentVersions.version))
+          .limit(1),
+      ]);
 
       if (sv) {
         const def = sv.definition as { systemPrompt?: string; allowedTools?: string[] };
-        if (def.systemPrompt) skillInstructions.push(def.systemPrompt);
+        if (def.systemPrompt) {
+          const label = skillAgent ? `# ${skillAgent.name}\n\n` : '';
+          skillInstructions.push(`${label}${def.systemPrompt}`);
+        }
         if (def.allowedTools?.length) skillTools.push(...def.allowedTools);
       }
     }
 
+    // Order: primary agent (if any) → skill instructions → dependency agents
+    // For skill-standalone: skill comes first (establishes orchestration),
+    // then dependency agents (provide the detailed sub-agent prompts).
     return {
       model,
-      systemPrompt: [basePrompt, ...skillInstructions].filter(Boolean).join('\n\n'),
+      systemPrompt: [basePrompt, ...skillInstructions, ...skillDepSections].filter(Boolean).join('\n\n'),
       allowedTools: [...new Set([...baseTools, ...skillTools])],
     };
   }

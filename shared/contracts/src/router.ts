@@ -162,11 +162,28 @@ export const contract = {
           model: z.string().optional(),
           systemPrompt: z.string().optional(),
           allowedTools: z.array(z.string()).optional(),
+          // skills only: agent IDs whose prompts form the base context when used standalone
+          dependsOn: z.array(z.string().uuid()).optional(),
           // inline source
           inlineContent: z.string().optional(),
           // github source
           githubUrl: z.string().optional(),
           commitSha: z.string().optional(),
+        }),
+      )
+      .output(AgentSchema),
+
+    update: oc
+      .input(
+        z.object({
+          id: z.string().uuid(),
+          name: z.string().min(1),
+          description: z.string().optional(),
+          model: z.string().optional(),
+          systemPrompt: z.string().min(1),
+          allowedTools: z.array(z.string()).optional(),
+          // skills only
+          dependsOn: z.array(z.string().uuid()).optional(),
         }),
       )
       .output(AgentSchema),

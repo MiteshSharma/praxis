@@ -92,6 +92,9 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const agentsCreate = os.agents.create.handler(({ input }) =>
     deps.agentsService.create(input),
   );
+  const agentsUpdate = os.agents.update.handler(({ input }) =>
+    deps.agentsService.update(input),
+  );
   const agentsDelete = os.agents.delete.handler(async ({ input }) => {
     await deps.agentsService.delete(input.id);
     return { ok: true };
@@ -208,6 +211,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       list: agentsList,
       get: agentsGet,
       create: agentsCreate,
+      update: agentsUpdate,
       delete: agentsDelete,
       listSkills: agentsListSkills,
       attachSkill: agentsAttachSkill,

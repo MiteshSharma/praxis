@@ -154,6 +154,7 @@ export const MessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
   jobId: z.string().uuid().nullable(),
+  prArtifactUrl: z.string().nullable(),
   metadata: z.record(z.unknown()),
   createdAt: z.string(),
 });

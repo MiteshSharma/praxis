@@ -97,6 +97,43 @@ export class AgentsRepository {
     return toAgentDto(agent, version);
   }
 
+  async update(
+    id: string,
+    name: string,
+    description: string,
+    definition: Record<string, unknown>,
+  ): Promise<AgentDto> {
+    await this.db
+      .update(agents)
+      .set({ name, description, updatedAt: new Date() })
+      .where(eq(agents.id, id));
+
+    const [latest] = await this.db
+      .select()
+      .from(agentVersions)
+      .where(eq(agentVersions.agentId, id))
+      .orderBy(desc(agentVersions.version))
+      .limit(1);
+
+    const nextVersion = (latest?.version ?? 0) + 1;
+    const [version] = await this.db
+      .insert(agentVersions)
+      .values({
+        agentId: id,
+        version: nextVersion,
+        source: 'form',
+        contentUri: `form:${Date.now()}`,
+        definition,
+      })
+      .returning();
+
+    if (!version) throw new Error('agent version insert failed');
+
+    const [row] = await this.db.select().from(agents).where(eq(agents.id, id)).limit(1);
+    if (!row) throw new Error('agent not found after update');
+    return toAgentDto(row, version);
+  }
+
   async delete(id: string): Promise<void> {
     await this.db.delete(agents).where(eq(agents.id, id));
   }

@@ -13,6 +13,7 @@ interface CreateAgentInput {
   model?: string;
   systemPrompt?: string;
   allowedTools?: string[];
+  dependsOn?: string[];
   // inline
   inlineContent?: string;
   // github
@@ -47,10 +48,11 @@ export class AgentsService {
       if (!input.systemPrompt) {
         throw new ORPCError('BAD_REQUEST', { message: 'systemPrompt is required' });
       }
-      const definition = {
+      const definition: Record<string, unknown> = {
         model: input.model ?? 'claude-sonnet-4-6',
         systemPrompt: input.systemPrompt,
         allowedTools: input.allowedTools ?? [],
+        ...(input.dependsOn?.length ? { dependsOn: input.dependsOn } : {}),
       };
       const contentUri = `form:${Date.now()}`;
       return this.repo.create(
@@ -107,6 +109,26 @@ export class AgentsService {
     }
 
     throw new ORPCError('BAD_REQUEST', { message: 'invalid source' });
+  }
+
+  async update(input: {
+    id: string;
+    name: string;
+    description?: string;
+    model?: string;
+    systemPrompt: string;
+    allowedTools?: string[];
+    dependsOn?: string[];
+  }): Promise<AgentDto> {
+    const agent = await this.repo.findById(input.id);
+    if (!agent) throw new ORPCError('NOT_FOUND', { message: 'agent not found' });
+    const definition: Record<string, unknown> = {
+      model: input.model ?? 'claude-sonnet-4-6',
+      systemPrompt: input.systemPrompt,
+      allowedTools: input.allowedTools ?? [],
+      ...(input.dependsOn?.length ? { dependsOn: input.dependsOn } : {}),
+    };
+    return this.repo.update(input.id, input.name, input.description ?? '', definition);
   }
 
   async delete(id: string): Promise<void> {

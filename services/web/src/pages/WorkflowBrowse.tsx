@@ -20,11 +20,12 @@ import { rpc } from '../rpc';
 
 // ── Create (form) modal ───────────────────────────────────────────────────────
 
+// agentOrSkillId stores either an agentId (prefixed "agent:") or a skillId (prefixed "skill:")
+// so a single dropdown can hold both kinds.
 interface FormStep {
   kind: 'plan' | 'execute' | 'check';
   name: string;
-  agentId?: string;
-  skillId?: string;
+  agentOrSkillId?: string;
   condition?: 'previous_check_failed';
   command?: string;
   timeoutSeconds?: number;
@@ -51,15 +52,22 @@ function StepRow({
 }) {
   const form = Form.useFormInstance();
   const kind = Form.useWatch(['steps', fieldName, 'kind'], form);
+  const agentOrSkillId = Form.useWatch(['steps', fieldName, 'agentOrSkillId'], form);
 
-  const agentOrSkillValidator = () => {
-    const agentId = form.getFieldValue(['steps', fieldName, 'agentId']);
-    const skillId = form.getFieldValue(['steps', fieldName, 'skillId']);
-    if (!agentId && !skillId) {
-      return Promise.reject(new Error('Select at least one agent or skill'));
-    }
-    return Promise.resolve();
-  };
+  // If selected value is a skill, check for declared agent dependencies
+  const selectedSkillId = agentOrSkillId?.startsWith('skill:') ? agentOrSkillId.slice(6) : undefined;
+  const selectedSkill = skills.find((s) => s.id === selectedSkillId);
+  const dependsOn: string[] = (selectedSkill?.latestVersion?.definition as { dependsOn?: string[] })?.dependsOn ?? [];
+
+  // Combined options: agents first (blue), then skills (purple)
+  const combinedOptions = [
+    ...(agents.length
+      ? [{ label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>Agents</Typography.Text>, options: agents.map((a) => ({ value: `agent:${a.id}`, label: a.name })) }]
+      : []),
+    ...(skills.length
+      ? [{ label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>Skills</Typography.Text>, options: skills.map((s) => ({ value: `skill:${s.id}`, label: s.name })) }]
+      : []),
+  ];
 
   return (
     <Card
@@ -94,40 +102,38 @@ function StepRow({
         </Form.Item>
       </div>
 
-      {/* Agent + Skill selectors for plan / execute steps */}
+      {/* Single agent-or-skill selector for plan / execute steps */}
       {(kind === 'plan' || kind === 'execute') && (
         <>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Form.Item
-              name={[fieldName, 'agentId']}
-              label="Agent"
-              style={{ flex: 1, marginBottom: 8 }}
-              dependencies={[['steps', fieldName, 'skillId']]}
-              rules={[{ validator: agentOrSkillValidator }]}
-            >
-              <Select
-                allowClear
-                placeholder="Select agent"
-                options={agents.map((a) => ({ value: a.id, label: a.name }))}
-                onChange={() => form.validateFields([['steps', fieldName, 'skillId']])}
-              />
-            </Form.Item>
+          <Form.Item
+            name={[fieldName, 'agentOrSkillId']}
+            label="Agent or skill"
+            style={{ marginBottom: 8 }}
+          >
+            <Select
+              allowClear
+              placeholder="Select agent or skill (optional — uses default if blank)"
+              options={combinedOptions}
+            />
+          </Form.Item>
 
-            <Form.Item
-              name={[fieldName, 'skillId']}
-              label="Skill"
-              style={{ flex: 1, marginBottom: 8 }}
-              dependencies={[['steps', fieldName, 'agentId']]}
-              rules={[{ validator: agentOrSkillValidator }]}
-            >
-              <Select
-                allowClear
-                placeholder="Select skill"
-                options={skills.map((s) => ({ value: s.id, label: s.name }))}
-                onChange={() => form.validateFields([['steps', fieldName, 'agentId']])}
-              />
-            </Form.Item>
-          </div>
+          {/* Dependency hint: shown when selected skill has declared agent dependencies */}
+          {dependsOn.length > 0 && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 8, fontSize: 12 }}
+              message={
+                <>
+                  This skill depends on:{' '}
+                  <strong>
+                    {dependsOn.map((id) => agents.find((a) => a.id === id)?.name ?? id).join(', ')}
+                  </strong>
+                  . Their prompts will be loaded automatically as base context.
+                </>
+              }
+            />
+          )}
 
           {kind === 'execute' && (
             <Form.Item
@@ -171,11 +177,15 @@ function StepRow({
 
 function toFormStep(s: Record<string, unknown>): FormStep {
   const agent = s.agent as { agentId?: string } | undefined;
+  const agentOrSkillId = agent?.agentId
+    ? `agent:${agent.agentId}`
+    : s.skillId
+      ? `skill:${s.skillId as string}`
+      : undefined;
   return {
     kind: s.kind as 'plan' | 'execute' | 'check',
     name: s.name as string,
-    agentId: agent?.agentId,
-    skillId: s.skillId as string | undefined,
+    agentOrSkillId,
     condition: s.condition as 'previous_check_failed' | undefined,
     command: s.command as string | undefined,
     timeoutSeconds: s.timeoutSeconds as number | undefined,
@@ -212,12 +222,23 @@ function CreateWorkflowModal({
     enabled: open,
   });
 
+  // Decode agentOrSkillId prefix back to agentId / skillId before sending to API
+  function decodeSteps(steps: FormStep[]) {
+    return steps.map((s) => {
+      const { agentOrSkillId, ...rest } = s;
+      const agentId = agentOrSkillId?.startsWith('agent:') ? agentOrSkillId.slice(6) : undefined;
+      const skillId = agentOrSkillId?.startsWith('skill:') ? agentOrSkillId.slice(6) : undefined;
+      return { ...rest, agentId, skillId };
+    });
+  }
+
   const mutation = useMutation({
     mutationFn: (v: CreateWorkflowValues) => {
+      const steps = decodeSteps(v.steps);
       if (isEdit) {
-        return rpc.workflows.update({ id: workflowId, name: v.name, description: v.description, steps: v.steps });
+        return rpc.workflows.update({ id: workflowId, name: v.name, description: v.description, steps });
       }
-      return rpc.workflows.create({ source: 'form', name: v.name, description: v.description, steps: v.steps });
+      return rpc.workflows.create({ source: 'form', name: v.name, description: v.description, steps });
     },
     onSuccess: () => {
       onCreated();
@@ -233,7 +254,10 @@ function CreateWorkflowModal({
 
   const defaultInitialValues: CreateWorkflowValues = {
     name: '',
-    steps: [{ kind: 'plan', name: 'Plan' }, { kind: 'execute', name: 'Implement' }],
+    steps: [
+      { kind: 'plan', name: 'Plan', agentOrSkillId: undefined },
+      { kind: 'execute', name: 'Implement', agentOrSkillId: undefined },
+    ],
   };
 
   return (
@@ -279,8 +303,8 @@ function CreateWorkflowModal({
               <Form.ErrorList errors={errors} />
 
               <Space style={{ marginTop: 4 }}>
-                <Button size="small" onClick={() => add({ kind: 'plan', name: 'Plan' })}>+ Plan step</Button>
-                <Button size="small" onClick={() => add({ kind: 'execute', name: 'Implement' })}>+ Execute step</Button>
+                <Button size="small" onClick={() => add({ kind: 'plan', name: 'Plan', agentOrSkillId: undefined })}>+ Plan step</Button>
+                <Button size="small" onClick={() => add({ kind: 'execute', name: 'Implement', agentOrSkillId: undefined })}>+ Execute step</Button>
                 <Button size="small" onClick={() => add({ kind: 'check', name: 'Verify' })}>+ Check step</Button>
               </Space>
             </>
@@ -380,6 +404,19 @@ function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void
     queryFn: () => rpc.workflows.get({ id }),
   });
 
+  const agentsQuery = useQuery({
+    queryKey: ['agents', { kind: 'agent' }],
+    queryFn: () => rpc.agents.list({ kind: 'agent', limit: 100 }),
+  });
+
+  const skillsQuery = useQuery({
+    queryKey: ['agents', { kind: 'skill' }],
+    queryFn: () => rpc.agents.list({ kind: 'skill', limit: 100 }),
+  });
+
+  const agentMap = Object.fromEntries((agentsQuery.data ?? []).map((a) => [a.id, a.name]));
+  const skillMap = Object.fromEntries((skillsQuery.data ?? []).map((s) => [s.id, s.name]));
+
   const wf = detailQuery.data;
 
   const steps = wf?.latestVersion
@@ -426,7 +463,14 @@ function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void
                     title: 'Agent / Command',
                     render: (_: unknown, row: Record<string, unknown>) => {
                       if (row.command) return <Typography.Text code style={{ fontSize: 11 }}>{String(row.command)}</Typography.Text>;
-                      if (row.agent) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>{JSON.stringify(row.agent)}</Typography.Text>;
+                      const agentRef = row.agent as { ref?: string; agentId?: string } | undefined;
+                      const agentName = agentRef?.agentId ? agentMap[agentRef.agentId] : undefined;
+                      const skillName = row.skillId ? skillMap[row.skillId as string] : undefined;
+                      if (agentName && skillName) {
+                        return <Typography.Text style={{ fontSize: 12 }}>{agentName} + <Tag style={{ fontSize: 11 }}>{skillName}</Tag></Typography.Text>;
+                      }
+                      if (agentName) return <Typography.Text style={{ fontSize: 12 }}>{agentName}</Typography.Text>;
+                      if (skillName) return <Tag color="blue" style={{ fontSize: 11 }}>{skillName}</Tag>;
                       return <Typography.Text type="secondary">default</Typography.Text>;
                     },
                   },
