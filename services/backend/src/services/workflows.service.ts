@@ -34,6 +34,24 @@ export class WorkflowsService {
     this.repo = new WorkflowsRepository(db);
   }
 
+  private buildStepDefinition(s: FormStep): Record<string, unknown> {
+    if (s.kind === 'check') {
+      return {
+        kind: 'check' as const,
+        name: s.name,
+        command: s.command ?? '',
+        timeoutSeconds: s.timeoutSeconds ?? 300,
+      };
+    }
+    return {
+      kind: s.kind,
+      name: s.name,
+      ...(s.agentId ? { agent: { ref: 'id' as const, agentId: s.agentId } } : {}),
+      ...(s.skillId ? { skillId: s.skillId } : {}),
+      ...(s.condition ? { condition: s.condition } : {}),
+    };
+  }
+
   async list(limit = 50): Promise<WorkflowDto[]> {
     return this.repo.findMany(limit);
   }
@@ -42,6 +60,19 @@ export class WorkflowsService {
     const wf = await this.repo.findById(id);
     if (!wf) throw new ORPCError('NOT_FOUND', { message: 'workflow not found' });
     return wf;
+  }
+
+  async update(input: { id: string; name: string; description?: string; steps: FormStep[] }): Promise<WorkflowDto> {
+    if (!input.steps || input.steps.length === 0) {
+      throw new ORPCError('BAD_REQUEST', { message: 'at least one step is required' });
+    }
+    const definition = { steps: input.steps.map((s) => this.buildStepDefinition(s)) };
+    return this.repo.update(
+      input.id,
+      input.name,
+      input.description ?? '',
+      definition as unknown as Record<string, unknown>,
+    );
   }
 
   async create(input: CreateWorkflowInput): Promise<WorkflowDto> {
@@ -53,23 +84,7 @@ export class WorkflowsService {
         throw new ORPCError('BAD_REQUEST', { message: 'at least one step is required' });
       }
       const definition = {
-        steps: input.steps.map((s) => {
-          if (s.kind === 'check') {
-            return {
-              kind: 'check' as const,
-              name: s.name,
-              command: s.command ?? '',
-              timeoutSeconds: s.timeoutSeconds ?? 300,
-            };
-          }
-          return {
-            kind: s.kind,
-            name: s.name,
-            ...(s.agentId ? { agent: { ref: 'id' as const, agentId: s.agentId } } : {}),
-            ...(s.skillId ? { skillId: s.skillId } : {}),
-            ...(s.condition ? { condition: s.condition } : {}),
-          };
-        }),
+        steps: input.steps.map((s) => this.buildStepDefinition(s)),
       };
       const contentUri = `form:${Date.now()}`;
       return this.repo.create(

@@ -169,15 +169,34 @@ function StepRow({
   );
 }
 
+function toFormStep(s: Record<string, unknown>): FormStep {
+  const agent = s.agent as { agentId?: string } | undefined;
+  return {
+    kind: s.kind as 'plan' | 'execute' | 'check',
+    name: s.name as string,
+    agentId: agent?.agentId,
+    skillId: s.skillId as string | undefined,
+    condition: s.condition as 'previous_check_failed' | undefined,
+    command: s.command as string | undefined,
+    timeoutSeconds: s.timeoutSeconds as number | undefined,
+  };
+}
+
 function CreateWorkflowModal({
   open,
   onClose,
   onCreated,
+  workflowId,
+  initialValues,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
+  workflowId?: string;
+  initialValues?: CreateWorkflowValues;
 }) {
+  const isEdit = !!workflowId;
+  const qc = useQueryClient();
   const [form] = Form.useForm<CreateWorkflowValues>();
   const [error, setError] = useState<string | null>(null);
 
@@ -194,10 +213,17 @@ function CreateWorkflowModal({
   });
 
   const mutation = useMutation({
-    mutationFn: (v: CreateWorkflowValues) =>
-      rpc.workflows.create({ source: 'form', name: v.name, description: v.description, steps: v.steps }),
+    mutationFn: (v: CreateWorkflowValues) => {
+      if (isEdit) {
+        return rpc.workflows.update({ id: workflowId, name: v.name, description: v.description, steps: v.steps });
+      }
+      return rpc.workflows.create({ source: 'form', name: v.name, description: v.description, steps: v.steps });
+    },
     onSuccess: () => {
       onCreated();
+      if (isEdit) {
+        qc.invalidateQueries({ queryKey: ['workflow', workflowId] });
+      }
       onClose();
       setError(null);
       form.resetFields();
@@ -205,9 +231,14 @@ function CreateWorkflowModal({
     onError: (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
   });
 
+  const defaultInitialValues: CreateWorkflowValues = {
+    name: '',
+    steps: [{ kind: 'plan', name: 'Plan' }, { kind: 'execute', name: 'Implement' }],
+  };
+
   return (
     <Modal
-      title="Create workflow"
+      title={isEdit ? 'Edit workflow' : 'Create workflow'}
       open={open}
       onCancel={() => { onClose(); setError(null); form.resetFields(); }}
       footer={null}
@@ -217,7 +248,7 @@ function CreateWorkflowModal({
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ steps: [{ kind: 'plan', name: 'Plan' }, { kind: 'execute', name: 'Implement' }] }}
+        initialValues={initialValues ?? defaultInitialValues}
         onFinish={(v) => mutation.mutate(v)}
         style={{ marginTop: 16 }}
       >
@@ -257,7 +288,7 @@ function CreateWorkflowModal({
         </Form.List>
 
         <Button type="primary" htmlType="submit" loading={mutation.isPending} style={{ marginTop: 16 }}>
-          Create
+          {isEdit ? 'Save' : 'Create'}
         </Button>
       </Form>
     </Modal>
@@ -416,6 +447,7 @@ export function WorkflowBrowse() {
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [editingWorkflow, setEditingWorkflow] = useState<WorkflowDto | null>(null);
 
   const listQuery = useQuery({
     queryKey: ['workflows'],
@@ -464,7 +496,29 @@ export function WorkflowBrowse() {
       dataIndex: 'createdAt',
       render: (ts: string) => new Date(ts).toLocaleDateString(),
     },
+    {
+      title: 'Actions',
+      render: (_: unknown, row: WorkflowDto) => (
+        <Button
+          type="link"
+          size="small"
+          onClick={() => setEditingWorkflow(row)}
+        >
+          Edit
+        </Button>
+      ),
+    },
   ];
+
+  const editingInitialValues: CreateWorkflowValues | undefined = editingWorkflow
+    ? {
+        name: editingWorkflow.name,
+        description: editingWorkflow.description ?? undefined,
+        steps: (
+          (editingWorkflow.latestVersion?.definition as { steps?: Record<string, unknown>[] })?.steps ?? []
+        ).map(toFormStep),
+      }
+    : undefined;
 
   return (
     <div className="page-content">
@@ -496,6 +550,13 @@ export function WorkflowBrowse() {
 
       <CreateWorkflowModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={invalidate} />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onCreated={invalidate} />
+      <CreateWorkflowModal
+        open={!!editingWorkflow}
+        onClose={() => setEditingWorkflow(null)}
+        onCreated={invalidate}
+        workflowId={editingWorkflow?.id}
+        initialValues={editingInitialValues}
+      />
     </div>
   );
 }

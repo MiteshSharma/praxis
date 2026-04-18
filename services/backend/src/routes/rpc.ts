@@ -79,6 +79,9 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const workflowsCreate = os.workflows.create.handler(({ input }) =>
     deps.workflowsService.create(input),
   );
+  const workflowsUpdate = os.workflows.update.handler(({ input }) =>
+    deps.workflowsService.update(input),
+  );
 
   const agentsList = os.agents.list.handler(({ input }) =>
     deps.agentsService.list(input?.limit ?? 50, input?.kind),
@@ -199,6 +202,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       list: workflowsList,
       get: workflowsGet,
       create: workflowsCreate,
+      update: workflowsUpdate,
     },
     agents: {
       list: agentsList,
