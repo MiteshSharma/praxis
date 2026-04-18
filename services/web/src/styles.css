@@ -504,12 +504,24 @@ body {
 
 /* ── Job detail panel (right column inside message card) ───────────────────── */
 .msg-job-panel {
-  width: 180px;
+  width: 200px;
   flex-shrink: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-job-section {
+  flex: 1;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+}
+
+.msg-job-section + .msg-job-section {
+  border-top: 1px solid var(--c-border-subtle);
 }
 
 .msg-job-status {
