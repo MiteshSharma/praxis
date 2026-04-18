@@ -334,7 +334,7 @@ export function ConversationDetail() {
         {sendMutation.error && (
           <Alert type="error" message={String(sendMutation.error)} style={{ marginBottom: 8 }} closable />
         )}
-        <div className="compose-input-row">
+        <div className="compose-box">
           <textarea
             className="compose-textarea"
             rows={3}
@@ -345,29 +345,29 @@ export function ConversationDetail() {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
             }}
           />
-        </div>
-        <div className="compose-actions">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Checkbox checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)}>
-              <span style={{ fontSize: 13 }}>Auto-approve plan</span>
-            </Checkbox>
+          <div className="compose-footer">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Checkbox checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)}>
+                <span style={{ fontSize: 13 }}>Auto-approve plan</span>
+              </Checkbox>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? 'Hide options' : 'Options'}
+              </button>
+            </div>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setShowAdvanced((v) => !v)}
+              className="btn btn-primary"
+              disabled={!messageInput.trim() || sendMutation.isPending}
+              onClick={handleSend}
             >
-              {showAdvanced ? 'Hide options' : 'Options'}
+              {sendMutation.isPending ? 'Sending…' : 'Send'}
+              <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>⌘↵</span>
             </button>
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!messageInput.trim() || sendMutation.isPending}
-            onClick={handleSend}
-          >
-            {sendMutation.isPending ? 'Sending…' : 'Send'}
-            <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>⌘↵</span>
-          </button>
         </div>
       </div>
 
