@@ -390,13 +390,11 @@ export function AgentBrowse() {
   ];
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="page-content">
+      <div className="page-header">
         <div>
-          <Typography.Title level={4} style={{ margin: 0 }}>Agents &amp; Skills</Typography.Title>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Agents run workflow steps. Skills are reusable capability modules attached to agents.
-          </Typography.Text>
+          <h1 className="page-title">Agents &amp; Skills</h1>
+          <p className="page-subtitle">Agents run workflow steps. Skills are reusable modules attached to agents.</p>
         </div>
         <Space>
           <Button onClick={() => setShowImport(true)}>Import</Button>
@@ -404,7 +402,7 @@ export function AgentBrowse() {
         </Space>
       </div>
 
-      {listQuery.error && <Alert type="error" message={String(listQuery.error)} />}
+      {listQuery.error && <Alert type="error" message={String(listQuery.error)} style={{ marginBottom: 16 }} />}
 
       <Card>
         <Table
@@ -421,6 +419,6 @@ export function AgentBrowse() {
 
       <CreateModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={invalidate} />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onCreated={invalidate} />
-    </Space>
+    </div>
   );
 }

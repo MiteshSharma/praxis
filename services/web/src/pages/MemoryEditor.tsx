@@ -1,16 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Input, Space, Spin, Tabs, Typography, notification } from 'antd';
+import { Input, Tabs, notification } from 'antd';
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { rpc } from '../rpc';
 
-const { Title, Text } = Typography;
-
 export function MemoryEditor() {
-  // Route is /memories/* so repoKey may contain slashes (github.com/user/repo)
   const params = useParams<{ '*': string }>();
   const repoKey = params['*'] ?? '';
+  const navigate = useNavigate();
 
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<string | null>(null);
@@ -22,7 +20,6 @@ export function MemoryEditor() {
     enabled: !!repoKey,
   });
 
-  // Initialise draft when data loads (only if no unsaved changes)
   useEffect(() => {
     if (data?.content !== undefined && draft === null) {
       setDraft(data.content);
@@ -47,87 +44,126 @@ export function MemoryEditor() {
     },
   });
 
-  const handleCancel = () => {
-    setDraft(data?.content ?? null);
-  };
+  const isDirty = draft !== null && draft !== data?.content;
 
-  const handleReload = async () => {
-    setDraft(null);
-    await refetch();
-  };
-
-  if (isLoading) return <Spin />;
-
-  if (!data) {
+  if (isLoading) {
     return (
-      <Space direction="vertical">
-        <Title level={4}>Not found</Title>
-        <Text>No memory file exists for <Text code>{repoKey}</Text>.</Text>
-      </Space>
+      <div className="page-content">
+        <p className="muted">Loading…</p>
+      </div>
     );
   }
 
-  const isDirty = draft !== null && draft !== data.content;
+  if (!data) {
+    return (
+      <div className="page-content">
+        <div className="empty-state">
+          <p className="empty-state-title">Not found</p>
+          <p className="empty-state-description">
+            No memory file exists for <code>{repoKey}</code>.
+          </p>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/memories')}>
+            ← Back to memory list
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size="large">
-      <Space direction="vertical" size={2}>
-        <Title level={4} style={{ margin: 0 }}>
-          Repository Memory: {repoKey}
-        </Title>
-        <Text type="secondary">
-          {data.entryCount} entries · {(data.sizeBytes / 1024).toFixed(1)} KB · updated{' '}
-          {new Date(data.updatedAt).toLocaleString()}
-        </Text>
-      </Space>
+    <div className="page-content">
+      {/* Breadcrumb */}
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        onClick={() => navigate('/memories')}
+        style={{ marginBottom: 16, paddingLeft: 0 }}
+      >
+        ← Back to memory list
+      </button>
 
-      <Tabs
-        activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as 'view' | 'edit')}
-        items={[
-          {
-            key: 'view',
-            label: 'View',
-            children: (
-              <div style={{ fontFamily: 'inherit', lineHeight: 1.6 }}>
-                <ReactMarkdown>{saveContent}</ReactMarkdown>
-              </div>
-            ),
-          },
-          {
-            key: 'edit',
-            label: 'Edit',
-            children: (
-              <Input.TextArea
-                value={saveContent}
-                onChange={(e) => setDraft(e.target.value)}
-                autoSize={{ minRows: 20 }}
-                style={{ fontFamily: 'monospace', fontSize: 13 }}
-              />
-            ),
-          },
-        ]}
-      />
+      {/* Header */}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title" style={{ fontSize: 16 }}>
+            {repoKey}
+          </h1>
+          <p className="page-subtitle">
+            {data.entryCount} entries · {(data.sizeBytes / 1024).toFixed(1)} KB · updated{' '}
+            {new Date(data.updatedAt).toLocaleString()}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {isDirty && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setDraft(data.content ?? null)}
+            >
+              Discard
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!isDirty || saving}
+            onClick={() => save()}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
 
-      <Space>
-        <Button
-          type="primary"
-          onClick={() => save()}
-          loading={saving}
-          disabled={!isDirty}
-        >
-          Save
-        </Button>
-        <Button onClick={handleCancel} disabled={!isDirty}>
-          Cancel
-        </Button>
-        <Button onClick={handleReload}>Reload from server</Button>
-      </Space>
+      {/* Editor tabs */}
+      <div
+        style={{
+          background: 'var(--c-surface)',
+          border: '1px solid var(--c-border)',
+          borderRadius: 10,
+          overflow: 'hidden',
+        }}
+      >
+        <Tabs
+          activeKey={activeTab}
+          onChange={(k) => setActiveTab(k as 'view' | 'edit')}
+          style={{ padding: '0 16px' }}
+          items={[
+            {
+              key: 'view',
+              label: 'Preview',
+              children: (
+                <div className="prose" style={{ padding: '8px 0 16px', maxHeight: 600, overflowY: 'auto' }}>
+                  <ReactMarkdown>{saveContent}</ReactMarkdown>
+                </div>
+              ),
+            },
+            {
+              key: 'edit',
+              label: 'Edit',
+              children: (
+                <Input.TextArea
+                  value={saveContent}
+                  onChange={(e) => setDraft(e.target.value)}
+                  autoSize={{ minRows: 20 }}
+                  style={{
+                    fontFamily: "'Fira Code', 'Consolas', monospace",
+                    fontSize: 12,
+                    border: 'none',
+                    borderRadius: 0,
+                    padding: '8px 0 16px',
+                    resize: 'none',
+                  }}
+                  variant="borderless"
+                />
+              ),
+            },
+          ]}
+        />
+      </div>
 
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        Note: this file may be edited by the next learning pass. Hand-edits are durable
-        until the next job on this repo completes.
-      </Text>
-    </Space>
+      <p className="small muted" style={{ marginTop: 12 }}>
+        Memory may be updated by the next learning pass after a job on this repo completes.
+      </p>
+    </div>
   );
 }

@@ -1,26 +1,32 @@
 import { useQuery } from '@tanstack/react-query';
-import { Card, Spin, Tag, Tooltip, Typography } from 'antd';
+import { Spin, Tag, Tooltip } from 'antd';
 import { rpc } from '../rpc';
 
-const STATUS_ICONS: Record<string, string> = {
-  passed: '✓',
-  failed: '✗',
-  running: '→',
-  pending: '○',
-  skipped: '⊘',
+const STEP_STATE: Record<string, { icon: string; color: string; dotClass: string }> = {
+  passed:  { icon: '✓', color: 'var(--c-success)', dotClass: 'done' },
+  failed:  { icon: '✕', color: 'var(--c-error)',   dotClass: 'error' },
+  running: { icon: '→', color: 'var(--c-primary)',  dotClass: 'active' },
+  pending: { icon: '○', color: 'var(--c-text-3)',   dotClass: 'wait' },
+  skipped: { icon: '⊘', color: 'var(--c-text-3)',   dotClass: 'wait' },
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  passed: '#52c41a',
-  failed: '#ff4d4f',
-  running: '#1677ff',
-  pending: '#8c8c8c',
-  skipped: '#bfbfbf',
+const KIND_COLORS: Record<string, string> = {
+  plan:    'blue',
+  execute: 'green',
+  check:   'purple',
 };
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+}
 
 interface StepProgressProps {
   jobId: string;
-  /** Polling interval in ms. Stops polling on terminal job statuses. */
   refetchInterval?: number;
 }
 
@@ -35,85 +41,70 @@ export function StepProgress({ jobId, refetchInterval = 3000 }: StepProgressProp
   if (stepsQuery.isLoading) return <Spin size="small" />;
   if (!stepsQuery.data?.length) return null;
 
-  const steps = stepsQuery.data;
-
   return (
-    <Card title="Steps" size="small">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {steps.map((step) => {
-          const icon = STATUS_ICONS[step.status] ?? '?';
-          const color = STATUS_COLORS[step.status] ?? '#8c8c8c';
-          const durationMs =
-            step.startedAt && step.completedAt
-              ? new Date(step.completedAt).getTime() - new Date(step.startedAt).getTime()
-              : null;
-          const durationStr = durationMs != null ? formatDuration(durationMs) : null;
+    <div className="steps-list">
+      {stepsQuery.data.map((step) => {
+        const state = STEP_STATE[step.status] ?? STEP_STATE.pending;
+        const durationMs =
+          step.startedAt && step.completedAt
+            ? new Date(step.completedAt).getTime() - new Date(step.startedAt).getTime()
+            : null;
 
-          const isRetry = !!step.retryOf;
-
-          return (
+        return (
+          <div
+            key={step.id}
+            className="step-row"
+            style={{ paddingLeft: step.retryOf ? 28 : undefined }}
+          >
             <div
-              key={step.id}
+              className="step-icon"
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                paddingLeft: isRetry ? 24 : 0,
+                background:
+                  step.status === 'passed'
+                    ? 'var(--c-success-bg)'
+                    : step.status === 'failed'
+                      ? 'var(--c-error-bg)'
+                      : step.status === 'running'
+                        ? 'var(--c-primary-light)'
+                        : 'var(--c-border)',
+                color: state.color,
               }}
             >
-              <span style={{ color, fontWeight: 600, minWidth: 16 }}>{icon}</span>
-              <Typography.Text
-                style={{ flex: 1 }}
-                type={step.status === 'failed' ? 'danger' : undefined}
-              >
-                {step.name}
-                {isRetry && (
-                  <Tag color="orange" style={{ marginLeft: 6, fontSize: 11 }}>
-                    retry
-                  </Tag>
-                )}
-              </Typography.Text>
-              <Tag color={kindColor(step.kind)} style={{ fontSize: 11 }}>
-                {step.kind}
-              </Tag>
-              {durationStr && (
-                <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                  {durationStr}
-                </Typography.Text>
-              )}
-              {step.status === 'failed' && step.errorMessage && (
-                <Tooltip title={step.errorMessage}>
-                  <Typography.Text type="danger" style={{ fontSize: 11 }}>
-                    ⚠
-                  </Typography.Text>
-                </Tooltip>
-              )}
+              {state.icon}
             </div>
-          );
-        })}
-      </div>
-    </Card>
+
+            <span
+              style={{
+                flex: 1,
+                color: step.status === 'failed' ? 'var(--c-error)' : 'var(--c-text-1)',
+              }}
+            >
+              {step.name}
+              {step.retryOf && (
+                <Tag color="orange" style={{ marginLeft: 6, fontSize: 10 }}>
+                  retry
+                </Tag>
+              )}
+            </span>
+
+            <Tag color={KIND_COLORS[step.kind] ?? 'default'} style={{ fontSize: 11 }}>
+              {step.kind}
+            </Tag>
+
+            {durationMs != null && (
+              <span className="muted small" style={{ whiteSpace: 'nowrap' }}>
+                {formatDuration(durationMs)}
+              </span>
+            )}
+
+            {step.status === 'failed' && step.errorMessage && (
+              <Tooltip title={step.errorMessage}>
+                <span style={{ color: 'var(--c-error)', fontSize: 13 }}>⚠</span>
+              </Tooltip>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
-}
-
-function kindColor(kind: string): string {
-  switch (kind) {
-    case 'plan':
-      return 'blue';
-    case 'execute':
-      return 'green';
-    case 'check':
-      return 'purple';
-    default:
-      return 'default';
-  }
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 }

@@ -467,13 +467,11 @@ export function WorkflowBrowse() {
   ];
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="page-content">
+      <div className="page-header">
         <div>
-          <Typography.Title level={4} style={{ margin: 0 }}>Workflows</Typography.Title>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Workflows compose agents and checks into multi-step pipelines.
-          </Typography.Text>
+          <h1 className="page-title">Workflows</h1>
+          <p className="page-subtitle">Compose agents and checks into multi-step pipelines.</p>
         </div>
         <Space>
           <Button onClick={() => setShowImport(true)}>Import</Button>
@@ -481,7 +479,7 @@ export function WorkflowBrowse() {
         </Space>
       </div>
 
-      {listQuery.error && <Alert type="error" message={String(listQuery.error)} />}
+      {listQuery.error && <Alert type="error" message={String(listQuery.error)} style={{ marginBottom: 16 }} />}
 
       <Card>
         <Table
@@ -498,6 +496,6 @@ export function WorkflowBrowse() {
 
       <CreateWorkflowModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={invalidate} />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onCreated={invalidate} />
-    </Space>
+    </div>
   );
 }
