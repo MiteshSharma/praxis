@@ -457,45 +457,49 @@ export function ConversationDetail() {
                 {/* Right: job details panel */}
                 {msg.jobId && (
                   <div className="msg-job-panel">
-                    {statusStyle && (
-                      <span
-                        className="msg-job-status"
-                        style={{ background: statusStyle.bg, color: statusStyle.text }}
-                      >
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusStyle.dot, flexShrink: 0 }} />
-                        {job?.status.replace(/_/g, ' ') ?? 'pending'}
-                      </span>
-                    )}
+                    {/* Section 1 — Details */}
+                    <div className="msg-job-section">
+                      {statusStyle && (
+                        <span
+                          className="msg-job-status"
+                          style={{ background: statusStyle.bg, color: statusStyle.text }}
+                        >
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusStyle.dot, flexShrink: 0 }} />
+                          {job?.status.replace(/_/g, ' ') ?? 'pending'}
+                        </span>
+                      )}
 
-                    <div className="msg-job-detail-row">
-                      <span className="msg-job-label">Time</span>
-                      <span className="msg-job-value">
-                        {new Date(msg.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <div className="msg-job-detail-row">
+                        <span className="msg-job-label">Time</span>
+                        <span className="msg-job-value">
+                          {new Date(msg.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      {job?.model && (
+                        <div className="msg-job-detail-row">
+                          <span className="msg-job-label">Model</span>
+                          <span className="msg-job-value" style={{ fontSize: 11 }}>{job.model.split('/').pop()}</span>
+                        </div>
+                      )}
+
+                      {job?.totalCostUsd != null && (
+                        <div className="msg-job-detail-row">
+                          <span className="msg-job-label">Cost</span>
+                          <span className="msg-job-value">${job.totalCostUsd.toFixed(4)}</span>
+                        </div>
+                      )}
+
+                      {job?.totalInputTokens != null && (
+                        <div className="msg-job-detail-row">
+                          <span className="msg-job-label">Tokens</span>
+                          <span className="msg-job-value">{fmtK(job.totalInputTokens)}↑ {fmtK(job.totalOutputTokens)}↓</span>
+                        </div>
+                      )}
                     </div>
 
-                    {job?.model && (
-                      <div className="msg-job-detail-row">
-                        <span className="msg-job-label">Model</span>
-                        <span className="msg-job-value" style={{ fontSize: 11 }}>{job.model.split('/').pop()}</span>
-                      </div>
-                    )}
-
-                    {job?.totalCostUsd != null && (
-                      <div className="msg-job-detail-row">
-                        <span className="msg-job-label">Cost</span>
-                        <span className="msg-job-value">${job.totalCostUsd.toFixed(4)}</span>
-                      </div>
-                    )}
-
-                    {job?.totalInputTokens != null && (
-                      <div className="msg-job-detail-row">
-                        <span className="msg-job-label">Tokens</span>
-                        <span className="msg-job-value">{fmtK(job.totalInputTokens)}↑ {fmtK(job.totalOutputTokens)}↓</span>
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {/* Section 2 — Actions */}
+                    <div className="msg-job-section">
                       <span
                         style={{
                           fontSize: 12,
