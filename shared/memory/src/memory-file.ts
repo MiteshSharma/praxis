@@ -1,5 +1,5 @@
 import { type Database, repoMemories } from '@shared/db';
-import { storage, StorageNotConfiguredError } from '@shared/storage';
+import { type StorageClient, storage, StorageNotConfiguredError } from '@shared/storage';
 import { eq } from 'drizzle-orm';
 import { InvalidMemoryFormatError, validateMemoryFormat } from './validator';
 
@@ -20,13 +20,17 @@ export class MemoryTooLargeError extends Error {
   }
 }
 
-export async function loadMemoryFile(db: Database, repoKey: string): Promise<string | null> {
+export async function loadMemoryFile(
+  db: Database,
+  repoKey: string,
+  storageClient: StorageClient = storage,
+): Promise<string | null> {
   const row = await db.query.repoMemories.findFirst({
     where: eq(repoMemories.repoKey, repoKey),
   });
   if (!row) return null;
   try {
-    return await storage.getObjectAsString(row.contentUri);
+    return await storageClient.getObjectAsString(row.contentUri);
   } catch (err) {
     if (err instanceof StorageNotConfiguredError) return null;
     throw err;
@@ -37,6 +41,7 @@ export async function saveMemoryFile(
   db: Database,
   repoKey: string,
   markdown: string,
+  storageClient: StorageClient = storage,
 ): Promise<{ sizeBytes: number; entryCount: number }> {
   const sizeBytes = Buffer.byteLength(markdown, 'utf-8');
   if (sizeBytes > MAX_MEMORY_BYTES) {
@@ -49,7 +54,7 @@ export async function saveMemoryFile(
   }
 
   const contentUri = MEMORY_KEY(repoKey);
-  await storage.putObject(contentUri, markdown, 'text/markdown');
+  await storageClient.putObject(contentUri, markdown, 'text/markdown');
 
   const entryCount = validation.entryCount;
 

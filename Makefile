@@ -37,6 +37,7 @@ help:
 	@echo "  up                 - infra-up + dev (full local stack)"
 	@echo ""
 	@echo "Quality"
+	@echo "  test               - Run unit tests (vitest run)"
 	@echo "  typecheck          - tsc --noEmit across the workspace"
 	@echo "  lint               - biome check"
 	@echo "  format             - biome format --write"
@@ -123,6 +124,9 @@ up: infra-up dev
 
 # ---------- quality ----------
 
+test:
+	@$(NVM_EXEC) pnpm test
+
 typecheck:
 	@$(NVM_EXEC) pnpm typecheck
 
@@ -148,4 +152,4 @@ clean:
         migrate \
         infra-up infra-down infra-reset infra-logs infra-ps \
         dev dev-backend dev-sandbox-worker dev-web up \
-        typecheck lint format smoke clean
+        test typecheck lint format smoke clean

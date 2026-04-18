@@ -14,6 +14,7 @@ import type { Logger } from '@shared/telemetry';
 import { eq } from 'drizzle-orm';
 import { LEARNING_AGENT } from '../defaults/learning-agent';
 import { gatherJobContext } from './job-context';
+import { parseSSE } from './sse';
 import { appendTimeline } from './transitions';
 
 /**
@@ -29,11 +30,13 @@ export interface LearningCost {
   costUsd: number;
 }
 
+export type StoragePutFn = (key: string, content: string, contentType: string) => Promise<void>;
+
 export async function runLearningPass(
   jobId: string,
   sandboxInfo: SandboxInfo,
   workspace: string,
-  deps: { db: Database; log: Logger; memoryBackend?: MemoryBackend },
+  deps: { db: Database; log: Logger; memoryBackend?: MemoryBackend; storagePut?: StoragePutFn; fetchFn?: typeof fetch },
 ): Promise<LearningCost> {
   const { db, log } = deps;
   const memoryBackend = deps.memoryBackend ?? new S3MemoryBackend(db);
@@ -89,6 +92,7 @@ Please return the updated memory file in full. Use job id "${job.id.substring(0,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
         OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
       },
+      fetchFn: deps.fetchFn,
     });
   } catch (err) {
     log.warn({ err, jobId, repoKey }, 'learning pass: LLM call failed; keeping previous memory');
@@ -115,7 +119,7 @@ Please return the updated memory file in full. Use job id "${job.id.substring(0,
         'learning pass: returned unusable memory; keeping previous',
       );
       // Save rejected output as a debug artifact in storage (best-effort)
-      await saveRejectedArtifact(jobId, newMarkdown, log);
+      await saveRejectedArtifact(jobId, newMarkdown, log, deps.storagePut);
       const seq = await appendTimeline(db, jobId, 'memory-rejected', {
         repoKey,
         errors: err instanceof InvalidMemoryFormatError ? err.errors : [err.message],
@@ -148,13 +152,15 @@ async function callSandboxForText(
     systemPrompt: string;
     maxTurns: number;
     env: Record<string, string>;
+    fetchFn?: typeof fetch;
   },
 ): Promise<{ text: string } & LearningCost> {
+  const { fetchFn, ...rest } = body;
   const requestId = randomUUID();
-  const response = await fetch(`${sandboxInfo.endpoint}/prompt`, {
+  const response = await (fetchFn ?? fetch)(`${sandboxInfo.endpoint}/prompt`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-request-id': requestId },
-    body: JSON.stringify(body),
+    body: JSON.stringify(rest),
   });
 
   if (!response.ok || !response.body) {
@@ -202,42 +208,17 @@ async function saveRejectedArtifact(
   jobId: string,
   content: string,
   log: Logger,
+  storagePut?: StoragePutFn,
 ): Promise<void> {
   try {
-    const { storage } = await import('@shared/storage');
-    await storage.putObject(`artifacts/${jobId}/learning-rejected.md`, content, 'text/markdown');
+    if (storagePut) {
+      await storagePut(`artifacts/${jobId}/learning-rejected.md`, content, 'text/markdown');
+    } else {
+      const { storage } = await import('@shared/storage');
+      await storage.putObject(`artifacts/${jobId}/learning-rejected.md`, content, 'text/markdown');
+    }
   } catch {
     log.warn({ jobId }, 'learning pass: could not save rejected artifact');
   }
 }
 
-async function* parseSSE(
-  body: ReadableStream<Uint8Array>,
-): AsyncGenerator<string, void, void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let idx: number;
-      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic stream frame split
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const dataLines = frame
-          .split('\n')
-          .filter((l) => l.startsWith('data: '))
-          .map((l) => l.slice(6));
-        if (dataLines.length === 0) continue;
-        yield dataLines.join('\n');
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}

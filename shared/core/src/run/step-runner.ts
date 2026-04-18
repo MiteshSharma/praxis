@@ -16,10 +16,13 @@ import { buildExecuteSystemPrompt } from '../prompts/execute-session';
 import { buildMemorySection, buildPlanSessionSystemPrompt } from '../prompts/plan-session';
 import { buildRevisionSystemPrompt } from '../prompts/revision-session';
 import type { TaskTracker } from '../task-tracker/task-tracker';
+import { parseSSE } from './sse';
 import { appendTimeline, transitionJob } from './transitions';
 
 const DEFAULT_PLAN_HOLD_HOURS = 24;
 
+
+export type PluginRegistryFactory = (db: Database) => { resolveForConversation(conversationId: string | null | undefined): Promise<import('@shared/mcp').ResolvedPlugin[]> };
 
 export interface StepRunnerDeps {
   db: Database;
@@ -34,6 +37,14 @@ export interface StepRunnerDeps {
   memoryMarkdown?: string | null;
   /** Public base URL of this control-plane, e.g. http://localhost:3000. Used to build callback URLs for plan review channels. */
   controlPlaneUrl?: string;
+  /** Override plugin registry factory for testing */
+  createPluginRegistry?: PluginRegistryFactory;
+  /** Override fetch for testing */
+  fetchFn?: typeof fetch;
+  /** Override Redis subscriber for testing (replaces new Redis(redisUrl) in waitForWake) */
+  createRedis?: (url: string) => import('ioredis').Redis;
+  /** Override MCP token minting for testing */
+  mintMcpToken?: (jobId: string) => Promise<string | undefined>;
 }
 
 export class CheckFailedError extends Error {
@@ -215,9 +226,7 @@ export class StepRunner {
       }
     }
 
-    const { PluginRegistry } = await import('@shared/mcp');
-    const registry = new PluginRegistry(this.deps.db);
-    const resolvedPlugins = await registry.resolveForConversation(job.conversationId ?? undefined);
+    const resolvedPlugins = await this.resolvePlugins(job.conversationId);
 
     const mcpToken = await this.mintToken(job.id);
     if (!mcpToken || !this.deps.mcpEndpoint) {
@@ -326,9 +335,7 @@ export class StepRunner {
       systemPrompt = DEFAULT_AGENT.systemPrompt;
     }
 
-    const { PluginRegistry } = await import('@shared/mcp');
-    const registry = new PluginRegistry(this.deps.db);
-    const resolvedPlugins = await registry.resolveForConversation(job.conversationId ?? undefined);
+    const resolvedPlugins = await this.resolvePlugins(job.conversationId);
 
     const resolved = await this.resolveStepAgent(step, job.model ?? undefined);
     if (resolved) {
@@ -371,7 +378,8 @@ export class StepRunner {
 
     log.info({ command: cfg.command }, 'running check step');
 
-    const result = await fetch(`${sandboxInfo.endpoint}/exec`, {
+    const fetchFn = this.deps.fetchFn ?? fetch;
+    const result = await fetchFn(`${sandboxInfo.endpoint}/exec`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -527,7 +535,8 @@ export class StepRunner {
 
   private async waitForWake(jobId: string): Promise<PlanWakeEvent> {
     const channel = `run:${jobId}:plan-event`;
-    const sub = new Redis(this.deps.redisUrl);
+    const createRedis = this.deps.createRedis ?? ((url) => new Redis(url));
+    const sub = createRedis(this.deps.redisUrl);
 
     return new Promise((resolve, reject) => {
       sub.subscribe(channel, (err) => {
@@ -753,7 +762,7 @@ export class StepRunner {
     const { db } = this.deps;
     const requestId = randomUUID();
 
-    const response = await fetch(`${sandboxInfo.endpoint}/prompt`, {
+    const response = await (this.deps.fetchFn ?? fetch)(`${sandboxInfo.endpoint}/prompt`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-request-id': requestId },
       body: JSON.stringify({
@@ -819,8 +828,19 @@ export class StepRunner {
     log.info({ phase: opts.sessionPhase }, 'sandbox session finished');
   }
 
+  private async resolvePlugins(conversationId: string | null | undefined): Promise<import('@shared/mcp').ResolvedPlugin[]> {
+    if (this.deps.createPluginRegistry) {
+      const registry = this.deps.createPluginRegistry(this.deps.db);
+      return registry.resolveForConversation(conversationId);
+    }
+    const { PluginRegistry } = await import('@shared/mcp');
+    const registry = new PluginRegistry(this.deps.db);
+    return registry.resolveForConversation(conversationId);
+  }
+
   private async mintToken(jobId: string): Promise<string | undefined> {
     if (!this.deps.mcpEndpoint || !this.deps.mcpSecret) return undefined;
+    if (this.deps.mintMcpToken) return this.deps.mintMcpToken(jobId);
     const { mintMcpToken } = await import('../mcp/auth');
     return mintMcpToken(jobId, this.deps.mcpSecret);
   }
@@ -862,31 +882,3 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<string, void, void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let idx: number;
-      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic stream frame split
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const dataLines = frame
-          .split('\n')
-          .filter((l) => l.startsWith('data: '))
-          .map((l) => l.slice(6));
-        if (dataLines.length === 0) continue;
-        yield dataLines.join('\n');
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}

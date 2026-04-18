@@ -3,21 +3,21 @@ import { providerRegistry } from '../providers/index.js';
 
 export type { PromptBody };
 
-const activeSessions = new Map<string, AbortController>();
-
 export class AgentService {
+  private readonly activeSessions = new Map<string, AbortController>();
+
   getActiveSessions(): Map<string, AbortController> {
-    return activeSessions;
+    return this.activeSessions;
   }
 
   createSession(sessionId: string): AbortController {
     const abort = new AbortController();
-    activeSessions.set(sessionId, abort);
+    this.activeSessions.set(sessionId, abort);
     return abort;
   }
 
   deleteSession(sessionId: string): void {
-    activeSessions.delete(sessionId);
+    this.activeSessions.delete(sessionId);
   }
 
   async runAgent(

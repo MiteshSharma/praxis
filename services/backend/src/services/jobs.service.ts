@@ -27,9 +27,10 @@ export class JobsService {
     private readonly db: Database,
     private readonly boss: PgBoss,
     log: Logger,
+    overrides?: { ingest?: TaskIngestService; repo?: JobsRepository },
   ) {
-    this.ingest = new TaskIngestService(db, boss, log);
-    this.repo = new JobsRepository(db);
+    this.ingest = overrides?.ingest ?? new TaskIngestService(db, boss, log);
+    this.repo = overrides?.repo ?? new JobsRepository(db);
   }
 
   async create(input: CreateJobInput): Promise<{ jobId: string }> {

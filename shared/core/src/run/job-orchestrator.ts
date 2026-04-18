@@ -16,6 +16,8 @@ import type { TaskTracker } from '../task-tracker/task-tracker';
 import { HoldTimeoutError, PlanRejectedError, StepRunner } from './step-runner';
 import { appendTimeline, transitionJob } from './transitions';
 import { runLearningPass } from './learning';
+import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
+import { parseSSE } from './sse';
 
 export type ResumeMode = 'execute' | 'revise';
 
@@ -35,6 +37,10 @@ export interface JobOrchestratorDeps {
   taskTracker?: TaskTracker;
   /** Memory backend — defaults to S3MemoryBackend when omitted */
   memoryBackend?: MemoryBackend;
+  /** Override step runner for testing */
+  stepRunner?: StepRunner;
+  /** Override fetch for testing */
+  fetchFn?: typeof fetch;
 }
 
 export class JobOrchestrator {
@@ -43,7 +49,7 @@ export class JobOrchestrator {
 
   constructor(private readonly deps: JobOrchestratorDeps) {
     this.tracker = deps.taskTracker ?? new DbTaskTracker(deps.db);
-    this.stepRunner = new StepRunner({
+    this.stepRunner = deps.stepRunner ?? new StepRunner({
       db: deps.db,
       boss: deps.boss,
       sandbox: deps.sandbox,
@@ -273,7 +279,7 @@ export class JobOrchestrator {
     log: Logger,
   ): Promise<void> {
     const { sandbox, db } = this.deps;
-    const cloneUrl = injectToken(job.githubUrl);
+    const cloneUrl = injectGithubToken(job.githubUrl);
     const clone = await sandbox.exec(
       sandboxInfo.providerId,
       `git clone --depth 1 --branch ${job.githubBranch} ${cloneUrl} .`,
@@ -418,7 +424,7 @@ export class JobOrchestrator {
     const prBody = buildPrBody(job, plan);
 
     const requestId = randomUUID();
-    const response = await fetch(`${sandboxInfo.endpoint}/publish`, {
+    const response = await (this.deps.fetchFn ?? fetch)(`${sandboxInfo.endpoint}/publish`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-request-id': requestId },
       body: JSON.stringify({
@@ -536,6 +542,7 @@ export class JobOrchestrator {
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
           OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
         },
+        fetchFn: this.deps.fetchFn,
       });
       const generated = result.trim();
       if (generated) return generated;
@@ -626,44 +633,6 @@ chore (maintenance, deps, config), docs (documentation), test (tests), perf (per
 Keep the description under 72 characters total.`;
 
 /**
- * Builds a markdown PR body from the job description and approved plan.
- */
-function buildPrBody(job: Job, plan: Plan | null): string {
-  const parts: string[] = [];
-
-  if (job.description) {
-    parts.push(`## Task\n\n${job.description}`);
-  }
-
-  if (plan) {
-    parts.push(`## Plan\n\n**${plan.data.title}**\n\n${plan.data.summary}`);
-
-    if (plan.data.steps.length > 0) {
-      const steps = plan.data.steps
-        .map((s) => `- [${s.status === 'done' ? 'x' : ' '}] ${s.content}`)
-        .join('\n');
-      parts.push(`### Steps\n\n${steps}`);
-    }
-
-    if (plan.data.affectedPaths.length > 0) {
-      parts.push(`### Affected files\n\n${plan.data.affectedPaths.map((p) => `- \`${p}\``).join('\n')}`);
-    }
-
-    if (plan.data.risks && plan.data.risks.length > 0) {
-      parts.push(`### Risks\n\n${plan.data.risks.map((r) => `- ${r}`).join('\n')}`);
-    }
-
-    if (plan.data.bodyMarkdown) {
-      parts.push(`### Full plan\n\n${plan.data.bodyMarkdown}`);
-    }
-  }
-
-  parts.push(`---\n_Created by [Praxis](https://github.com/MiteshSharma/praxis) · job \`${job.id.substring(0, 8)}\`_`);
-
-  return parts.join('\n\n');
-}
-
-/**
  * Makes a single-turn call to the sandbox /prompt endpoint and returns the text result.
  */
 async function callSandboxSingleTurn(
@@ -676,75 +645,31 @@ async function callSandboxSingleTurn(
     model: string;
     systemPrompt: string;
     env: Record<string, string>;
+    fetchFn?: typeof fetch;
   },
 ): Promise<string> {
-  const response = await fetch(`${sandboxInfo.endpoint}/prompt`, {
+  const { fetchFn: _fetchFn, ...rest } = body;
+  const fetchFn = _fetchFn ?? fetch;
+  const response = await fetchFn(`${sandboxInfo.endpoint}/prompt`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-request-id': randomUUID() },
-    body: JSON.stringify({ ...body, workingDir: '/', maxTurns: 1 }),
+    body: JSON.stringify({ ...rest, workingDir: '/', maxTurns: 1 }),
   });
   if (!response.ok || !response.body) {
     throw new Error(`sandbox /prompt failed: ${response.status}`);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
   let text = '';
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx: number;
-      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic stream frame split
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const data = frame
-          .split('\n')
-          .filter((l) => l.startsWith('data: '))
-          .map((l) => l.slice(6))
-          .join('\n');
-        if (!data) continue;
-        try {
-          const msg = JSON.parse(data) as Record<string, unknown>;
-          if (msg.type === 'result' && msg.subtype === 'success' && typeof msg.result === 'string') {
-            text = msg.result;
-          }
-        } catch { /* non-JSON frame */ }
+  for await (const chunk of parseSSE(response.body)) {
+    try {
+      const msg = JSON.parse(chunk) as Record<string, unknown>;
+      if (msg.type === 'result' && msg.subtype === 'success' && typeof msg.result === 'string') {
+        text = msg.result;
       }
-    }
-  } finally {
-    reader.releaseLock();
+    } catch { /* non-JSON frame */ }
   }
 
   return text;
 }
 
-function injectToken(url: string): string {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token || !url.startsWith('https://')) return url;
-  return url.replace('https://', `https://x-access-token:${token}@`);
-}
-
-/**
- * Walk an object and replace `"$input.<name>"` strings with the resolved input value.
- */
-function substituteInputs(
-  obj: Record<string, unknown>,
-  inputs: Record<string, string>,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (typeof v === 'string') {
-      result[k] = v.replace(/\$input\.(\w+)/g, (_, name: string) => inputs[name] ?? `$input.${name}`);
-    } else if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      result[k] = substituteInputs(v as Record<string, unknown>, inputs);
-    } else {
-      result[k] = v;
-    }
-  }
-  return result;
-}

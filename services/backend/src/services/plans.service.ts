@@ -18,10 +18,11 @@ export class PlansService {
     private readonly boss: PgBoss,
     private readonly log: Logger,
     redisUrl: string,
+    overrides?: { repo?: PlansRepository; tracker?: DbTaskTracker; redis?: Redis },
   ) {
-    this.repo = new PlansRepository(db);
-    this.tracker = new DbTaskTracker(db);
-    this.redis = new Redis(redisUrl);
+    this.repo = overrides?.repo ?? new PlansRepository(db);
+    this.tracker = overrides?.tracker ?? new DbTaskTracker(db);
+    this.redis = overrides?.redis ?? new Redis(redisUrl);
   }
 
   async getLatestPlan(jobId: string): Promise<PlanDto | null> {

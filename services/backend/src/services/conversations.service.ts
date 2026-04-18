@@ -27,9 +27,10 @@ export class ConversationsService {
     private readonly db: Database,
     boss: PgBoss,
     log: Logger,
+    overrides?: { ingest?: TaskIngestService; repo?: ConversationsRepository },
   ) {
-    this.repo = new ConversationsRepository(db);
-    this.ingest = new TaskIngestService(db, boss, log);
+    this.repo = overrides?.repo ?? new ConversationsRepository(db);
+    this.ingest = overrides?.ingest ?? new TaskIngestService(db, boss, log);
   }
 
   async list(limit = 50): Promise<ConversationDto[]> {

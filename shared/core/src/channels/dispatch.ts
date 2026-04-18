@@ -4,7 +4,8 @@ import { conversationChannels } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
 import { eq } from 'drizzle-orm';
 import '../plugins/channels/index.js';
-import { channelRegistry } from '../plugins/channels/registry.js';
+import { channelRegistry as defaultChannelRegistry } from '../plugins/channels/registry.js';
+import type { PluginRegistry } from '../plugins/registry.js';
 import type { PraxisChannel } from './types.js';
 
 export async function dispatchEvent(channel: PraxisChannel, event: PraxisEvent): Promise<void> {
@@ -24,6 +25,7 @@ export async function dispatchToConversation(
   conversationId: string,
   event: PraxisEvent,
   log: Logger,
+  registry: PluginRegistry<PraxisChannel> = defaultChannelRegistry,
 ): Promise<void> {
   const rows = await db
     .select()
@@ -36,7 +38,7 @@ export async function dispatchToConversation(
   await Promise.allSettled(
     enabled.map(async (row) => {
       try {
-        const channel = channelRegistry.create(row.type, row.config);
+        const channel = registry.create(row.type, row.config);
         await dispatchEvent(channel, event);
         log.info({ channelId: row.id, type: row.type }, 'channel event dispatched');
       } catch (err) {

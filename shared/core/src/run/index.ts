@@ -4,3 +4,5 @@ export { transitionJob, appendTimeline, type TransitionResult } from './transiti
 export { recoverStuckJobs } from './recovery';
 export { runLearningPass } from './learning';
 export { gatherJobContext } from './job-context';
+export { parseSSE } from './sse';
+export { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';

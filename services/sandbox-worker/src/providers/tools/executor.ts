@@ -1,11 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import type { IExecService } from '../../services/exec.interface';
 import { ExecService } from '../../services/exec.service';
 
 export interface ToolExecutorConfig {
   workingDir: string;
   mcpEndpoint?: string;
   mcpToken?: string;
+  exec?: IExecService;
 }
 
 /**
@@ -19,12 +21,13 @@ export interface ToolExecutorConfig {
  * the same endpoints; this executor calls them directly.
  */
 export class ToolExecutor {
-  private readonly exec = new ExecService();
+  private readonly exec: IExecService;
   private readonly workingDir: string;
   private readonly mcpEndpoint?: string;
   private readonly mcpToken?: string;
 
   constructor(config: ToolExecutorConfig) {
+    this.exec = config.exec ?? new ExecService();
     this.workingDir = config.workingDir;
     this.mcpEndpoint = config.mcpEndpoint;
     this.mcpToken = config.mcpToken;
