@@ -1,10 +1,34 @@
 # Praxis
 
+> **Praxis is the only coding agent platform where no code reaches a pull request without a human approving the plan — with full audit trail, per-repo institutional memory, and customizable workflows for your engineering standards.**
+
+---
+
 > *praxis* (n.) — from Greek πρᾶξις: the process by which theory is enacted and made real through deliberate, reflective action. Aristotle distinguished *praxis* from mere *poiesis* (making things) — praxis is action that carries meaning and learns from itself.
 
 Praxis is a self-hosted platform that turns natural-language tasks into reviewed, tested, and merged pull requests. You point it at a GitHub repo, describe what you want, and an AI agent plans the work, waits for your approval, implements it, verifies it with your own checks, then opens a PR — and learns from every run so the next one is better.
 
 **The cycle mirrors the word:** plan → review → execute → verify → publish → learn → repeat.
+
+---
+
+## Why Praxis
+
+Every major coding agent — Devin, GitHub Copilot Workspace, OpenHands, background-agents — treats human review as optional or absent. Praxis is architected differently.
+
+### Architecturally enforced plan → review → execute
+
+No code runs until you approve the plan. This is not a UI courtesy — it is a structural constraint in the job state machine. The agent proposes, you decide, then execution begins.
+
+### Per-repo persistent memory
+
+After every job, a learning pass updates a structured `MEMORY.md` file scoped to that repository. The next job on the same repo starts with accumulated knowledge: conventions, pitfalls, internal library patterns, test setup requirements.
+
+The agent gets smarter about your codebase over time. Not through fine-tuning — through structured, inspectable, editable memory that your team can review and correct.
+
+### Composable workflow and agent DSL
+
+Praxis is not a fixed pipeline. You define workflows as sequences of plan / execute / check steps, attach custom agents with their own system prompts and tool permissions, compose reusable skills with declared dependencies, and wire check steps to your own shell commands (tests, lint, type-check). Each part is versioned and swappable per conversation.
 
 ---
 
