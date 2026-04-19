@@ -55,7 +55,7 @@ export function SessionList() {
 
   const renameMutation = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) =>
-      rpc.sessions.update({ id, title }),
+      rpc.sessions.update({ sessionId: id, title }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] });
       setEditingSession(null);
@@ -63,7 +63,7 @@ export function SessionList() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => rpc.sessions.delete({ id }),
+    mutationFn: (id: string) => rpc.sessions.delete({ sessionId: id }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] });
       setDeletingSession(null);

@@ -15,6 +15,7 @@ export const JOB_STATUSES = [
   'publishing',
   'completed',
   'failed',
+  'cancelled',
 ] as const;
 
 export const JobStatusSchema = z.enum(JOB_STATUSES);
@@ -22,20 +23,21 @@ export type JobStatus = z.infer<typeof JobStatusSchema>;
 
 /** Valid state transitions. Any other combination is a bug. */
 export const JOB_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
-  queued: ['provisioning'],
-  provisioning: ['preparing', 'failed'],
-  preparing: ['building', 'executing', 'checking', 'publishing', 'failed'],
-  building: ['plan_ready', 'failed'],
-  plan_ready: ['plan_review'],
-  plan_review: ['plan_revising', 'preparing', 'executing', 'plan_rejected', 'failed'],
-  plan_revising: ['plan_ready', 'preparing', 'failed'],
-  executing: ['checking', 'executing', 'preparing', 'learning', 'publishing', 'failed'],
-  checking: ['checking', 'executing', 'learning', 'publishing', 'failed'],
-  learning: ['completed', 'failed'],
-  publishing: ['learning', 'completed', 'failed'],
+  queued: ['provisioning', 'cancelled'],
+  provisioning: ['preparing', 'failed', 'cancelled'],
+  preparing: ['building', 'executing', 'checking', 'publishing', 'failed', 'cancelled'],
+  building: ['plan_ready', 'failed', 'cancelled'],
+  plan_ready: ['plan_review', 'cancelled'],
+  plan_review: ['plan_revising', 'preparing', 'executing', 'plan_rejected', 'failed', 'cancelled'],
+  plan_revising: ['plan_ready', 'preparing', 'failed', 'cancelled'],
+  executing: ['checking', 'executing', 'preparing', 'learning', 'publishing', 'failed', 'cancelled'],
+  checking: ['checking', 'executing', 'learning', 'publishing', 'failed', 'cancelled'],
+  learning: ['completed', 'failed', 'cancelled'],
+  publishing: ['learning', 'completed', 'failed', 'cancelled'],
   completed: [],
   plan_rejected: [],
   failed: ['queued'],
+  cancelled: [],
 };
 
 /**

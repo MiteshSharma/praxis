@@ -33,12 +33,12 @@ export function PluginsPanel({ sessionId }: PluginsPanelProps) {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      rpc.plugins.toggle({ id, enabled }),
+      rpc.plugins.toggle({ pluginId: id, enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins', sessionId] }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => rpc.plugins.delete({ id }),
+    mutationFn: (id: string) => rpc.plugins.delete({ pluginId: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins', sessionId] }),
   });
 

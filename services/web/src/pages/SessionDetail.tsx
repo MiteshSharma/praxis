@@ -33,6 +33,7 @@ const JOB_STATUS_COLOR: Record<string, { bg: string; text: string; dot: string }
   learning:      { bg: '#F9F5FF', text: '#6941C6', dot: '#7F56D9' },
   completed:     { bg: '#F0FDF4', text: '#079455', dot: '#079455' },
   failed:        { bg: '#FEF3F2', text: '#B42318', dot: '#F04438' },
+  cancelled:     { bg: '#F2F4F7', text: '#475467', dot: '#98A2B3' },
 };
 
 function fmtK(n: number | null | undefined): string {
@@ -68,12 +69,12 @@ function PlanReviewChannelsPanel({ sessionId }: { sessionId: string }) {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      rpc.channels.toggle({ id, enabled }),
+      rpc.channels.toggle({ channelId: id, enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', sessionId] }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => rpc.channels.delete({ id }),
+    mutationFn: (id: string) => rpc.channels.delete({ channelId: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', sessionId] }),
   });
 
@@ -165,7 +166,7 @@ export function SessionDetail() {
 
   const sessionQuery = useQuery({
     queryKey: ['session', id],
-    queryFn: () => rpc.sessions.get({ id: id ?? '' }),
+    queryFn: () => rpc.sessions.get({ sessionId: id ?? '' }),
     enabled: !!id,
     refetchInterval: 5000,
   });
@@ -208,16 +209,16 @@ export function SessionDetail() {
 
   const sendMutation = useMutation({
     mutationFn: (content: string) =>
-      rpc.sessions.send({
+      rpc.jobs.create({
         sessionId: id ?? '',
-        message: content,
+        task: content,
         githubUrl: githubUrlOverride || undefined,
         autoApprove: autoApprove || undefined,
       }),
-    onSuccess: ({ jobId }) => {
+    onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ['session', id, 'messages'] });
       setMessageInput('');
-      if (jobId) navigate(`/jobs/${jobId}`);
+      navigate(`/jobs/${job.id}`);
     },
   });
 
@@ -228,7 +229,7 @@ export function SessionDetail() {
       workflowId?: string | null;
       planHoldHours?: number;
       model?: string | null;
-    }) => rpc.sessions.update({ id: id ?? '', ...patch }),
+    }) => rpc.sessions.update({ sessionId: id ?? '', ...patch }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session', id] }),
   });
 
@@ -346,7 +347,7 @@ export function SessionDetail() {
               disabled={!messageInput.trim() || sendMutation.isPending}
               onClick={handleSend}
             >
-              {sendMutation.isPending ? 'Sending…' : 'Send'}
+              {sendMutation.isPending ? 'Submitting…' : 'Submit Job'}
               <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>⌘↵</span>
             </button>
           </div>

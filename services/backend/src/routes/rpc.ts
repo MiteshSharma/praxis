@@ -33,7 +33,16 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
 
   const jobsCreate = os.jobs.create.handler(({ input }) => deps.jobsService.create(input));
   const jobsGet = os.jobs.get.handler(({ input }) => deps.jobsService.getById(input.jobId));
-  const jobsList = os.jobs.list.handler(({ input }) => deps.jobsService.list(input?.limit ?? 50));
+  const jobsList = os.jobs.list.handler(({ input }) =>
+    deps.jobsService.list(input?.limit ?? 50, {
+      sessionId: input?.sessionId,
+      status: input?.status,
+    }),
+  );
+  const jobsCancel = os.jobs.cancel.handler(async ({ input }) => {
+    await deps.jobsService.cancel(input.jobId);
+    return { ok: true };
+  });
   const jobsListArtifacts = os.jobs.listArtifacts.handler(({ input }) =>
     deps.jobsService.listArtifacts(input.jobId),
   );
@@ -74,29 +83,31 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     deps.workflowsService.list(input?.limit ?? 50),
   );
   const workflowsGet = os.workflows.get.handler(({ input }) =>
-    deps.workflowsService.getById(input.id),
+    deps.workflowsService.getById(input.workflowId),
   );
   const workflowsCreate = os.workflows.create.handler(({ input }) =>
     deps.workflowsService.create(input),
   );
-  const workflowsUpdate = os.workflows.update.handler(({ input }) =>
-    deps.workflowsService.update(input),
-  );
+  const workflowsUpdate = os.workflows.update.handler(({ input }) => {
+    const { workflowId: id, ...rest } = input;
+    return deps.workflowsService.update({ id, ...rest });
+  });
 
   const agentsList = os.agents.list.handler(({ input }) =>
     deps.agentsService.list(input?.limit ?? 50, input?.kind),
   );
   const agentsGet = os.agents.get.handler(({ input }) =>
-    deps.agentsService.getById(input.id),
+    deps.agentsService.getById(input.agentId),
   );
   const agentsCreate = os.agents.create.handler(({ input }) =>
     deps.agentsService.create(input),
   );
-  const agentsUpdate = os.agents.update.handler(({ input }) =>
-    deps.agentsService.update(input),
-  );
+  const agentsUpdate = os.agents.update.handler(({ input }) => {
+    const { agentId: id, ...rest } = input;
+    return deps.agentsService.update({ id, ...rest });
+  });
   const agentsDelete = os.agents.delete.handler(async ({ input }) => {
-    await deps.agentsService.delete(input.id);
+    await deps.agentsService.delete(input.agentId);
     return { ok: true };
   });
   const agentsListSkills = os.agents.listSkills.handler(({ input }) =>
@@ -115,17 +126,17 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     deps.sessionsService.list(input?.limit ?? 50),
   );
   const sessionsGet = os.sessions.get.handler(({ input }) =>
-    deps.sessionsService.getById(input.id),
+    deps.sessionsService.getById(input.sessionId),
   );
   const sessionsCreate = os.sessions.create.handler(({ input }) =>
     deps.sessionsService.create(input),
   );
   const sessionsUpdate = os.sessions.update.handler(({ input }) => {
-    const { id, githubUrl, workflowId, ...rest } = input;
-    return deps.sessionsService.update(id, { ...rest, githubUrl, workflowId });
+    const { sessionId, githubUrl, workflowId, ...rest } = input;
+    return deps.sessionsService.update(sessionId, { ...rest, githubUrl, workflowId });
   });
   const sessionsDelete = os.sessions.delete.handler(async ({ input }) => {
-    await deps.sessionsService.delete(input.id);
+    await deps.sessionsService.delete(input.sessionId);
     return { ok: true };
   });
   const sessionsSend = os.sessions.send.handler(({ input }) =>
@@ -142,10 +153,10 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     deps.pluginsService.create(input),
   );
   const pluginsToggle = os.plugins.toggle.handler(({ input }) =>
-    deps.pluginsService.toggle(input.id, input.enabled),
+    deps.pluginsService.toggle(input.pluginId, input.enabled),
   );
   const pluginsDelete = os.plugins.delete.handler(async ({ input }) => {
-    await deps.pluginsService.delete(input.id);
+    await deps.pluginsService.delete(input.pluginId);
     return { ok: true };
   });
 
@@ -156,10 +167,10 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     deps.channelsService.create(input),
   );
   const channelsToggle = os.channels.toggle.handler(({ input }) =>
-    deps.channelsService.toggle(input.id, input.enabled),
+    deps.channelsService.toggle(input.channelId, input.enabled),
   );
   const channelsDelete = os.channels.delete.handler(async ({ input }) => {
-    await deps.channelsService.delete(input.id);
+    await deps.channelsService.delete(input.channelId);
     return { ok: true };
   });
 
@@ -190,6 +201,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       create: jobsCreate,
       get: jobsGet,
       list: jobsList,
+      cancel: jobsCancel,
       listArtifacts: jobsListArtifacts,
       listSteps: jobsListSteps,
       restart: jobsRestart,

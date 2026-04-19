@@ -14,6 +14,7 @@ import {
   RepoMemorySchema,
   WorkflowSchema,
 } from './schemas';
+import { JobStatusSchema } from './events';
 
 /**
  * The contract. Handlers are implemented in services/backend via oRPC's
@@ -27,20 +28,32 @@ export const contract = {
     create: oc
       .input(
         z.object({
-          githubUrl: z.string().url(),
-          githubBranch: z.string().default('main'),
-          input: z.string().min(1, 'input is empty'),
-          /** Optional: workflow version to use. Defaults to the hardcoded DEFAULT_WORKFLOW. */
-          workflowVersionId: z.string().uuid().optional(),
+          sessionId: z.string().uuid(),
+          task: z.string().min(1, 'task is empty'),
+          githubUrl: z.string().url().optional(),
+          workflowId: z.string().uuid().optional(),
+          autoApprove: z.boolean().optional(),
         }),
       )
-      .output(z.object({ jobId: z.string().uuid() })),
+      .output(JobSchema),
 
     get: oc.input(z.object({ jobId: z.string().uuid() })).output(JobSchema),
 
     list: oc
-      .input(z.object({ limit: z.number().int().positive().max(100).default(50) }).optional())
+      .input(
+        z
+          .object({
+            limit: z.number().int().positive().max(100).default(50),
+            sessionId: z.string().uuid().optional(),
+            status: JobStatusSchema.optional(),
+          })
+          .optional(),
+      )
       .output(z.array(JobSchema)),
+
+    cancel: oc
+      .input(z.object({ jobId: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
 
     listArtifacts: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(ArtifactSchema)),
 
@@ -84,7 +97,7 @@ export const contract = {
       .input(z.object({ limit: z.number().int().positive().max(100).default(50) }).optional())
       .output(z.array(WorkflowSchema)),
 
-    get: oc.input(z.object({ id: z.string().uuid() })).output(WorkflowSchema),
+    get: oc.input(z.object({ workflowId: z.string().uuid() })).output(WorkflowSchema),
 
     create: oc
       .input(
@@ -118,7 +131,7 @@ export const contract = {
     update: oc
       .input(
         z.object({
-          id: z.string().uuid(),
+          workflowId: z.string().uuid(),
           name: z.string().min(1),
           description: z.string().optional(),
           steps: z.array(
@@ -149,7 +162,7 @@ export const contract = {
       )
       .output(z.array(AgentSchema)),
 
-    get: oc.input(z.object({ id: z.string().uuid() })).output(AgentSchema),
+    get: oc.input(z.object({ agentId: z.string().uuid() })).output(AgentSchema),
 
     create: oc
       .input(
@@ -176,7 +189,7 @@ export const contract = {
     update: oc
       .input(
         z.object({
-          id: z.string().uuid(),
+          agentId: z.string().uuid(),
           name: z.string().min(1),
           description: z.string().optional(),
           model: z.string().optional(),
@@ -188,7 +201,7 @@ export const contract = {
       )
       .output(AgentSchema),
 
-    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ agentId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
 
     listSkills: oc.input(z.object({ agentId: z.string().uuid() })).output(z.array(AgentSchema)),
 
@@ -212,7 +225,7 @@ export const contract = {
       .input(z.object({ limit: z.number().int().positive().max(100).default(50) }).optional())
       .output(z.array(SessionSchema)),
 
-    get: oc.input(z.object({ id: z.string().uuid() })).output(SessionSchema),
+    get: oc.input(z.object({ sessionId: z.string().uuid() })).output(SessionSchema),
 
     create: oc
       .input(
@@ -228,7 +241,7 @@ export const contract = {
     update: oc
       .input(
         z.object({
-          id: z.string().uuid(),
+          sessionId: z.string().uuid(),
           title: z.string().optional(),
           githubUrl: z.string().url().nullable().optional(),
           workflowId: z.string().uuid().nullable().optional(),
@@ -238,7 +251,7 @@ export const contract = {
       )
       .output(SessionSchema),
 
-    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ sessionId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
 
     send: oc
       .input(
@@ -285,10 +298,10 @@ export const contract = {
       .output(SessionChannelSchema),
 
     toggle: oc
-      .input(z.object({ id: z.string().uuid(), enabled: z.boolean() }))
+      .input(z.object({ channelId: z.string().uuid(), enabled: z.boolean() }))
       .output(SessionChannelSchema),
 
-    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ channelId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
   },
 
   memories: {
@@ -320,10 +333,10 @@ export const contract = {
       .output(PluginSchema),
 
     toggle: oc
-      .input(z.object({ id: z.string().uuid(), enabled: z.boolean() }))
+      .input(z.object({ pluginId: z.string().uuid(), enabled: z.boolean() }))
       .output(PluginSchema),
 
-    delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc.input(z.object({ pluginId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
   },
 };
 

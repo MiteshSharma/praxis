@@ -15,6 +15,7 @@ const STATUS_TO_PHASE: Record<JobStatus, number> = {
   learning: 4,
   completed: 5,
   failed: -2,
+  cancelled: -2,
 };
 
 const PHASES = ['Planning', 'Plan review', 'Executing', 'Publishing', 'Learning', 'Done'];

@@ -59,29 +59,71 @@ function makeDb(options: {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+function makeSessionsRepo(options: {
+  session?: { id: string; defaultGithubUrl: string | null; defaultWorkflowId: string | null; model: string | null } | null;
+  lastCompletedJobId?: string | null;
+} = {}) {
+  const session = options.session !== undefined ? options.session : {
+    id: 'sess-1',
+    defaultGithubUrl: 'https://github.com/owner/repo',
+    defaultWorkflowId: null,
+    model: null,
+  };
+  return {
+    findById: vi.fn().mockResolvedValue(session),
+    findLastCompletedJobId: vi.fn().mockResolvedValue(options.lastCompletedJobId ?? null),
+    insertMessage: vi.fn().mockResolvedValue({ id: 'msg-1', sessionId: 'sess-1', role: 'user', content: '', jobId: null, prArtifactUrl: null, metadata: {}, createdAt: new Date().toISOString() }),
+    updateMessageJobId: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('JobsService.create', () => {
-  it('parses input and delegates to ingest', async () => {
+  it('creates message + job and returns full JobDto', async () => {
     const ingest = createMockTaskIngestService('new-job');
-    const repo = createMockJobsRepository();
+    const repo = createMockJobsRepository({ findById: makeJobRow({ id: 'new-job', status: 'queued' }) as never });
+    const sessionsRepo = makeSessionsRepo();
     const db = makeDb();
     const svc = new JobsService(db as never, createMockBoss() as never, createMockLog() as never, {
       ingest: ingest as never,
       repo: repo as never,
+      sessionsRepo: sessionsRepo as never,
     });
 
     const result = await svc.create({
-      githubUrl: 'https://github.com/owner/repo',
-      githubBranch: 'main',
-      input: 'Fix the login bug\n\nUsers cannot log in on mobile.',
+      sessionId: 'sess-1',
+      task: 'Fix the login bug\n\nUsers cannot log in on mobile.',
     });
 
-    expect(result).toEqual({ jobId: 'new-job' });
+    expect(result.id).toBe('new-job');
     expect(ingest.ingest).toHaveBeenCalledWith(
       expect.objectContaining({
         githubUrl: 'https://github.com/owner/repo',
         source: 'web',
+        conversationId: 'sess-1',
       }),
     );
+    expect(sessionsRepo.insertMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'sess-1', role: 'user' }),
+    );
+    expect(sessionsRepo.updateMessageJobId).toHaveBeenCalledWith('msg-1', 'new-job');
+  });
+
+  it('throws NOT_FOUND when session missing', async () => {
+    const sessionsRepo = makeSessionsRepo({ session: null });
+    const db = makeDb();
+    const svc = new JobsService(db as never, createMockBoss() as never, createMockLog() as never, {
+      sessionsRepo: sessionsRepo as never,
+    });
+    await expect(svc.create({ sessionId: 'missing', task: 'task' })).rejects.toThrow('session not found');
+  });
+
+  it('throws BAD_REQUEST when no githubUrl available', async () => {
+    const sessionsRepo = makeSessionsRepo({ session: { id: 'sess-1', defaultGithubUrl: null, defaultWorkflowId: null, model: null } });
+    const db = makeDb();
+    const svc = new JobsService(db as never, createMockBoss() as never, createMockLog() as never, {
+      sessionsRepo: sessionsRepo as never,
+    });
+    await expect(svc.create({ sessionId: 'sess-1', task: 'task' })).rejects.toThrow('no githubUrl provided');
   });
 });
 

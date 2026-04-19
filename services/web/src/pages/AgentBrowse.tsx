@@ -76,7 +76,7 @@ function AgentFormModal({
 
   const updateMutation = useMutation({
     mutationFn: (v: AgentFormValues) =>
-      rpc.agents.update({ id: editingAgent!.id, ...v }),
+      rpc.agents.update({ agentId: editingAgent!.id, ...v }),
     onSuccess: () => { onSaved(); onClose(); setError(null); form.resetFields(); },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
   });
@@ -265,7 +265,7 @@ function AgentDetailDrawer({
 
   const detailQuery = useQuery({
     queryKey: ['agent', id],
-    queryFn: () => rpc.agents.get({ id }),
+    queryFn: () => rpc.agents.get({ agentId: id }),
   });
 
   const skillsQuery = useQuery({
@@ -423,7 +423,7 @@ export function AgentBrowse() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => rpc.agents.delete({ id }),
+    mutationFn: (id: string) => rpc.agents.delete({ agentId: id }),
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['agents'] });
       if (selected === id) setSelected(null);

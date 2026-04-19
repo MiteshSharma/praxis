@@ -113,6 +113,7 @@ const STATUS_COLORS: Record<string, string> = {
   publishing: 'purple',
   completed: 'success',
   failed: 'error',
+  cancelled: 'default',
 };
 
 const STREAM_STATUSES = new Set([

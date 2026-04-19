@@ -236,7 +236,7 @@ function CreateWorkflowModal({
     mutationFn: (v: CreateWorkflowValues) => {
       const steps = decodeSteps(v.steps);
       if (isEdit) {
-        return rpc.workflows.update({ id: workflowId, name: v.name, description: v.description, steps });
+        return rpc.workflows.update({ workflowId, name: v.name, description: v.description, steps });
       }
       return rpc.workflows.create({ source: 'form', name: v.name, description: v.description, steps });
     },
@@ -401,7 +401,7 @@ function ImportModal({
 function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const detailQuery = useQuery({
     queryKey: ['workflow', id],
-    queryFn: () => rpc.workflows.get({ id }),
+    queryFn: () => rpc.workflows.get({ workflowId: id }),
   });
 
   const agentsQuery = useQuery({

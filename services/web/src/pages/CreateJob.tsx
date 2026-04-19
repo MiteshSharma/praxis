@@ -4,15 +4,20 @@ import { useNavigate } from 'react-router-dom';
 import { rpc } from '../rpc';
 
 interface FormValues {
-  githubUrl: string;
-  githubBranch: string;
-  input: string;
-  workflowVersionId?: string;
+  sessionId: string;
+  task: string;
+  githubUrl?: string;
+  workflowId?: string;
 }
 
 export function CreateJob() {
   const navigate = useNavigate();
   const [form] = Form.useForm<FormValues>();
+
+  const sessionsQuery = useQuery({
+    queryKey: ['sessions'],
+    queryFn: () => rpc.sessions.list(),
+  });
 
   const workflowsQuery = useQuery({
     queryKey: ['workflows'],
@@ -22,38 +27,37 @@ export function CreateJob() {
   const mutation = useMutation({
     mutationFn: (values: FormValues) =>
       rpc.jobs.create({
-        githubUrl: values.githubUrl,
-        githubBranch: values.githubBranch || 'main',
-        input: values.input,
-        workflowVersionId: values.workflowVersionId || undefined,
+        sessionId: values.sessionId,
+        task: values.task,
+        githubUrl: values.githubUrl || undefined,
+        workflowId: values.workflowId || undefined,
       }),
-    onSuccess: ({ jobId }) => navigate(`/jobs/${jobId}`),
+    onSuccess: (job) => navigate(`/jobs/${job.id}`),
   });
 
   return (
-    <Card title="Run a new job">
+    <Card title="Submit a job">
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ githubBranch: 'main' }}
         onFinish={(values) => mutation.mutate(values)}
       >
         <Form.Item
-          name="githubUrl"
-          label="GitHub URL"
-          rules={[{ required: true, type: 'url', message: 'enter a valid GitHub URL' }]}
+          name="sessionId"
+          label="Session"
+          rules={[{ required: true, message: 'select a session' }]}
         >
-          <Input placeholder="https://github.com/you/your-repo" />
-        </Form.Item>
-
-        <Form.Item name="githubBranch" label="Branch">
-          <Input placeholder="main" />
+          <Select
+            placeholder="Select a session"
+            loading={sessionsQuery.isLoading}
+            options={sessionsQuery.data?.map((s) => ({ value: s.id, label: s.title }))}
+          />
         </Form.Item>
 
         <Form.Item
-          name="input"
+          name="task"
           label="What do you want done?"
-          extra={<Typography.Text type="secondary">First line is the title.</Typography.Text>}
+          extra={<Typography.Text type="secondary">First line is the job title.</Typography.Text>}
           rules={[{ required: true, message: 'describe the task' }]}
         >
           <Input.TextArea
@@ -65,21 +69,21 @@ export function CreateJob() {
         </Form.Item>
 
         <Form.Item
-          name="workflowVersionId"
+          name="workflowId"
           label="Workflow"
           extra={
             <Typography.Text type="secondary">
-              Leave empty to use the default plan → execute flow.
+              Leave empty to use the session default.
             </Typography.Text>
           }
         >
           <Select
             allowClear
-            placeholder="Default workflow (plan → execute)"
+            placeholder="Session default"
             loading={workflowsQuery.isLoading}
             options={workflowsQuery.data?.map((wf) => ({
-              value: wf.latestVersion?.id ?? '',
-              label: `${wf.name} v${wf.latestVersion?.version ?? 1}`,
+              value: wf.id,
+              label: wf.name,
             }))}
           />
         </Form.Item>
@@ -89,7 +93,7 @@ export function CreateJob() {
         )}
 
         <Button type="primary" htmlType="submit" loading={mutation.isPending}>
-          Run
+          Submit Job
         </Button>
       </Form>
     </Card>
