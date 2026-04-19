@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
-  toConversationDto,
+  toSessionDto,
   toMessageDto,
   toPluginDto,
-} from './conversations.repository';
+} from './sessions.repository';
 
 // ── DTO converter tests ───────────────────────────────────────────────────────
 // These are pure functions — no mocking needed.
 
-describe('toConversationDto', () => {
+describe('toSessionDto', () => {
   const row = {
     id: 'conv-1',
-    title: 'My Conversation',
+    title: 'My Session',
     defaultGithubUrl: 'https://github.com/owner/repo',
     defaultWorkflowId: 'wf-1',
     planHoldHours: 48,
@@ -21,9 +21,9 @@ describe('toConversationDto', () => {
   };
 
   it('maps all fields correctly', () => {
-    const dto = toConversationDto(row as never);
+    const dto = toSessionDto(row as never);
     expect(dto.id).toBe('conv-1');
-    expect(dto.title).toBe('My Conversation');
+    expect(dto.title).toBe('My Session');
     expect(dto.defaultGithubUrl).toBe('https://github.com/owner/repo');
     expect(dto.defaultWorkflowId).toBe('wf-1');
     expect(dto.planHoldHours).toBe(48);
@@ -33,17 +33,17 @@ describe('toConversationDto', () => {
   });
 
   it('preserves null model as null', () => {
-    const dto = toConversationDto({ ...row, model: null } as never);
+    const dto = toSessionDto({ ...row, model: null } as never);
     expect(dto.model).toBeNull();
   });
 
   it('preserves null defaultGithubUrl', () => {
-    const dto = toConversationDto({ ...row, defaultGithubUrl: null } as never);
+    const dto = toSessionDto({ ...row, defaultGithubUrl: null } as never);
     expect(dto.defaultGithubUrl).toBeNull();
   });
 
   it('converts dates to ISO strings', () => {
-    const dto = toConversationDto(row as never);
+    const dto = toSessionDto(row as never);
     expect(dto.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(dto.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
@@ -63,7 +63,7 @@ describe('toMessageDto', () => {
   it('maps all fields correctly', () => {
     const dto = toMessageDto(row as never);
     expect(dto.id).toBe('msg-1');
-    expect(dto.conversationId).toBe('conv-1');
+    expect(dto.sessionId).toBe('conv-1');
     expect(dto.role).toBe('user');
     expect(dto.content).toBe('Fix the login bug');
     expect(dto.jobId).toBe('job-1');
@@ -103,7 +103,7 @@ describe('toPluginDto', () => {
   it('maps all fields correctly', () => {
     const dto = toPluginDto(row as never);
     expect(dto.id).toBe('plugin-1');
-    expect(dto.conversationId).toBe('conv-1');
+    expect(dto.sessionId).toBe('conv-1');
     expect(dto.name).toBe('my-plugin');
     expect(dto.transport).toBe('stdio');
     expect(dto.command).toBe('node plugin.js');

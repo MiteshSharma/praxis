@@ -3,7 +3,7 @@ import { RPCHandler } from '@orpc/server/fetch';
 import { contract } from '@shared/contracts';
 import type { Hono } from 'hono';
 import type { AgentsService } from '../services/agents.service';
-import type { ConversationsService } from '../services/conversations.service';
+import type { SessionsService } from '../services/sessions.service';
 import type { JobsService } from '../services/jobs.service';
 import { MemoriesService } from '../services/memories.service';
 import type { PlansService } from '../services/plans.service';
@@ -16,7 +16,7 @@ interface RpcDeps {
   plansService: PlansService;
   workflowsService: WorkflowsService;
   agentsService: AgentsService;
-  conversationsService: ConversationsService;
+  sessionsService: SessionsService;
   pluginsService: PluginsService;
   memoriesService: MemoriesService;
   channelsService: ChannelsService;
@@ -111,32 +111,32 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     return { ok: true };
   });
 
-  const conversationsList = os.conversations.list.handler(({ input }) =>
-    deps.conversationsService.list(input?.limit ?? 50),
+  const sessionsList = os.sessions.list.handler(({ input }) =>
+    deps.sessionsService.list(input?.limit ?? 50),
   );
-  const conversationsGet = os.conversations.get.handler(({ input }) =>
-    deps.conversationsService.getById(input.id),
+  const sessionsGet = os.sessions.get.handler(({ input }) =>
+    deps.sessionsService.getById(input.id),
   );
-  const conversationsCreate = os.conversations.create.handler(({ input }) =>
-    deps.conversationsService.create(input),
+  const sessionsCreate = os.sessions.create.handler(({ input }) =>
+    deps.sessionsService.create(input),
   );
-  const conversationsUpdate = os.conversations.update.handler(({ input }) => {
-    const { id, ...patch } = input;
-    return deps.conversationsService.update(id, patch);
+  const sessionsUpdate = os.sessions.update.handler(({ input }) => {
+    const { id, githubUrl, workflowId, ...rest } = input;
+    return deps.sessionsService.update(id, { ...rest, githubUrl, workflowId });
   });
-  const conversationsDelete = os.conversations.delete.handler(async ({ input }) => {
-    await deps.conversationsService.delete(input.id);
+  const sessionsDelete = os.sessions.delete.handler(async ({ input }) => {
+    await deps.sessionsService.delete(input.id);
     return { ok: true };
   });
-  const conversationsSendMessage = os.conversations.sendMessage.handler(({ input }) =>
-    deps.conversationsService.sendMessage(input),
+  const sessionsSend = os.sessions.send.handler(({ input }) =>
+    deps.sessionsService.send(input),
   );
-  const conversationsListMessages = os.conversations.listMessages.handler(({ input }) =>
-    deps.conversationsService.listMessages(input.conversationId, input.limit ?? 20, input.before),
+  const sessionsHistory = os.sessions.history.handler(({ input }) =>
+    deps.sessionsService.history(input.sessionId, input.limit ?? 20, input.before),
   );
 
   const pluginsList = os.plugins.list.handler(({ input }) =>
-    deps.pluginsService.list(input.conversationId),
+    deps.pluginsService.list(input.sessionId),
   );
   const pluginsCreate = os.plugins.create.handler(({ input }) =>
     deps.pluginsService.create(input),
@@ -150,7 +150,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   });
 
   const channelsList = os.channels.list.handler(({ input }) =>
-    deps.channelsService.list(input.conversationId),
+    deps.channelsService.list(input.sessionId),
   );
   const channelsCreate = os.channels.create.handler(({ input }) =>
     deps.channelsService.create(input),
@@ -217,14 +217,14 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       attachSkill: agentsAttachSkill,
       detachSkill: agentsDetachSkill,
     },
-    conversations: {
-      list: conversationsList,
-      get: conversationsGet,
-      create: conversationsCreate,
-      update: conversationsUpdate,
-      delete: conversationsDelete,
-      sendMessage: conversationsSendMessage,
-      listMessages: conversationsListMessages,
+    sessions: {
+      list: sessionsList,
+      get: sessionsGet,
+      create: sessionsCreate,
+      update: sessionsUpdate,
+      delete: sessionsDelete,
+      send: sessionsSend,
+      history: sessionsHistory,
     },
     memories: {
       listRepos: memoriesListRepos,

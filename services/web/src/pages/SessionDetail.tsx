@@ -11,7 +11,6 @@ import {
   Spin,
   Switch,
   Tabs,
-  Tag,
   Typography,
 } from 'antd';
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -42,26 +41,26 @@ function fmtK(n: number | null | undefined): string {
   return String(n);
 }
 
-function PlanReviewChannelsPanel({ conversationId }: { conversationId: string }) {
+function PlanReviewChannelsPanel({ sessionId }: { sessionId: string }) {
   const qc = useQueryClient();
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
 
   const channelsQuery = useQuery({
-    queryKey: ['channels', conversationId],
-    queryFn: () => rpc.channels.list({ conversationId }),
+    queryKey: ['channels', sessionId],
+    queryFn: () => rpc.channels.list({ sessionId }),
   });
 
   const createMutation = useMutation({
     mutationFn: () =>
       rpc.channels.create({
-        conversationId,
+        sessionId,
         type: 'webhook',
         name: newName.trim(),
         config: { url: newUrl.trim() },
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['channels', conversationId] });
+      qc.invalidateQueries({ queryKey: ['channels', sessionId] });
       setNewName('');
       setNewUrl('');
     },
@@ -70,12 +69,12 @@ function PlanReviewChannelsPanel({ conversationId }: { conversationId: string })
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       rpc.channels.toggle({ id, enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', conversationId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', sessionId] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => rpc.channels.delete({ id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', conversationId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['channels', sessionId] }),
   });
 
   return (
@@ -149,7 +148,7 @@ function PlanReviewChannelsPanel({ conversationId }: { conversationId: string })
   );
 }
 
-export function ConversationDetail() {
+export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -164,19 +163,17 @@ export function ConversationDetail() {
   const [githubUrlOverride, setGithubUrlOverride] = useState('');
   const [autoApprove, setAutoApprove] = useState(false);
 
-
-
-  const convQuery = useQuery({
-    queryKey: ['conversation', id],
-    queryFn: () => rpc.conversations.get({ id: id ?? '' }),
+  const sessionQuery = useQuery({
+    queryKey: ['session', id],
+    queryFn: () => rpc.sessions.get({ id: id ?? '' }),
     enabled: !!id,
     refetchInterval: 5000,
   });
 
   const messagesQuery = useQuery({
-    queryKey: ['conversation', id, 'messages'],
+    queryKey: ['session', id, 'messages'],
     queryFn: async () => {
-      const result = await rpc.conversations.listMessages({ conversationId: id ?? '', limit: 20 });
+      const result = await rpc.sessions.history({ sessionId: id ?? '', limit: 20 });
       setHasMore(result.hasMore);
       return result;
     },
@@ -192,8 +189,8 @@ export function ConversationDetail() {
 
     setLoadingOlder(true);
     try {
-      const result = await rpc.conversations.listMessages({
-        conversationId: id,
+      const result = await rpc.sessions.history({
+        sessionId: id,
         limit: 20,
         before: oldest.createdAt,
       });
@@ -211,17 +208,14 @@ export function ConversationDetail() {
 
   const sendMutation = useMutation({
     mutationFn: (content: string) =>
-      rpc.conversations.sendMessage({
-        conversationId: id ?? '',
-        content,
-        triggersJob: true,
-        jobOverrides:
-          githubUrlOverride || autoApprove
-            ? { githubUrl: githubUrlOverride || undefined, autoApprove: autoApprove || undefined }
-            : undefined,
+      rpc.sessions.send({
+        sessionId: id ?? '',
+        message: content,
+        githubUrl: githubUrlOverride || undefined,
+        autoApprove: autoApprove || undefined,
       }),
     onSuccess: ({ jobId }) => {
-      qc.invalidateQueries({ queryKey: ['conversation', id, 'messages'] });
+      qc.invalidateQueries({ queryKey: ['session', id, 'messages'] });
       setMessageInput('');
       if (jobId) navigate(`/jobs/${jobId}`);
     },
@@ -229,12 +223,13 @@ export function ConversationDetail() {
 
   const updateMutation = useMutation({
     mutationFn: (patch: {
-      defaultGithubUrl?: string | null;
-      defaultWorkflowId?: string | null;
+      title?: string;
+      githubUrl?: string | null;
+      workflowId?: string | null;
       planHoldHours?: number;
       model?: string | null;
-    }) => rpc.conversations.update({ id: id ?? '', ...patch }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversation', id] }),
+    }) => rpc.sessions.update({ id: id ?? '', ...patch }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session', id] }),
   });
 
   const messages = [...olderMessages, ...(messagesQuery.data?.messages ?? [])];
@@ -250,23 +245,22 @@ export function ConversationDetail() {
 
   const jobMap = Object.fromEntries(jobIds.map((jid, i) => [jid, jobQueries[i]?.data]));
 
-  // Scroll to top when a new message arrives (newest is at top)
   useEffect(() => {
     if (threadRef.current) {
       threadRef.current.scrollTop = 0;
     }
   }, [messages.length]);
 
-  if (convQuery.isLoading) return <Spin style={{ display: 'block', margin: '40px auto' }} />;
-  if (convQuery.error) return <Alert type="error" message={String(convQuery.error)} />;
-  const conv = convQuery.data;
-  if (!conv) return null;
+  if (sessionQuery.isLoading) return <Spin style={{ display: 'block', margin: '40px auto' }} />;
+  if (sessionQuery.error) return <Alert type="error" message={String(sessionQuery.error)} />;
+  const session = sessionQuery.data;
+  if (!session) return null;
 
   const handleSend = () => {
     const content = messageInput.trim();
     if (!content) return;
-    if (!conv.defaultGithubUrl && !githubUrlOverride) {
-      alert('No GitHub URL set. Add one in the conversation settings.');
+    if (!session.defaultGithubUrl && !githubUrlOverride) {
+      alert('No GitHub URL set. Add one in the session settings.');
       return;
     }
     sendMutation.mutate(content);
@@ -274,15 +268,15 @@ export function ConversationDetail() {
 
   return (
     <div className="chat-shell">
-      {/* Breadcrumb — above header, matches JobView style */}
+      {/* Breadcrumb */}
       <div style={{ flexShrink: 0, padding: '16px 28px 0', background: 'var(--c-bg)' }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          onClick={() => navigate('/conversations')}
+          onClick={() => navigate('/sessions')}
           style={{ paddingLeft: 0 }}
         >
-          ← Back to conversations
+          ← Back to sessions
         </button>
       </div>
 
@@ -290,11 +284,11 @@ export function ConversationDetail() {
       <div className="chat-header">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {conv.title}
+            {session.title}
           </div>
-          {conv.defaultGithubUrl && (
+          {session.defaultGithubUrl && (
             <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
-              {conv.defaultGithubUrl.replace('https://github.com/', '')}
+              {session.defaultGithubUrl.replace('https://github.com/', '')}
             </div>
           )}
         </div>
@@ -307,12 +301,12 @@ export function ConversationDetail() {
         </button>
       </div>
 
-      {/* Compose bar — at top, above messages */}
+      {/* Compose bar */}
       <div className="chat-compose">
         {showAdvanced && (
           <div style={{ marginBottom: 8 }}>
             <Input
-              placeholder="GitHub URL override (leave blank to use conversation default)"
+              placeholder="GitHub URL override (leave blank to use session default)"
               value={githubUrlOverride}
               onChange={(e) => setGithubUrlOverride(e.target.value)}
               size="small"
@@ -359,7 +353,7 @@ export function ConversationDetail() {
         </div>
       </div>
 
-      {/* Thread — scrolls below compose, newest first */}
+      {/* Thread */}
       <div className="chat-thread" ref={threadRef}>
         {messages.length === 0 && (
           <div className="empty-state" style={{ margin: 'auto' }}>
@@ -393,7 +387,6 @@ export function ConversationDetail() {
                   : undefined
               }
             >
-              {/* Header: role + status badge + timestamp */}
               <div className="msg-card-header">
                 <span className="msg-card-role">
                   {isUser ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System'}
@@ -416,14 +409,12 @@ export function ConversationDetail() {
                 </div>
               </div>
 
-              {/* Message body */}
               <div className="msg-card-body">
                 <p style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
                   {msg.content}
                 </p>
               </div>
 
-              {/* Job metadata row — model, cost, tokens */}
               {job && (job.model || job.totalCostUsd != null || job.totalInputTokens != null) && (
                 <div className="msg-card-meta">
                   {job.model && (
@@ -438,7 +429,6 @@ export function ConversationDetail() {
                 </div>
               )}
 
-              {/* PR footer — only when PR exists */}
               {msg.prArtifactUrl && (
                 <div className="msg-card-pr-footer">
                   <a
@@ -456,7 +446,6 @@ export function ConversationDetail() {
           );
         })}
 
-        {/* Load older — at bottom since older messages go below */}
         {hasMore && (
           <div style={{ textAlign: 'center', paddingTop: 8 }}>
             <button
@@ -486,17 +475,25 @@ export function ConversationDetail() {
               children: (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                      Default GitHub URL
-                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Name</div>
                     <Input
-                      defaultValue={conv.defaultGithubUrl ?? ''}
+                      defaultValue={session.title}
                       onBlur={(e) => {
-                        const val = e.target.value.trim() || null;
-                        updateMutation.mutate({ defaultGithubUrl: val });
+                        const val = e.target.value.trim();
+                        if (val && val !== session.title) {
+                          updateMutation.mutate({ title: val });
+                        }
                       }}
-                      placeholder="https://github.com/you/your-repo"
                     />
+                  </div>
+
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                      GitHub URL
+                    </div>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {session.defaultGithubUrl ?? '—'}
+                    </Typography.Text>
                   </div>
 
                   <div>
@@ -505,9 +502,9 @@ export function ConversationDetail() {
                     </div>
                     <select
                       className="select"
-                      defaultValue={conv.defaultWorkflowId ?? ''}
+                      defaultValue={session.defaultWorkflowId ?? ''}
                       onChange={(e) => {
-                        updateMutation.mutate({ defaultWorkflowId: e.target.value || null });
+                        updateMutation.mutate({ workflowId: e.target.value || null });
                       }}
                     >
                       <option value="">Default (plan → execute)</option>
@@ -525,7 +522,7 @@ export function ConversationDetail() {
                       Override the default model. Leave blank for claude-sonnet-4-6.
                     </Typography.Text>
                     <Input
-                      defaultValue={conv.model ?? ''}
+                      defaultValue={session.model ?? ''}
                       onBlur={(e) => {
                         const val = e.target.value.trim() || null;
                         updateMutation.mutate({ model: val });
@@ -544,7 +541,7 @@ export function ConversationDetail() {
                     <InputNumber
                       min={1}
                       max={168}
-                      defaultValue={conv.planHoldHours}
+                      defaultValue={session.planHoldHours}
                       onBlur={(e) => {
                         const val = Number.parseInt(e.target.value, 10);
                         if (!Number.isNaN(val) && val >= 1 && val <= 168) {
@@ -561,12 +558,12 @@ export function ConversationDetail() {
             {
               key: 'channels',
               label: 'Review channels',
-              children: id ? <PlanReviewChannelsPanel conversationId={id} /> : null,
+              children: id ? <PlanReviewChannelsPanel sessionId={id} /> : null,
             },
             {
               key: 'plugins',
               label: 'Plugins',
-              children: id ? <PluginsPanel conversationId={id} /> : null,
+              children: id ? <PluginsPanel sessionId={id} /> : null,
             },
           ]}
         />

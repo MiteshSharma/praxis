@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the repository before importing the service
 const mockRepo = {
-  findByConversation: vi.fn().mockResolvedValue([]),
+  findBySession: vi.fn().mockResolvedValue([]),
   create: vi.fn(),
   toggle: vi.fn(),
   delete: vi.fn().mockResolvedValue(undefined),
 };
 
-vi.mock('../repositories/conversation-channels.repository', () => ({
-  ConversationChannelsRepository: vi.fn().mockImplementation(() => mockRepo),
+vi.mock('../repositories/session-channels.repository', () => ({
+  SessionChannelsRepository: vi.fn().mockImplementation(() => mockRepo),
 }));
 
 // Mock validateChannelConfig so we can spy on it
@@ -25,7 +25,7 @@ const { ChannelsService } = await import('./channels.service');
 function makeChannelDto(overrides = {}) {
   return {
     id: 'ch-1',
-    conversationId: 'conv-1',
+    sessionId: 'conv-1',
     type: 'webhook',
     name: 'My Webhook',
     config: { url: 'https://example.com/hook' },
@@ -52,7 +52,7 @@ describe('ChannelsService', () => {
       mockRepo.create.mockResolvedValue(dto);
 
       await service.create({
-        conversationId: 'conv-1',
+        sessionId: 'conv-1',
         type: 'webhook',
         name: 'My Webhook',
         config: { url: 'https://example.com/hook' },
@@ -70,7 +70,7 @@ describe('ChannelsService', () => {
 
       await expect(
         service.create({
-          conversationId: 'conv-1',
+          sessionId: 'conv-1',
           type: 'webhook',
           name: 'no-url',
           config: {},
@@ -83,14 +83,14 @@ describe('ChannelsService', () => {
       mockRepo.create.mockResolvedValue(dto);
 
       const result = await service.create({
-        conversationId: 'conv-1',
+        sessionId: 'conv-1',
         type: 'webhook',
         name: 'My Webhook',
         config: { url: 'https://example.com' },
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ conversationId: 'conv-1', type: 'webhook' }),
+        expect.objectContaining({ sessionId: 'conv-1', type: 'webhook' }),
       );
       expect(result).toBe(dto);
     });
@@ -115,7 +115,7 @@ describe('ChannelsService', () => {
   describe('list', () => {
     it('returns channels from the repository', async () => {
       const channels = [makeChannelDto(), makeChannelDto({ id: 'ch-2' })];
-      mockRepo.findByConversation.mockResolvedValue(channels);
+      mockRepo.findBySession.mockResolvedValue(channels);
 
       const result = await service.list('conv-1');
       expect(result).toBe(channels);

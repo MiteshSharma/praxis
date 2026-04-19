@@ -2,18 +2,18 @@ import type { PluginDto } from '@shared/contracts';
 import type { Database } from '@shared/db';
 import { plugins } from '@shared/db';
 import { eq } from 'drizzle-orm';
-import { toPluginDto } from './conversations.repository';
+import { toPluginDto } from './sessions.repository';
 
 export class PluginsRepository {
   constructor(private readonly db: Database) {}
 
-  async findByConversation(conversationId: string): Promise<PluginDto[]> {
-    const rows = await this.db.select().from(plugins).where(eq(plugins.conversationId, conversationId));
+  async findByConversation(sessionId: string): Promise<PluginDto[]> {
+    const rows = await this.db.select().from(plugins).where(eq(plugins.conversationId, sessionId));
     return rows.map(toPluginDto);
   }
 
   async create(data: {
-    conversationId: string;
+    sessionId: string;
     name: string;
     transport: 'stdio' | 'http';
     command?: string;
@@ -21,7 +21,7 @@ export class PluginsRepository {
     env?: Record<string, string>;
   }): Promise<PluginDto> {
     const [row] = await this.db.insert(plugins).values({
-      conversationId: data.conversationId,
+      conversationId: data.sessionId,
       name: data.name,
       transport: data.transport,
       command: data.command ?? null,

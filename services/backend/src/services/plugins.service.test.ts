@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockRepo = {
-  findByConversation: vi.fn().mockResolvedValue([]),
+  findByConversation: vi.fn().mockResolvedValue([]),  // repo method name stays as-is
   create: vi.fn(),
   toggle: vi.fn(),
   delete: vi.fn().mockResolvedValue(undefined),
@@ -18,7 +18,7 @@ const { PluginsService } = await import('./plugins.service');
 function makePluginDto(overrides = {}) {
   return {
     id: 'plugin-1',
-    conversationId: 'conv-1',
+    sessionId: 'conv-1',
     name: 'my-plugin',
     transport: 'stdio',
     command: 'node plugin.js',
@@ -44,7 +44,7 @@ describe('PluginsService', () => {
     it('throws BAD_REQUEST when stdio transport has no command', async () => {
       await expect(
         service.create({
-          conversationId: 'conv-1',
+          sessionId: 'conv-1',
           name: 'my-plugin',
           transport: 'stdio',
         }),
@@ -54,7 +54,7 @@ describe('PluginsService', () => {
     it('throws BAD_REQUEST when http transport has no url', async () => {
       await expect(
         service.create({
-          conversationId: 'conv-1',
+          sessionId: 'conv-1',
           name: 'http-plugin',
           transport: 'http',
         }),
@@ -66,7 +66,7 @@ describe('PluginsService', () => {
       mockRepo.create.mockResolvedValue(dto);
 
       const result = await service.create({
-        conversationId: 'conv-1',
+        sessionId: 'conv-1',
         name: 'my-plugin',
         transport: 'stdio',
         command: 'node plugin.js',
@@ -83,7 +83,7 @@ describe('PluginsService', () => {
       mockRepo.create.mockResolvedValue(dto);
 
       const result = await service.create({
-        conversationId: 'conv-1',
+        sessionId: 'conv-1',
         name: 'http-plugin',
         transport: 'http',
         url: 'http://localhost:8080',
@@ -100,7 +100,7 @@ describe('PluginsService', () => {
       mockRepo.create.mockResolvedValue(dto);
 
       await service.create({
-        conversationId: 'conv-1',
+        sessionId: 'conv-1',
         name: 'my-plugin',
         transport: 'stdio',
         command: 'node plugin.js',

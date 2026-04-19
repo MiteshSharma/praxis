@@ -160,8 +160,8 @@ export function JobView() {
   const deleteMutation = useMutation({
     mutationFn: () => rpc.jobs.delete({ jobId: jobId ?? '' }),
     onSuccess: () => {
-      const conversationId = jobQuery.data?.conversationId;
-      navigate(conversationId ? `/conversations/${conversationId}` : '/conversations');
+      const sessionId = jobQuery.data?.sessionId;
+      navigate(sessionId ? `/sessions/${sessionId}` : '/sessions');
     },
   });
 
@@ -288,11 +288,11 @@ export function JobView() {
       {/* ── Static top section ─────────────────────────────────────────────── */}
       <div style={{ flexShrink: 0, padding: '16px 28px 0', background: 'var(--c-bg)' }}>
         {/* Breadcrumb */}
-        {job.conversationId && (
+        {job.sessionId && (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() => navigate(`/conversations/${job.conversationId}`)}
+            onClick={() => navigate(`/sessions/${job.sessionId}`)}
             style={{ paddingLeft: 0, marginBottom: 12 }}
           >
             ← Back to conversation

@@ -3,7 +3,7 @@ import { Alert, Button, Divider, Form, Input, Select, Space, Switch, Tag, Typogr
 import { rpc } from '../rpc';
 
 interface PluginsPanelProps {
-  conversationId: string;
+  sessionId: string;
 }
 
 interface CreatePluginForm {
@@ -13,20 +13,20 @@ interface CreatePluginForm {
   url?: string;
 }
 
-export function PluginsPanel({ conversationId }: PluginsPanelProps) {
+export function PluginsPanel({ sessionId }: PluginsPanelProps) {
   const qc = useQueryClient();
   const [form] = Form.useForm<CreatePluginForm>();
 
   const pluginsQuery = useQuery({
-    queryKey: ['plugins', conversationId],
-    queryFn: () => rpc.plugins.list({ conversationId }),
+    queryKey: ['plugins', sessionId],
+    queryFn: () => rpc.plugins.list({ sessionId }),
   });
 
   const createMutation = useMutation({
     mutationFn: (values: CreatePluginForm) =>
-      rpc.plugins.create({ conversationId, ...values }),
+      rpc.plugins.create({ sessionId, ...values }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['plugins', conversationId] });
+      qc.invalidateQueries({ queryKey: ['plugins', sessionId] });
       form.resetFields();
     },
   });
@@ -34,12 +34,12 @@ export function PluginsPanel({ conversationId }: PluginsPanelProps) {
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       rpc.plugins.toggle({ id, enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins', conversationId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins', sessionId] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => rpc.plugins.delete({ id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins', conversationId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins', sessionId] }),
   });
 
   const transport = Form.useWatch('transport', form);

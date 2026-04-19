@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, Route, Routes, useLocation } from 'react-router-dom';
 import { AgentBrowse } from './pages/AgentBrowse';
-import { ConversationDetail } from './pages/ConversationDetail';
-import { ConversationList } from './pages/ConversationList';
+import { SessionDetail } from './pages/SessionDetail';
+import { SessionList } from './pages/SessionList';
 import { JobView } from './pages/JobView';
 import { MemoryEditor } from './pages/MemoryEditor';
 import { MemoryList } from './pages/MemoryList';
@@ -10,8 +10,8 @@ import { WorkflowBrowse } from './pages/WorkflowBrowse';
 
 const NAV_ITEMS = [
   {
-    key: '/conversations',
-    label: 'Conversations',
+    key: '/sessions',
+    label: 'Sessions',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M14 2H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3l2 2 2-2h5a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
@@ -92,10 +92,10 @@ export function App() {
       <main className="app-main">
         <div className="page-content">
           <Routes>
-            <Route path="/" element={<ConversationList />} />
+            <Route path="/" element={<SessionList />} />
             <Route path="/jobs/:jobId" element={<JobView />} />
-            <Route path="/conversations" element={<ConversationList />} />
-            <Route path="/conversations/:id" element={<ConversationDetail />} />
+            <Route path="/sessions" element={<SessionList />} />
+            <Route path="/sessions/:id" element={<SessionDetail />} />
             <Route path="/workflows" element={<WorkflowBrowse />} />
             <Route path="/agents" element={<AgentBrowse />} />
             <Route path="/memories" element={<MemoryList />} />

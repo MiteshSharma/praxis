@@ -45,7 +45,7 @@ export type PlanDto = z.infer<typeof PlanSchema>;
 
 export const JobSchema = z.object({
   id: z.string().uuid(),
-  conversationId: z.string().uuid().nullable().optional(),
+  sessionId: z.string().uuid().nullable().optional(),
   source: z.string(),
   externalId: z.string().nullable(),
   externalUrl: z.string().nullable(),
@@ -146,11 +146,11 @@ export const WorkflowSchema = z.object({
 });
 export type WorkflowDto = z.infer<typeof WorkflowSchema>;
 
-// ── Conversations & messages ──────────────────────────────────────────────────
+// ── Sessions & messages ───────────────────────────────────────────────────────
 
 export const MessageSchema = z.object({
   id: z.string().uuid(),
-  conversationId: z.string().uuid(),
+  sessionId: z.string().uuid(),
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
   jobId: z.string().uuid().nullable(),
@@ -160,7 +160,7 @@ export const MessageSchema = z.object({
 });
 export type MessageDto = z.infer<typeof MessageSchema>;
 
-export const ConversationSchema = z.object({
+export const SessionSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
   defaultGithubUrl: z.string().nullable(),
@@ -170,7 +170,7 @@ export const ConversationSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
 });
-export type ConversationDto = z.infer<typeof ConversationSchema>;
+export type SessionDto = z.infer<typeof SessionSchema>;
 
 // ── Repo Memories ─────────────────────────────────────────────────────────────
 
@@ -187,24 +187,24 @@ export const RepoMemorySchema = RepoMemoryListItemSchema.extend({
 });
 export type RepoMemoryDto = z.infer<typeof RepoMemorySchema>;
 
-// ── Conversation channels ─────────────────────────────────────────────────────
+// ── Session channels ──────────────────────────────────────────────────────────
 
-export const ConversationChannelSchema = z.object({
+export const SessionChannelSchema = z.object({
   id: z.string().uuid(),
-  conversationId: z.string().uuid(),
+  sessionId: z.string().uuid(),
   type: z.enum(['webhook']),
   name: z.string(),
   config: z.record(z.unknown()),
   enabled: z.boolean(),
   createdAt: z.string(),
 });
-export type ConversationChannelDto = z.infer<typeof ConversationChannelSchema>;
+export type SessionChannelDto = z.infer<typeof SessionChannelSchema>;
 
 // ── Plugins ───────────────────────────────────────────────────────────────────
 
 export const PluginSchema = z.object({
   id: z.string().uuid(),
-  conversationId: z.string().uuid(),
+  sessionId: z.string().uuid(),
   name: z.string(),
   transport: z.enum(['stdio', 'http']),
   command: z.string().nullable(),

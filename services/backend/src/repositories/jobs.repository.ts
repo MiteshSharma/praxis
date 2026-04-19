@@ -61,7 +61,7 @@ export class JobsRepository {
 export function toJobDto(row: typeof jobs.$inferSelect): JobDto {
   return {
     id: row.id,
-    conversationId: row.conversationId ?? null,
+    sessionId: row.conversationId ?? null,
     source: row.source,
     externalId: row.externalId,
     externalUrl: row.externalUrl,

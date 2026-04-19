@@ -3,8 +3,8 @@ import { z } from 'zod';
 import {
   AgentSchema,
   ArtifactSchema,
-  ConversationChannelSchema,
-  ConversationSchema,
+  SessionChannelSchema,
+  SessionSchema,
   JobSchema,
   JobStepSchema,
   MessageSchema,
@@ -207,65 +207,55 @@ export const contract = {
       .output(z.object({ ok: z.boolean() })),
   },
 
-  conversations: {
+  sessions: {
     list: oc
       .input(z.object({ limit: z.number().int().positive().max(100).default(50) }).optional())
-      .output(z.array(ConversationSchema)),
+      .output(z.array(SessionSchema)),
 
-    get: oc.input(z.object({ id: z.string().uuid() })).output(ConversationSchema),
+    get: oc.input(z.object({ id: z.string().uuid() })).output(SessionSchema),
 
     create: oc
       .input(
         z.object({
           title: z.string().min(1),
-          defaultGithubUrl: z.string().url().optional(),
-          defaultWorkflowId: z.string().uuid().optional(),
+          githubUrl: z.string().url().optional(),
+          workflowId: z.string().uuid().optional(),
+          model: z.string().optional(),
         }),
       )
-      .output(ConversationSchema),
+      .output(SessionSchema),
 
     update: oc
       .input(
         z.object({
           id: z.string().uuid(),
           title: z.string().optional(),
-          defaultGithubUrl: z.string().url().nullable().optional(),
-          defaultWorkflowId: z.string().uuid().nullable().optional(),
+          githubUrl: z.string().url().nullable().optional(),
+          workflowId: z.string().uuid().nullable().optional(),
           planHoldHours: z.number().int().min(1).max(168).optional(),
           model: z.string().nullable().optional(),
         }),
       )
-      .output(ConversationSchema),
+      .output(SessionSchema),
 
     delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
 
-    sendMessage: oc
+    send: oc
       .input(
         z.object({
-          conversationId: z.string().uuid(),
-          content: z.string().min(1),
-          triggersJob: z.boolean().default(true),
-          jobOverrides: z
-            .object({
-              githubUrl: z.string().url().optional(),
-              workflowVersionId: z.string().uuid().optional(),
-              title: z.string().optional(),
-              autoApprove: z.boolean().optional(),
-            })
-            .optional(),
+          sessionId: z.string().uuid(),
+          message: z.string().min(1),
+          githubUrl: z.string().url().optional(),
+          workflowId: z.string().uuid().optional(),
+          autoApprove: z.boolean().optional(),
         }),
       )
-      .output(
-        z.object({
-          messageId: z.string().uuid(),
-          jobId: z.string().uuid().nullable(),
-        }),
-      ),
+      .output(z.object({ jobId: z.string().uuid() })),
 
-    listMessages: oc
+    history: oc
       .input(
         z.object({
-          conversationId: z.string().uuid(),
+          sessionId: z.string().uuid(),
           limit: z.number().int().positive().max(100).default(20),
           before: z.string().datetime().optional(),
         }),
@@ -280,23 +270,23 @@ export const contract = {
 
   channels: {
     list: oc
-      .input(z.object({ conversationId: z.string().uuid() }))
-      .output(z.array(ConversationChannelSchema)),
+      .input(z.object({ sessionId: z.string().uuid() }))
+      .output(z.array(SessionChannelSchema)),
 
     create: oc
       .input(
         z.object({
-          conversationId: z.string().uuid(),
+          sessionId: z.string().uuid(),
           type: z.enum(['webhook']),
           name: z.string().min(1),
           config: z.record(z.unknown()),
         }),
       )
-      .output(ConversationChannelSchema),
+      .output(SessionChannelSchema),
 
     toggle: oc
       .input(z.object({ id: z.string().uuid(), enabled: z.boolean() }))
-      .output(ConversationChannelSchema),
+      .output(SessionChannelSchema),
 
     delete: oc.input(z.object({ id: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
   },
@@ -314,12 +304,12 @@ export const contract = {
   },
 
   plugins: {
-    list: oc.input(z.object({ conversationId: z.string().uuid() })).output(z.array(PluginSchema)),
+    list: oc.input(z.object({ sessionId: z.string().uuid() })).output(z.array(PluginSchema)),
 
     create: oc
       .input(
         z.object({
-          conversationId: z.string().uuid(),
+          sessionId: z.string().uuid(),
           name: z.string().min(1),
           transport: z.enum(['stdio', 'http']),
           command: z.string().optional(),

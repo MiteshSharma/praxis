@@ -4,7 +4,7 @@ import type { Database } from '@shared/db';
 import { PluginsRepository } from '../repositories/plugins.repository';
 
 interface CreatePluginInput {
-  conversationId: string;
+  sessionId: string;
   name: string;
   transport: 'stdio' | 'http';
   command?: string;
@@ -19,8 +19,8 @@ export class PluginsService {
     this.repo = new PluginsRepository(db);
   }
 
-  async list(conversationId: string): Promise<PluginDto[]> {
-    return this.repo.findByConversation(conversationId);
+  async list(sessionId: string): Promise<PluginDto[]> {
+    return this.repo.findByConversation(sessionId);
   }
 
   async create(input: CreatePluginInput): Promise<PluginDto> {

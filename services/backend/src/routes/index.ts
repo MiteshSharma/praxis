@@ -7,7 +7,7 @@ import { registerMcpRoutes } from '../control-plane/mcp/submit-plan';
 import { env } from '../lib/env';
 import { registerOpenApi } from '../plugins/openapi';
 import { AgentsService } from '../services/agents.service';
-import { ConversationsService } from '../services/conversations.service';
+import { SessionsService } from '../services/sessions.service';
 import { JobsService } from '../services/jobs.service';
 import { MemoriesService } from '../services/memories.service';
 import { ChannelsService } from '../services/channels.service';
@@ -35,7 +35,7 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   const plansService = new PlansService(deps.db, deps.boss, deps.log, env.REDIS_URL);
   const workflowsService = new WorkflowsService(deps.db);
   const agentsService = new AgentsService(deps.db);
-  const conversationsService = new ConversationsService(deps.db, deps.boss, deps.log);
+  const sessionsService = new SessionsService(deps.db, deps.boss, deps.log);
   const pluginsService = new PluginsService(deps.db);
   const memoriesService = new MemoriesService(deps.db, memoryBackend);
   const channelsService = new ChannelsService(deps.db);
@@ -46,6 +46,6 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   if (env.MCP_SHARED_SECRET) {
     planReviewRoutes(app, { plansService, mcpSecret: env.MCP_SHARED_SECRET });
   }
-  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, conversationsService, pluginsService, memoriesService, channelsService });
+  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, pluginsService, memoriesService, channelsService });
   await registerOpenApi(app);
 }

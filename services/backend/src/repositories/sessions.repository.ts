@@ -1,9 +1,9 @@
-import type { ConversationDto, MessageDto, PluginDto } from '@shared/contracts';
+import type { MessageDto, PluginDto, SessionDto } from '@shared/contracts';
 import type { Database } from '@shared/db';
 import { artifacts, conversations, messages, plugins } from '@shared/db';
-import { and, asc, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
-export function toConversationDto(row: typeof conversations.$inferSelect): ConversationDto {
+export function toSessionDto(row: typeof conversations.$inferSelect): SessionDto {
   return {
     id: row.id,
     title: row.title,
@@ -19,7 +19,7 @@ export function toConversationDto(row: typeof conversations.$inferSelect): Conve
 export function toMessageDto(row: typeof messages.$inferSelect & { prArtifactUrl?: string | null }): MessageDto {
   return {
     id: row.id,
-    conversationId: row.conversationId,
+    sessionId: row.conversationId,
     role: row.role as MessageDto['role'],
     content: row.content,
     jobId: row.jobId,
@@ -32,7 +32,7 @@ export function toMessageDto(row: typeof messages.$inferSelect & { prArtifactUrl
 export function toPluginDto(row: typeof plugins.$inferSelect): PluginDto {
   return {
     id: row.id,
-    conversationId: row.conversationId,
+    sessionId: row.conversationId,
     name: row.name,
     transport: row.transport as PluginDto['transport'],
     command: row.command,
@@ -43,42 +43,44 @@ export function toPluginDto(row: typeof plugins.$inferSelect): PluginDto {
   };
 }
 
-export class ConversationsRepository {
+export class SessionsRepository {
   constructor(private readonly db: Database) {}
 
-  async findMany(limit: number): Promise<ConversationDto[]> {
+  async findMany(limit: number): Promise<SessionDto[]> {
     const rows = await this.db
       .select()
       .from(conversations)
       .orderBy(desc(conversations.updatedAt))
       .limit(limit);
-    return rows.map(toConversationDto);
+    return rows.map(toSessionDto);
   }
 
-  async findById(id: string): Promise<ConversationDto | null> {
+  async findById(id: string): Promise<SessionDto | null> {
     const [row] = await this.db
       .select()
       .from(conversations)
       .where(eq(conversations.id, id))
       .limit(1);
-    return row ? toConversationDto(row) : null;
+    return row ? toSessionDto(row) : null;
   }
 
   async create(data: {
     title: string;
     defaultGithubUrl?: string;
     defaultWorkflowId?: string;
-  }): Promise<ConversationDto> {
+    model?: string;
+  }): Promise<SessionDto> {
     const [row] = await this.db
       .insert(conversations)
       .values({
         title: data.title,
         defaultGithubUrl: data.defaultGithubUrl ?? null,
         defaultWorkflowId: data.defaultWorkflowId ?? null,
+        model: data.model ?? null,
       })
       .returning();
     if (!row) throw new Error('conversations insert failed');
-    return toConversationDto(row);
+    return toSessionDto(row);
   }
 
   async update(
@@ -90,13 +92,13 @@ export class ConversationsRepository {
       planHoldHours?: number;
       model?: string | null;
     },
-  ): Promise<ConversationDto | null> {
+  ): Promise<SessionDto | null> {
     const [row] = await this.db
       .update(conversations)
       .set({ ...patch, updatedAt: new Date() })
       .where(eq(conversations.id, id))
       .returning();
-    return row ? toConversationDto(row) : null;
+    return row ? toSessionDto(row) : null;
   }
 
   async delete(id: string): Promise<void> {
@@ -104,13 +106,13 @@ export class ConversationsRepository {
   }
 
   async findMessages(
-    conversationId: string,
+    sessionId: string,
     limit: number,
     before?: string,
   ): Promise<{ messages: MessageDto[]; hasMore: boolean }> {
     const whereClause = before
-      ? and(eq(messages.conversationId, conversationId), lt(messages.createdAt, new Date(before)))
-      : eq(messages.conversationId, conversationId);
+      ? and(eq(messages.conversationId, sessionId), lt(messages.createdAt, new Date(before)))
+      : eq(messages.conversationId, sessionId);
 
     const rows = await this.db
       .select({
@@ -138,7 +140,7 @@ export class ConversationsRepository {
   }
 
   async insertMessage(data: {
-    conversationId: string;
+    sessionId: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
     jobId?: string | null;
@@ -146,7 +148,7 @@ export class ConversationsRepository {
     const [row] = await this.db
       .insert(messages)
       .values({
-        conversationId: data.conversationId,
+        conversationId: data.sessionId,
         role: data.role,
         content: data.content,
         jobId: data.jobId ?? null,
@@ -160,12 +162,11 @@ export class ConversationsRepository {
     await this.db.update(messages).set({ jobId }).where(eq(messages.id, messageId));
   }
 
-  async findLastCompletedJobId(conversationId: string): Promise<string | null> {
-    // Find the most recent message that has a job_id set
+  async findLastCompletedJobId(sessionId: string): Promise<string | null> {
     const rows = await this.db
       .select({ jobId: messages.jobId })
       .from(messages)
-      .where(eq(messages.conversationId, conversationId))
+      .where(eq(messages.conversationId, sessionId))
       .orderBy(desc(messages.createdAt))
       .limit(20);
     return rows.find((r) => r.jobId != null)?.jobId ?? null;
