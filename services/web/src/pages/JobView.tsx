@@ -1,4 +1,4 @@
-import type { JobStatus } from '@shared/contracts';
+import type { JobStatus, TimelineEventDto } from '@shared/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Collapse, Descriptions, Drawer, Dropdown, Modal, Space, Tag, Typography } from 'antd';
 import Markdown from 'react-markdown';
@@ -121,6 +121,19 @@ const STREAM_STATUSES = new Set([
   'executing', 'checking', 'learning', 'publishing',
 ]);
 
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'plan_rejected']);
+
+function normalizeTimelineEvents(events: TimelineEventDto[]): StreamItem[] {
+  return events.map((e) => {
+    const kind = e.type;
+    const eventPayload =
+      kind === 'chunk'
+        ? { kind: 'chunk', raw: (e.payload as { chunk?: unknown }).chunk }
+        : { kind, ...e.payload };
+    return { id: `pg-${e.seq}`, seq: e.seq, event: eventPayload };
+  });
+}
+
 const PLAN_REVIEW_STATUSES = new Set(['plan_ready', 'plan_review']);
 
 const PLAN_VIEWABLE_STATUSES = new Set([
@@ -153,8 +166,7 @@ export function JobView() {
     enabled: !!jobId,
     refetchInterval: (q) => {
       const status = q.state.data?.status;
-      const terminal = status === 'completed' || status === 'failed' || status === 'plan_rejected';
-      return terminal ? false : 3000;
+      return status && TERMINAL_STATUSES.has(status) ? false : 3000;
     },
   });
 
@@ -168,7 +180,7 @@ export function JobView() {
 
   const latestPlanQuery = useQuery({
     queryKey: ['job', jobId, 'plan'],
-    queryFn: () => rpc.jobs.getLatestPlan({ jobId: jobId ?? '' }),
+    queryFn: () => rpc.jobs.planGet({ jobId: jobId ?? '' }),
     enabled: !!jobId && PLAN_VIEWABLE_STATUSES.has(jobQuery.data?.status ?? ''),
   });
 
@@ -178,8 +190,16 @@ export function JobView() {
     enabled: !!jobId && ['publishing', 'learning', 'completed'].includes(jobQuery.data?.status ?? ''),
   });
 
+  const isTerminal = TERMINAL_STATUSES.has(jobQuery.data?.status ?? '');
+
+  const timelineQuery = useQuery({
+    queryKey: ['job', jobId, 'timeline'],
+    queryFn: () => rpc.timeline.get({ jobId: jobId ?? '', limit: 500 }),
+    enabled: !!jobId && isTerminal,
+  });
+
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId || isTerminal) return;
     setItems([]);
     setStreamError(null);
 
@@ -200,11 +220,16 @@ export function JobView() {
     };
     source.onerror = () => setStreamError('stream disconnected');
     return () => source.close();
-  }, [jobId]);
+  }, [jobId, isTerminal]);
+
+  const resolvedItems = useMemo(
+    () => isTerminal ? normalizeTimelineEvents(timelineQuery.data?.events ?? []) : items,
+    [isTerminal, timelineQuery.data, items],
+  );
 
   const timelineItems = useMemo(
     () =>
-      items.flatMap((item, idx) => {
+      resolvedItems.flatMap((item, idx) => {
         const kind = item.event?.kind ?? 'chunk';
         let label = kind;
         let detail: string | undefined;
@@ -248,16 +273,16 @@ export function JobView() {
 
         return [{ id: `${item.id}-${idx}`, color, label, detail, isPrompt: false, phase: '', text: '' }];
       }),
-    [items],
+    [resolvedItems],
   );
 
   const prUrlFromStream = useMemo(() => {
-    for (const item of items) {
+    for (const item of resolvedItems) {
       const ev = item.event as { kind?: string; artifactKind?: string; url?: string } | undefined;
       if (ev?.kind === 'artifact-created' && ev.artifactKind === 'pr' && ev.url) return ev.url;
     }
     return undefined;
-  }, [items]);
+  }, [resolvedItems]);
 
   if (jobQuery.isLoading) return (
     <div className="page-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
@@ -271,7 +296,7 @@ export function JobView() {
 
   const prUrl = prUrlFromStream ?? artifactsQuery.data?.find((a) => a.kind === 'pr')?.url;
   const showPlanReview = PLAN_REVIEW_STATUSES.has(job.status);
-  const showStream = STREAM_STATUSES.has(job.status) || items.length > 0;
+  const showStream = STREAM_STATUSES.has(job.status) || isTerminal || items.length > 0;
 
   const handleDelete = () => {
     Modal.confirm({
@@ -450,13 +475,15 @@ export function JobView() {
                   flexShrink: 0,
                 }}
               >
-                <span style={{ fontWeight: 600, fontSize: 13 }}>Live timeline</span>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{isTerminal ? 'Timeline' : 'Live timeline'}</span>
                 {streamError && <Tag color="red">{streamError}</Tag>}
               </div>
 
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
                 {timelineItems.length === 0 ? (
-                  <p className="muted small" style={{ padding: '8px 0' }}>Waiting for events…</p>
+                  <p className="muted small" style={{ padding: '8px 0' }}>
+                    {isTerminal ? 'No timeline events recorded.' : 'Waiting for events…'}
+                  </p>
                 ) : (
                   <div className="timeline">
                     {[...timelineItems].reverse().map((item, idx) => (

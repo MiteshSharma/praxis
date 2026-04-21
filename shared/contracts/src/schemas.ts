@@ -81,6 +81,16 @@ export const ArtifactSchema = z.object({
 });
 export type ArtifactDto = z.infer<typeof ArtifactSchema>;
 
+// ── Timeline ──────────────────────────────────────────────────────────────────
+
+export const TimelineEventSchema = z.object({
+  seq: z.number().int(),
+  type: z.string(),
+  payload: z.record(z.unknown()),
+  createdAt: z.string(),
+});
+export type TimelineEventDto = z.infer<typeof TimelineEventSchema>;
+
 // ── Job steps ─────────────────────────────────────────────────────────────────
 
 export const JobStepSchema = z.object({

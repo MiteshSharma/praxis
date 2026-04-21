@@ -12,6 +12,7 @@ import {
   PluginSchema,
   RepoMemoryListItemSchema,
   RepoMemorySchema,
+  TimelineEventSchema,
   WorkflowSchema,
 } from './schemas';
 import { JobStatusSchema } from './events';
@@ -57,29 +58,27 @@ export const contract = {
 
     listArtifacts: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(ArtifactSchema)),
 
-    getLatestPlan: oc.input(z.object({ jobId: z.string().uuid() })).output(PlanSchema.nullable()),
+    planGet: oc.input(z.object({ jobId: z.string().uuid() })).output(PlanSchema.nullable()),
 
-    listPlans: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(PlanSchema)),
+    planList: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(PlanSchema)),
 
-    approvePlan: oc
+    planApprove: oc
       .input(z.object({ jobId: z.string().uuid() }))
       .output(z.object({ ok: z.boolean() })),
 
-    revisePlan: oc
+    planRevise: oc
       .input(
         z.object({
           jobId: z.string().uuid(),
+          feedback: z.string().optional(),
           answers: z.record(z.string()).optional(),
-          additionalFeedback: z.string().optional(),
         }),
       )
       .output(z.object({ ok: z.boolean() })),
 
-    rejectPlan: oc
+    planReject: oc
       .input(z.object({ jobId: z.string().uuid(), reason: z.string().optional() }))
       .output(z.object({ ok: z.boolean() })),
-
-    listSteps: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(JobStepSchema)),
 
     restart: oc
       .input(z.object({ jobId: z.string().uuid() }))
@@ -304,8 +303,47 @@ export const contract = {
     delete: oc.input(z.object({ channelId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
   },
 
+  steps: {
+    list: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(JobStepSchema)),
+  },
+
+  timeline: {
+    get: oc
+      .input(
+        z.object({
+          jobId: z.string().uuid(),
+          limit: z.number().int().positive().max(500).default(200),
+          cursor: z.number().int().optional(),
+        }),
+      )
+      .output(
+        z.object({
+          events: z.array(TimelineEventSchema),
+          hasMore: z.boolean(),
+          nextCursor: z.number().int().optional(),
+        }),
+      ),
+  },
+
+  permissions: {
+    listOpen: oc
+      .input(z.object({ sessionId: z.string().uuid().optional() }).optional())
+      .output(z.array(JobSchema)),
+
+    respond: oc
+      .input(
+        z.object({
+          jobId: z.string().uuid(),
+          action: z.enum(['approve', 'revise', 'reject']),
+          feedback: z.string().optional(),
+          answers: z.record(z.string()).optional(),
+        }),
+      )
+      .output(z.object({ ok: z.boolean() })),
+  },
+
   memories: {
-    listRepos: oc.output(z.array(RepoMemoryListItemSchema)),
+    list: oc.output(z.array(RepoMemoryListItemSchema)),
 
     get: oc.input(z.object({ repoKey: z.string() })).output(RepoMemorySchema.nullable()),
 

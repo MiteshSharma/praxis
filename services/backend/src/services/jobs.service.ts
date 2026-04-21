@@ -1,9 +1,9 @@
 import { ORPCError } from '@orpc/server';
-import type { ArtifactDto, JobDto, JobStatus, JobStepDto } from '@shared/contracts';
+import type { ArtifactDto, JobDto, JobStatus, JobStepDto, TimelineEventDto } from '@shared/contracts';
 import { JOB_EXECUTE_QUEUE, TaskIngestService, appendTimeline, splitWebInput } from '@shared/core';
-import { type Database, jobs, messages, plans, workflowVersions } from '@shared/db';
+import { type Database, jobTimeline, jobs, messages, plans, workflowVersions } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, gt } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
 import { JobsRepository, toJobDto } from '../repositories/jobs.repository';
 import { SessionsRepository } from '../repositories/sessions.repository';
@@ -155,6 +155,33 @@ export class JobsService {
     await this.db.update(jobs).set({ status: 'queued', updatedAt: new Date() }).where(eq(jobs.id, jobId));
     await this.boss.send(JOB_EXECUTE_QUEUE, { jobId });
     return { jobId };
+  }
+
+  async getTimeline(
+    jobId: string,
+    limit = 200,
+    cursor?: number,
+  ): Promise<{ events: TimelineEventDto[]; hasMore: boolean; nextCursor?: number }> {
+    const rows = await this.db
+      .select()
+      .from(jobTimeline)
+      .where(cursor !== undefined ? and(eq(jobTimeline.jobId, jobId), gt(jobTimeline.seq, cursor)) : eq(jobTimeline.jobId, jobId))
+      .orderBy(asc(jobTimeline.seq))
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const events = rows.slice(0, limit).map((r) => ({
+      seq: r.seq,
+      type: r.type,
+      payload: r.payload as Record<string, unknown>,
+      createdAt: r.createdAt.toISOString(),
+    }));
+
+    return {
+      events,
+      hasMore,
+      nextCursor: hasMore ? events[events.length - 1]?.seq : undefined,
+    };
   }
 
   async restart(jobId: string): Promise<{ jobId: string }> {

@@ -33,7 +33,7 @@ interface StepProgressProps {
 export function StepProgress({ jobId, refetchInterval = 3000 }: StepProgressProps) {
   const stepsQuery = useQuery({
     queryKey: ['job', jobId, 'steps'],
-    queryFn: () => rpc.jobs.listSteps({ jobId }),
+    queryFn: () => rpc.steps.list({ jobId }),
     enabled: !!jobId,
     refetchInterval,
   });

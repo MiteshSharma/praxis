@@ -46,9 +46,6 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const jobsListArtifacts = os.jobs.listArtifacts.handler(({ input }) =>
     deps.jobsService.listArtifacts(input.jobId),
   );
-  const jobsListSteps = os.jobs.listSteps.handler(({ input }) =>
-    deps.jobsService.listSteps(input.jobId),
-  );
   const jobsRestart = os.jobs.restart.handler(({ input }) =>
     deps.jobsService.restart(input.jobId),
   );
@@ -60,22 +57,44 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     deps.jobsService.resumeFromPlan(input.jobId),
   );
 
-  const jobsGetLatestPlan = os.jobs.getLatestPlan.handler(({ input }) =>
+  const jobsPlanGet = os.jobs.planGet.handler(({ input }) =>
     deps.plansService.getLatestPlan(input.jobId),
   );
-  const jobsListPlans = os.jobs.listPlans.handler(({ input }) =>
+  const jobsPlanList = os.jobs.planList.handler(({ input }) =>
     deps.plansService.listPlans(input.jobId),
   );
-  const jobsApprovePlan = os.jobs.approvePlan.handler(async ({ input }) => {
+  const jobsPlanApprove = os.jobs.planApprove.handler(async ({ input }) => {
     await deps.plansService.approvePlan(input.jobId);
     return { ok: true };
   });
-  const jobsRevisePlan = os.jobs.revisePlan.handler(async ({ input }) => {
-    await deps.plansService.revisePlan(input.jobId, input.answers, input.additionalFeedback);
+  const jobsPlanRevise = os.jobs.planRevise.handler(async ({ input }) => {
+    await deps.plansService.revisePlan(input.jobId, input.answers, input.feedback);
     return { ok: true };
   });
-  const jobsRejectPlan = os.jobs.rejectPlan.handler(async ({ input }) => {
+  const jobsPlanReject = os.jobs.planReject.handler(async ({ input }) => {
     await deps.plansService.rejectPlan(input.jobId, input.reason);
+    return { ok: true };
+  });
+
+  const stepsList = os.steps.list.handler(({ input }) =>
+    deps.jobsService.listSteps(input.jobId),
+  );
+
+  const timelineGet = os.timeline.get.handler(({ input }) =>
+    deps.jobsService.getTimeline(input.jobId, input.limit, input.cursor),
+  );
+
+  const permissionsListOpen = os.permissions.listOpen.handler(({ input }) =>
+    deps.jobsService.list(50, { sessionId: input?.sessionId, status: 'plan_review' }),
+  );
+  const permissionsRespond = os.permissions.respond.handler(async ({ input }) => {
+    if (input.action === 'approve') {
+      await deps.plansService.approvePlan(input.jobId);
+    } else if (input.action === 'revise') {
+      await deps.plansService.revisePlan(input.jobId, input.answers, input.feedback);
+    } else {
+      await deps.plansService.rejectPlan(input.jobId, input.feedback);
+    }
     return { ok: true };
   });
 
@@ -174,7 +193,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     return { ok: true };
   });
 
-  const memoriesListRepos = os.memories.listRepos.handler(() =>
+  const memoriesList = os.memories.list.handler(() =>
     deps.memoriesService.listRepos(),
   );
   const memoriesGet = os.memories.get.handler(({ input }) =>
@@ -203,15 +222,24 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       list: jobsList,
       cancel: jobsCancel,
       listArtifacts: jobsListArtifacts,
-      listSteps: jobsListSteps,
       restart: jobsRestart,
       delete: jobsDelete,
       resumeFromPlan: jobsResumeFromPlan,
-      getLatestPlan: jobsGetLatestPlan,
-      listPlans: jobsListPlans,
-      approvePlan: jobsApprovePlan,
-      revisePlan: jobsRevisePlan,
-      rejectPlan: jobsRejectPlan,
+      planGet: jobsPlanGet,
+      planList: jobsPlanList,
+      planApprove: jobsPlanApprove,
+      planRevise: jobsPlanRevise,
+      planReject: jobsPlanReject,
+    },
+    steps: {
+      list: stepsList,
+    },
+    timeline: {
+      get: timelineGet,
+    },
+    permissions: {
+      listOpen: permissionsListOpen,
+      respond: permissionsRespond,
     },
     workflows: {
       list: workflowsList,
@@ -239,7 +267,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       history: sessionsHistory,
     },
     memories: {
-      listRepos: memoriesListRepos,
+      list: memoriesList,
       get: memoriesGet,
       update: memoriesUpdate,
       delete: memoriesDelete,

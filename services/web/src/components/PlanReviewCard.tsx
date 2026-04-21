@@ -32,11 +32,11 @@ const PLAN_STATUS_COLOR: Record<string, string> = {
 export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
   const queryClient = useQueryClient();
   const [form] = Form.useForm<Record<string, string>>();
-  const [additionalFeedback, setAdditionalFeedback] = useState('');
+  const [feedback, setFeedback] = useState('');
 
   const planQuery = useQuery({
     queryKey: ['job', jobId, 'latestPlan'],
-    queryFn: () => rpc.jobs.getLatestPlan({ jobId }),
+    queryFn: () => rpc.jobs.planGet({ jobId }),
     refetchInterval: (q) => {
       const status = q.state.data?.status;
       return status === 'approved' || status === 'rejected' ? false : 3000;
@@ -45,26 +45,26 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
 
   const historyQuery = useQuery({
     queryKey: ['job', jobId, 'planHistory'],
-    queryFn: () => rpc.jobs.listPlans({ jobId }),
+    queryFn: () => rpc.jobs.planList({ jobId }),
   });
 
   const approve = useMutation({
-    mutationFn: () => rpc.jobs.approvePlan({ jobId }),
+    mutationFn: () => rpc.jobs.planApprove({ jobId }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['job', jobId] }),
   });
 
   const revise = useMutation({
-    mutationFn: (vars: { answers: Record<string, string>; additionalFeedback?: string }) =>
-      rpc.jobs.revisePlan({ jobId, ...vars }),
+    mutationFn: (vars: { answers: Record<string, string>; feedback?: string }) =>
+      rpc.jobs.planRevise({ jobId, ...vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['job', jobId] });
       form.resetFields();
-      setAdditionalFeedback('');
+      setFeedback('');
     },
   });
 
   const reject = useMutation({
-    mutationFn: (reason?: string) => rpc.jobs.rejectPlan({ jobId, reason }),
+    mutationFn: (reason?: string) => rpc.jobs.planReject({ jobId, reason }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['job', jobId] }),
   });
 
@@ -165,8 +165,8 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
               <Form.Item label="Additional feedback (optional)">
                 <Input.TextArea
                   rows={2}
-                  value={additionalFeedback}
-                  onChange={(e) => setAdditionalFeedback(e.target.value)}
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
                   placeholder="Any other changes you'd like…"
                 />
               </Form.Item>
@@ -181,8 +181,8 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
             </Typography.Text>
             <Input.TextArea
               rows={3}
-              value={additionalFeedback}
-              onChange={(e) => setAdditionalFeedback(e.target.value)}
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
               placeholder="Describe what you'd like changed before execution…"
             />
           </div>
@@ -206,7 +206,7 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
             <Button
               onClick={async () => {
                 const values = await form.validateFields();
-                revise.mutate({ answers: values, additionalFeedback: additionalFeedback || undefined });
+                revise.mutate({ answers: values, feedback: feedback || undefined });
               }}
               loading={revise.isPending}
             >
@@ -217,11 +217,11 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
           {openQuestions.length === 0 && (
             <Button
               onClick={() => {
-                const feedback = additionalFeedback.trim();
-                if (feedback) revise.mutate({ answers: {}, additionalFeedback: feedback });
+                const trimmed = feedback.trim();
+                if (trimmed) revise.mutate({ answers: {}, feedback: trimmed });
               }}
               loading={revise.isPending}
-              disabled={!additionalFeedback.trim()}
+              disabled={!feedback.trim()}
             >
               Request revision
             </Button>

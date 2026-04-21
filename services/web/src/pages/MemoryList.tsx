@@ -7,7 +7,7 @@ export function MemoryList() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['memories', 'list'],
-    queryFn: () => rpc.memories.listRepos(),
+    queryFn: () => rpc.memories.list(),
   });
 
   const repos = data ?? [];
