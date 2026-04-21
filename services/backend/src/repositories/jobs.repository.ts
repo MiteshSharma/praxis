@@ -1,6 +1,6 @@
 import type { ArtifactDto, JobDto, JobStepDto, JobStatus } from '@shared/contracts';
 import { type Database, artifacts, jobSteps, jobs } from '@shared/db';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, notInArray } from 'drizzle-orm';
 
 export class JobsRepository {
   constructor(private readonly db: Database) {}
@@ -46,6 +46,21 @@ export class JobsRepository {
       output: (r.output ?? null) as Record<string, unknown> | null,
       errorMessage: r.errorMessage,
     }));
+  }
+
+  async hasActiveJobs(sessionId: string, excludeStatuses: readonly string[]): Promise<boolean> {
+    const row = await this.db.query.jobs.findFirst({
+      where: and(eq(jobs.conversationId, sessionId), notInArray(jobs.status, [...excludeStatuses])),
+      columns: { id: true },
+    });
+    return !!row;
+  }
+
+  async updatePlanRevisionCount(jobId: string, count: number): Promise<void> {
+    await this.db
+      .update(jobs)
+      .set({ planRevisionCount: count, updatedAt: new Date() })
+      .where(eq(jobs.id, jobId));
   }
 
   async delete(jobId: string): Promise<void> {

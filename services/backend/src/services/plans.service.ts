@@ -1,15 +1,16 @@
 import { ORPCError } from '@orpc/server';
 import type { PlanDto } from '@shared/contracts';
 import { DbTaskTracker, JOB_EXECUTE_QUEUE, appendTimeline } from '@shared/core';
-import { type Database, jobs } from '@shared/db';
+import type { Database } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
-import { eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import type PgBoss from 'pg-boss';
+import { JobsRepository } from '../repositories/jobs.repository';
 import { PlansRepository, toPlanDto } from '../repositories/plans.repository';
 
 export class PlansService {
   private readonly repo: PlansRepository;
+  private readonly jobsRepo: JobsRepository;
   private readonly tracker: DbTaskTracker;
   private readonly redis: Redis;
 
@@ -18,9 +19,10 @@ export class PlansService {
     private readonly boss: PgBoss,
     private readonly log: Logger,
     redisUrl: string,
-    overrides?: { repo?: PlansRepository; tracker?: DbTaskTracker; redis?: Redis },
+    overrides?: { repo?: PlansRepository; jobsRepo?: JobsRepository; tracker?: DbTaskTracker; redis?: Redis },
   ) {
     this.repo = overrides?.repo ?? new PlansRepository(db);
+    this.jobsRepo = overrides?.jobsRepo ?? new JobsRepository(db);
     this.tracker = overrides?.tracker ?? new DbTaskTracker(db);
     this.redis = overrides?.redis ?? new Redis(redisUrl);
   }
@@ -36,7 +38,7 @@ export class PlansService {
   }
 
   async approvePlan(jobId: string): Promise<void> {
-    const job = await this.db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+    const job = await this.jobsRepo.findById(jobId);
     if (!job) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (job.status !== 'plan_review') {
       throw new ORPCError('BAD_REQUEST', { message: `job is not in plan_review (current: ${job.status})` });
@@ -63,7 +65,7 @@ export class PlansService {
     answers?: Record<string, string>,
     additionalFeedback?: string,
   ): Promise<void> {
-    const job = await this.db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+    const job = await this.jobsRepo.findById(jobId);
     if (!job) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (job.status !== 'plan_review') {
       throw new ORPCError('BAD_REQUEST', { message: `job is not in plan_review (current: ${job.status})` });
@@ -79,10 +81,7 @@ export class PlansService {
     if (!plan) throw new ORPCError('NOT_FOUND', { message: 'no plan found for job' });
 
     await this.tracker.recordRevisionRequest(plan.id, { answers, additionalFeedback });
-    await this.db
-      .update(jobs)
-      .set({ planRevisionCount: revisionCount + 1, updatedAt: new Date() })
-      .where(eq(jobs.id, jobId));
+    await this.jobsRepo.updatePlanRevisionCount(jobId, revisionCount + 1);
     await this.appendTimeline(jobId, 'plan-revision-requested', {
       planId: plan.id,
       version: plan.version,
@@ -101,7 +100,7 @@ export class PlansService {
   }
 
   async rejectPlan(jobId: string, reason?: string): Promise<void> {
-    const job = await this.db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+    const job = await this.jobsRepo.findById(jobId);
     if (!job) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (job.status !== 'plan_review') {
       throw new ORPCError('BAD_REQUEST', { message: `job is not in plan_review (current: ${job.status})` });

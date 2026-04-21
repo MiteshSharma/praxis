@@ -1,12 +1,13 @@
 import { ORPCError } from '@orpc/server';
 import type { ArtifactDto, JobDto, JobStatus, JobStepDto, TimelineEventDto } from '@shared/contracts';
 import { JOB_EXECUTE_QUEUE, TaskIngestService, appendTimeline, splitWebInput } from '@shared/core';
-import { type Database, jobTimeline, jobs, messages, plans, workflowVersions } from '@shared/db';
+import { type Database, jobTimeline, jobs, messages, plans } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import { and, asc, eq, gt } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
 import { JobsRepository, toJobDto } from '../repositories/jobs.repository';
 import { SessionsRepository } from '../repositories/sessions.repository';
+import { WorkflowsRepository } from '../repositories/workflows.repository';
 
 const TERMINAL_JOB_STATUSES: JobStatus[] = ['completed', 'plan_rejected', 'failed', 'cancelled'];
 
@@ -27,16 +28,23 @@ export class JobsService {
   private readonly ingest: TaskIngestService;
   private readonly repo: JobsRepository;
   private readonly sessionsRepo: SessionsRepository;
+  private readonly workflowsRepo: WorkflowsRepository;
 
   constructor(
     private readonly db: Database,
     private readonly boss: PgBoss,
     log: Logger,
-    overrides?: { ingest?: TaskIngestService; repo?: JobsRepository; sessionsRepo?: SessionsRepository },
+    overrides?: {
+      ingest?: TaskIngestService;
+      repo?: JobsRepository;
+      sessionsRepo?: SessionsRepository;
+      workflowsRepo?: WorkflowsRepository;
+    },
   ) {
     this.ingest = overrides?.ingest ?? new TaskIngestService(db, boss, log);
     this.repo = overrides?.repo ?? new JobsRepository(db);
     this.sessionsRepo = overrides?.sessionsRepo ?? new SessionsRepository(db);
+    this.workflowsRepo = overrides?.workflowsRepo ?? new WorkflowsRepository(db);
   }
 
   async create(input: CreateFromSessionInput): Promise<JobDto> {
@@ -54,16 +62,9 @@ export class JobsService {
     const { title, description } = splitWebInput(input.task);
 
     const resolvedWorkflowId = input.workflowId ?? session.defaultWorkflowId ?? null;
-    let workflowVersionId: string | undefined;
-    if (resolvedWorkflowId) {
-      const [latest] = await this.db
-        .select({ id: workflowVersions.id })
-        .from(workflowVersions)
-        .where(eq(workflowVersions.workflowId, resolvedWorkflowId))
-        .orderBy(desc(workflowVersions.version))
-        .limit(1);
-      workflowVersionId = latest?.id;
-    }
+    const workflowVersionId = resolvedWorkflowId
+      ? await this.workflowsRepo.findLatestVersionId(resolvedWorkflowId)
+      : undefined;
 
     const userMsg = await this.sessionsRepo.insertMessage({
       sessionId: input.sessionId,

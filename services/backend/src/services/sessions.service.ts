@@ -1,13 +1,14 @@
 import { ORPCError } from '@orpc/server';
 import type { MessageDto, SessionDto } from '@shared/contracts';
 import { TaskIngestService, splitWebInput } from '@shared/core';
-import { type Database, jobs, workflowVersions } from '@shared/db';
+import type { Database } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
-import { and, desc, eq, notInArray } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
+import { JobsRepository } from '../repositories/jobs.repository';
 import { SessionsRepository } from '../repositories/sessions.repository';
+import { WorkflowsRepository } from '../repositories/workflows.repository';
 
-const TERMINAL_JOB_STATUSES = ['completed', 'plan_rejected', 'failed'] as const;
+const TERMINAL_JOB_STATUSES = ['completed', 'plan_rejected', 'failed', 'cancelled'] as const;
 
 interface SendInput {
   sessionId: string;
@@ -20,15 +21,24 @@ interface SendInput {
 export class SessionsService {
   private readonly repo: SessionsRepository;
   private readonly ingest: TaskIngestService;
+  private readonly jobsRepo: JobsRepository;
+  private readonly workflowsRepo: WorkflowsRepository;
 
   constructor(
     private readonly db: Database,
     boss: PgBoss,
     log: Logger,
-    overrides?: { ingest?: TaskIngestService; repo?: SessionsRepository },
+    overrides?: {
+      ingest?: TaskIngestService;
+      repo?: SessionsRepository;
+      jobsRepo?: JobsRepository;
+      workflowsRepo?: WorkflowsRepository;
+    },
   ) {
     this.repo = overrides?.repo ?? new SessionsRepository(db);
     this.ingest = overrides?.ingest ?? new TaskIngestService(db, boss, log);
+    this.jobsRepo = overrides?.jobsRepo ?? new JobsRepository(db);
+    this.workflowsRepo = overrides?.workflowsRepo ?? new WorkflowsRepository(db);
   }
 
   async list(limit = 50): Promise<SessionDto[]> {
@@ -77,14 +87,8 @@ export class SessionsService {
   }
 
   async delete(id: string): Promise<void> {
-    const activeJob = await this.db.query.jobs.findFirst({
-      where: and(
-        eq(jobs.conversationId, id),
-        notInArray(jobs.status, [...TERMINAL_JOB_STATUSES]),
-      ),
-      columns: { id: true },
-    });
-    if (activeJob) {
+    const hasActive = await this.jobsRepo.hasActiveJobs(id, TERMINAL_JOB_STATUSES);
+    if (hasActive) {
       throw new ORPCError('BAD_REQUEST', {
         message: 'session has active jobs — wait for them to complete before deleting',
       });
@@ -117,16 +121,9 @@ export class SessionsService {
 
     // Resolve workflowVersionId: explicit workflowId override → session default → undefined
     const resolvedWorkflowId = input.workflowId ?? session.defaultWorkflowId ?? null;
-    let workflowVersionId: string | undefined;
-    if (resolvedWorkflowId) {
-      const [latest] = await this.db
-        .select({ id: workflowVersions.id })
-        .from(workflowVersions)
-        .where(eq(workflowVersions.workflowId, resolvedWorkflowId))
-        .orderBy(desc(workflowVersions.version))
-        .limit(1);
-      workflowVersionId = latest?.id;
-    }
+    const workflowVersionId = resolvedWorkflowId
+      ? await this.workflowsRepo.findLatestVersionId(resolvedWorkflowId)
+      : undefined;
 
     const userMsg = await this.repo.insertMessage({
       sessionId: input.sessionId,

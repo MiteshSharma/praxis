@@ -1,11 +1,11 @@
-import { ORPCError, implement } from '@orpc/server';
+import { implement } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { contract } from '@shared/contracts';
 import type { Hono } from 'hono';
 import type { AgentsService } from '../services/agents.service';
 import type { SessionsService } from '../services/sessions.service';
 import type { JobsService } from '../services/jobs.service';
-import { MemoriesService } from '../services/memories.service';
+import type { MemoriesService } from '../services/memories.service';
 import type { PlansService } from '../services/plans.service';
 import type { ChannelsService } from '../services/channels.service';
 import type { PluginsService } from '../services/plugins.service';
@@ -199,16 +199,9 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const memoriesGet = os.memories.get.handler(({ input }) =>
     deps.memoriesService.get(input.repoKey),
   );
-  const memoriesUpdate = os.memories.update.handler(async ({ input }) => {
-    try {
-      return await deps.memoriesService.update(input.repoKey, input.content);
-    } catch (err) {
-      if (MemoriesService.isValidationError(err)) {
-        throw new ORPCError('BAD_REQUEST', { message: err.message });
-      }
-      throw err;
-    }
-  });
+  const memoriesUpdate = os.memories.update.handler(({ input }) =>
+    deps.memoriesService.update(input.repoKey, input.content),
+  );
   const memoriesDelete = os.memories.delete.handler(async ({ input }) => {
     await deps.memoriesService.delete(input.repoKey);
     return { ok: true };

@@ -190,17 +190,16 @@ export function SessionDetail() {
 
     setLoadingOlder(true);
     try {
-      const result = await rpc.sessions.history({
-        sessionId: id,
-        limit: 20,
-        before: oldest.createdAt,
+      const result = await qc.fetchQuery({
+        queryKey: ['session', id, 'messages', 'older', oldest.createdAt],
+        queryFn: () => rpc.sessions.history({ sessionId: id, limit: 20, before: oldest.createdAt }),
       });
       setOlderMessages((prev) => [...result.messages, ...prev]);
       setHasMore(result.hasMore);
     } finally {
       setLoadingOlder(false);
     }
-  }, [id, olderMessages, messagesQuery.data]);
+  }, [id, olderMessages, messagesQuery.data, qc]);
 
   const workflowsQuery = useQuery({
     queryKey: ['workflows'],

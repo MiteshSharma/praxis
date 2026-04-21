@@ -14,6 +14,7 @@ import { ChannelsService } from '../services/channels.service';
 import { PlansService } from '../services/plans.service';
 import { PluginsService } from '../services/plugins.service';
 import { WorkflowsService } from '../services/workflows.service';
+import { MemoriesRepository } from '../repositories/memories.repository';
 import { healthRoutes } from './health';
 import { planReviewRoutes } from './plan-review';
 import { rpcRoutes } from './rpc';
@@ -31,13 +32,15 @@ export interface RoutesDeps {
 export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void> {
   const memoryBackend = memoryBackendRegistry.create(env.MEMORY_BACKEND, { db: deps.db });
 
+  const memoriesRepo = new MemoriesRepository(deps.db);
+
   const jobsService = new JobsService(deps.db, deps.boss, deps.log);
   const plansService = new PlansService(deps.db, deps.boss, deps.log, env.REDIS_URL);
   const workflowsService = new WorkflowsService(deps.db);
   const agentsService = new AgentsService(deps.db);
   const sessionsService = new SessionsService(deps.db, deps.boss, deps.log);
   const pluginsService = new PluginsService(deps.db);
-  const memoriesService = new MemoriesService(deps.db, memoryBackend);
+  const memoriesService = new MemoriesService(memoriesRepo, memoryBackend);
   const channelsService = new ChannelsService(deps.db);
 
   healthRoutes(app);

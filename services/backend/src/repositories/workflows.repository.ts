@@ -33,6 +33,16 @@ export function toWorkflowDto(
 export class WorkflowsRepository {
   constructor(private readonly db: Database) {}
 
+  async findLatestVersionId(workflowId: string): Promise<string | undefined> {
+    const [row] = await this.db
+      .select({ id: workflowVersions.id })
+      .from(workflowVersions)
+      .where(eq(workflowVersions.workflowId, workflowId))
+      .orderBy(desc(workflowVersions.version))
+      .limit(1);
+    return row?.id;
+  }
+
   async findMany(limit: number): Promise<WorkflowDto[]> {
     const rows = await this.db
       .select()

@@ -6,6 +6,7 @@ export const PlanStepSchema = z.object({
   content: z.string(),
   status: z.enum(['pending', 'done', 'skipped']),
 });
+export type PlanStepDto = z.infer<typeof PlanStepSchema>;
 
 export const OpenQuestionSchema = z.object({
   id: z.string(),
@@ -14,6 +15,7 @@ export const OpenQuestionSchema = z.object({
   options: z.array(z.string()).optional(),
   answer: z.string().nullable(),
 });
+export type OpenQuestionDto = z.infer<typeof OpenQuestionSchema>;
 
 export const PlanDataSchema = z.object({
   title: z.string(),
@@ -24,6 +26,7 @@ export const PlanDataSchema = z.object({
   risks: z.array(z.string()).optional(),
   openQuestions: z.array(OpenQuestionSchema).optional(),
 });
+export type PlanDataDto = z.infer<typeof PlanDataSchema>;
 
 export const PlanStatusSchema = z.enum(['draft', 'ready', 'needs_answers', 'approved', 'rejected']);
 export type PlanStatus = z.infer<typeof PlanStatusSchema>;
