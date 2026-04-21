@@ -237,6 +237,11 @@ export function JobView() {
   const [showPlanDrawer, setShowPlanDrawer] = useState(false);
   const showPrompt = useCallback((phase: string, text: string) => setPromptModal({ phase, text }), []);
 
+  const cancelMutation = useMutation({
+    mutationFn: () => rpc.jobs.cancel({ jobId: jobId ?? '' }),
+    onSuccess: () => jobQuery.refetch(),
+  });
+
   const restartMutation = useMutation({
     mutationFn: () => rpc.jobs.restart({ jobId: jobId ?? '' }),
     onSuccess: ({ jobId: newJobId }) => navigate(`/jobs/${newJobId}`),
@@ -456,6 +461,16 @@ export function JobView() {
               {job.status === 'failed' && latestPlanQuery.data?.status === 'approved' && (
                 <Button size="small" type="primary" onClick={() => resumeMutation.mutate()} loading={resumeMutation.isPending}>
                   Resume from plan
+                </Button>
+              )}
+              {STREAM_STATUSES.has(job.status) && (
+                <Button
+                  size="small"
+                  danger
+                  onClick={() => cancelMutation.mutate()}
+                  loading={cancelMutation.isPending}
+                >
+                  Stop
                 </Button>
               )}
               <Button size="small" onClick={() => restartMutation.mutate()} loading={restartMutation.isPending}>

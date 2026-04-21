@@ -368,6 +368,8 @@ export class StepRunner {
         await this.mustTransition(job.id, 'plan_ready', 'plan_review');
         // Dispatch notifications for the revised plan
         await this.dispatchReviewNotifications(job, holdHours, log);
+        // Back to preparing before recursing — runPlanStep expects this state
+        await this.mustTransition(job.id, 'plan_review', 'preparing');
         // Recurse into another review cycle
         // Reload job to get updated planRevisionCount
         const refreshed = await db.query.jobs.findFirst({ where: eq(jobs.id, job.id) });

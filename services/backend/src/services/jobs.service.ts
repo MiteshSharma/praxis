@@ -1,7 +1,7 @@
 import { ORPCError } from '@orpc/server';
 import type { ArtifactDto, JobDto, JobStatus, JobStepDto, TimelineEventDto } from '@shared/contracts';
 import { JOB_EXECUTE_QUEUE, TaskIngestService, appendTimeline, splitWebInput } from '@shared/core';
-import { type Database, jobTimeline, jobs, messages, plans } from '@shared/db';
+import { type Database, jobTimeline, jobs, messages, plans, sandboxes } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
@@ -133,6 +133,23 @@ export class JobsService {
       .where(eq(jobs.id, jobId));
 
     await appendTimeline(this.db, jobId, 'status-changed', { from: row.status, to: 'cancelled' });
+
+    // Signal the sandbox to stop immediately if one is active for this job.
+    const [sandbox] = await this.db
+      .select({ endpoint: sandboxes.endpoint })
+      .from(sandboxes)
+      .where(eq(sandboxes.jobId, jobId))
+      .limit(1);
+
+    if (sandbox?.endpoint) {
+      fetch(`${sandbox.endpoint}/abort`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: jobId }),
+      }).catch(() => {
+        // Best-effort — sandbox may already be gone
+      });
+    }
   }
 
   async delete(jobId: string): Promise<void> {
