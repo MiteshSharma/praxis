@@ -71,6 +71,78 @@ export class HoldTimeoutError extends Error {
   }
 }
 
+/**
+ * Strip workingDir prefix from file paths inside tool_use / tool_result chunks
+ * so that all downstream consumers (Postgres timeline, Redis SSE, frontend) see
+ * clean repo-relative paths instead of absolute sandbox paths.
+ *
+ * Handles both provider conventions:
+ *   Claude SDK  → assistant.message.content[].tool_use { name:'Write'|'Edit', input.file_path }
+ *   OpenAI/Demo → assistant.message.content[].tool_use { name:'write_file'|'edit_file', input.path }
+ *   Phase-2 executor results → user.message.content[].tool_result { content: JSON { path, status } }
+ */
+function normalizeChunkPaths(chunk: unknown, workingDir: string): unknown {
+  if (!chunk || typeof chunk !== 'object') return chunk;
+  const msg = chunk as Record<string, unknown>;
+
+  // On macOS /var is a symlink to /private/var, so the SDK may resolve cwd to
+  // the canonical /private/... form while workingDir was created without it (or
+  // vice-versa).  Normalise both sides to the /private-stripped form before
+  // comparing so the prefix check works regardless of which variant each holds.
+  const depriv = (s: string) => (s.startsWith('/private/') ? s.slice('/private'.length) : s);
+  const wdNorm = depriv(workingDir);
+  function stripPrefix(p: string): string {
+    const pNorm = depriv(p);
+    return pNorm.startsWith(wdNorm) ? pNorm.slice(wdNorm.length).replace(/^\//, '') : p;
+  }
+
+  if (msg.type === 'assistant') {
+    const message = msg.message as { content?: unknown[] } | undefined;
+    if (!message?.content) return chunk;
+    let changed = false;
+    const newContent = message.content.map((block) => {
+      if (!block || typeof block !== 'object') return block;
+      const b = block as Record<string, unknown>;
+      if (b.type !== 'tool_use') return block;
+      if (b.name !== 'Write' && b.name !== 'Edit' && b.name !== 'write_file' && b.name !== 'edit_file') return block;
+      const input = b.input as Record<string, unknown> | undefined;
+      if (!input) return block;
+      if (typeof input.file_path === 'string') {
+        const rel = stripPrefix(input.file_path);
+        if (rel !== input.file_path) { changed = true; return { ...b, input: { ...input, file_path: rel } }; }
+      }
+      if (typeof input.path === 'string') {
+        const rel = stripPrefix(input.path);
+        if (rel !== input.path) { changed = true; return { ...b, input: { ...input, path: rel } }; }
+      }
+      return block;
+    });
+    return changed ? { ...msg, message: { ...message, content: newContent } } : chunk;
+  }
+
+  if (msg.type === 'user') {
+    const message = msg.message as { content?: unknown[] } | undefined;
+    if (!message?.content) return chunk;
+    let changed = false;
+    const newContent = message.content.map((block) => {
+      if (!block || typeof block !== 'object') return block;
+      const b = block as Record<string, unknown>;
+      if (b.type !== 'tool_result' || typeof b.content !== 'string') return block;
+      try {
+        const json = JSON.parse(b.content) as { path?: string; status?: string };
+        if (typeof json.path === 'string') {
+          const rel = stripPrefix(json.path);
+          if (rel !== json.path) { changed = true; return { ...b, content: JSON.stringify({ ...json, path: rel }) }; }
+        }
+      } catch { /* not structured JSON */ }
+      return block;
+    });
+    return changed ? { ...msg, message: { ...message, content: newContent } } : chunk;
+  }
+
+  return chunk;
+}
+
 export class StepRunner {
   private _totalInputTokens = 0;
   private _totalOutputTokens = 0;
@@ -241,7 +313,7 @@ export class StepRunner {
     const memorySection = this.deps.memoryMarkdown
       ? buildMemorySection(this.deps.memoryMarkdown)
       : '';
-    const systemPrompt = resolved
+    const systemPrompt = resolved?.systemPrompt
       ? `${basePrompt}\n\n${resolved.systemPrompt}${memorySection}`
       : `${basePrompt}${memorySection}`;
 
@@ -252,7 +324,7 @@ export class StepRunner {
       job,
       sandboxInfo,
       {
-        model: resolved?.model,
+        model: resolved?.model ?? job.model ?? undefined,
         systemPrompt,
         allowedTools: resolved?.allowedTools,
         workingDir: workspace,
@@ -260,6 +332,7 @@ export class StepRunner {
         mcpEndpoint: this.deps.mcpEndpoint,
         sessionPhase: 'plan',
         plugins: resolvedPlugins,
+        stepId: _step.id,
       },
       log,
     );
@@ -338,7 +411,7 @@ export class StepRunner {
     const resolvedPlugins = await this.resolvePlugins(job.conversationId);
 
     const resolved = await this.resolveStepAgent(step, job.model ?? undefined);
-    if (resolved) {
+    if (resolved?.systemPrompt) {
       systemPrompt = `${systemPrompt}\n\n${resolved.systemPrompt}`;
     }
 
@@ -352,7 +425,7 @@ export class StepRunner {
       job,
       sandboxInfo,
       {
-        model: resolved?.model,
+        model: resolved?.model ?? job.model ?? undefined,
         systemPrompt,
         allowedTools: resolved?.allowedTools,
         workingDir: workspace,
@@ -360,6 +433,7 @@ export class StepRunner {
         mcpEndpoint: this.deps.mcpEndpoint,
         sessionPhase: 'execute',
         plugins: resolvedPlugins,
+        stepId: step.id,
       },
       log,
     );
@@ -619,9 +693,13 @@ export class StepRunner {
     const cfg = step.config as {
       agent?: { ref: string; agentId?: string };
       skillId?: string;
+      model?: string;
     };
 
-    if (!cfg.agent && !cfg.skillId) return null;
+    // Step-level model with no agent: return just the model override, no prompt injection
+    if (!cfg.agent && !cfg.skillId) {
+      return cfg.model ? { model: cfg.model, systemPrompt: '', allowedTools: DEFAULT_AGENT.allowedTools } : null;
+    }
 
     let model = jobModel ?? DEFAULT_AGENT.model;
     let basePrompt = '';
@@ -728,8 +806,10 @@ export class StepRunner {
     // Order: primary agent (if any) → skill instructions → dependency agents
     // For skill-standalone: skill comes first (establishes orchestration),
     // then dependency agents (provide the detailed sub-agent prompts).
+    // Step-level model always wins — it's the most specific override.
+    const finalModel = cfg.model ?? model;
     return {
-      model,
+      model: finalModel,
       systemPrompt: [basePrompt, ...skillInstructions, ...skillDepSections].filter(Boolean).join('\n\n'),
       allowedTools: [...new Set([...baseTools, ...skillTools])],
     };
@@ -805,6 +885,7 @@ export class StepRunner {
       mcpEndpoint?: string;
       sessionPhase: string;
       plugins?: import('@shared/mcp').ResolvedPlugin[];
+      stepId?: string;
     },
     log: Logger,
   ): Promise<void> {
@@ -841,6 +922,9 @@ export class StepRunner {
     // Heartbeat: touch updated_at every 30 s so the stuck-job recovery cron
     // does not mistake an active sandbox session for a hung job.
     let lastHeartbeat = Date.now();
+    let perCallInputTokens = 0;
+    let perCallOutputTokens = 0;
+    let perCallCostUsd = 0;
 
     for await (const chunk of parseSSE(response.body)) {
       if (Date.now() - lastHeartbeat > 30_000) {
@@ -864,14 +948,25 @@ export class StepRunner {
         // Accumulate cost from the SDK's final result message.
         if (msg.type === 'result' && msg.subtype === 'success') {
           const usage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
-          this._totalInputTokens += usage?.input_tokens ?? 0;
-          this._totalOutputTokens += usage?.output_tokens ?? 0;
-          this._totalCostUsd += typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : 0;
+          perCallInputTokens = usage?.input_tokens ?? 0;
+          perCallOutputTokens = usage?.output_tokens ?? 0;
+          perCallCostUsd = typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : 0;
+          this._totalInputTokens += perCallInputTokens;
+          this._totalOutputTokens += perCallOutputTokens;
+          this._totalCostUsd += perCallCostUsd;
         }
       }
 
-      const seq = await appendTimeline(db, job.id, 'chunk', { chunk: parsed });
-      await this.emit(job.id, seq, { kind: 'chunk', raw: parsed });
+      const normalized = normalizeChunkPaths(parsed, opts.workingDir);
+      const seq = await appendTimeline(db, job.id, 'chunk', { chunk: normalized });
+      await this.emit(job.id, seq, { kind: 'chunk', raw: normalized });
+    }
+
+    // Persist per-step cost to job_steps.output so the UI can show it per step.
+    if (opts.stepId && (perCallInputTokens > 0 || perCallCostUsd > 0)) {
+      await db.update(jobSteps)
+        .set({ output: { inputTokens: perCallInputTokens, outputTokens: perCallOutputTokens, costUsd: perCallCostUsd } })
+        .where(eq(jobSteps.id, opts.stepId));
     }
 
     log.info({ phase: opts.sessionPhase }, 'sandbox session finished');

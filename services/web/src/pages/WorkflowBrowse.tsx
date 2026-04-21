@@ -25,6 +25,7 @@ import { rpc } from '../rpc';
 interface FormStep {
   kind: 'plan' | 'execute' | 'check';
   name: string;
+  model?: string;
   agentOrSkillId?: string;
   condition?: 'previous_check_failed';
   command?: string;
@@ -105,17 +106,27 @@ function StepRow({
       {/* Single agent-or-skill selector for plan / execute steps */}
       {(kind === 'plan' || kind === 'execute') && (
         <>
-          <Form.Item
-            name={[fieldName, 'agentOrSkillId']}
-            label="Agent or skill"
-            style={{ marginBottom: 8 }}
-          >
-            <Select
-              allowClear
-              placeholder="Select agent or skill (optional — uses default if blank)"
-              options={combinedOptions}
-            />
-          </Form.Item>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Form.Item
+              name={[fieldName, 'agentOrSkillId']}
+              label="Agent or skill"
+              style={{ flex: 1, marginBottom: 8 }}
+            >
+              <Select
+                allowClear
+                placeholder="Select agent or skill (optional — uses default if blank)"
+                options={combinedOptions}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name={[fieldName, 'model']}
+              label="Model"
+              style={{ flex: '0 0 200px', marginBottom: 8 }}
+            >
+              <Input placeholder="Inherit from job" />
+            </Form.Item>
+          </div>
 
           {/* Dependency hint: shown when selected skill has declared agent dependencies */}
           {dependsOn.length > 0 && (
@@ -185,6 +196,7 @@ function toFormStep(s: Record<string, unknown>): FormStep {
   return {
     kind: s.kind as 'plan' | 'execute' | 'check',
     name: s.name as string,
+    model: s.model as string | undefined,
     agentOrSkillId,
     condition: s.condition as 'previous_check_failed' | undefined,
     command: s.command as string | undefined,
@@ -473,6 +485,12 @@ function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void
                       if (skillName) return <Tag color="blue" style={{ fontSize: 11 }}>{skillName}</Tag>;
                       return <Typography.Text type="secondary">default</Typography.Text>;
                     },
+                  },
+                  {
+                    title: 'Model',
+                    dataIndex: 'model',
+                    render: (m: string | undefined) =>
+                      m ? <Tag style={{ fontSize: 11 }}>{m}</Tag> : <Typography.Text type="secondary" style={{ fontSize: 11 }}>inherited</Typography.Text>,
                   },
                 ]}
               />

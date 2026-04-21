@@ -110,6 +110,7 @@ export const contract = {
               z.object({
                 kind: z.enum(['plan', 'execute', 'check']),
                 name: z.string(),
+                model: z.string().optional(),
                 agentId: z.string().uuid().optional(),
                 skillId: z.string().uuid().optional(),
                 condition: z.enum(['previous_check_failed']).optional(),
@@ -137,6 +138,7 @@ export const contract = {
             z.object({
               kind: z.enum(['plan', 'execute', 'check']),
               name: z.string(),
+              model: z.string().optional(),
               agentId: z.string().uuid().optional(),
               skillId: z.string().uuid().optional(),
               condition: z.enum(['previous_check_failed']).optional(),

@@ -4,6 +4,8 @@ import { Alert, Button, Collapse, Descriptions, Drawer, Dropdown, Modal, Space, 
 import Markdown from 'react-markdown';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { FileChangesSidebar } from '../components/FileChangesSidebar';
+import type { FileChange } from '../components/FileChangesSidebar';
 import { JobPhaseBar } from '../components/JobPhaseBar';
 import { PlanReviewCard } from '../components/PlanReviewCard';
 import { StepProgress } from '../components/StepProgress';
@@ -16,86 +18,74 @@ interface StreamItem {
   raw?: unknown;
 }
 
-function parseChunk(raw: unknown): { label: string; detail?: string; color: string } | null {
-  if (!raw || typeof raw !== 'object') return null;
+type ParsedChunk =
+  | { kind: 'text'; label: string; detail: string; color: string }
+  | { kind: 'tool'; name: string; input: Record<string, unknown>; color: string }
+  | { kind: 'tool_result'; text: string; isError: boolean }
+  | { kind: 'thinking'; text: string }
+  | { kind: 'system'; label: string };
+
+function parseChunk(raw: unknown): ParsedChunk[] {
+  if (!raw || typeof raw !== 'object') return [];
   const msg = raw as Record<string, unknown>;
 
   if (msg.type === 'system') {
     const model = msg.model as string | undefined;
-    const cwd = msg.cwd as string | undefined;
-    return {
-      label: `Session started${model ? ` · ${model}` : ''}`,
-      detail: cwd ? `cwd: ${cwd}` : undefined,
-      color: 'gray',
-    };
+    return [{ kind: 'system', label: `Session started${model ? ` · ${model}` : ''}` }];
   }
 
   if (msg.type === 'assistant') {
-    const message = msg.message as { content?: unknown[] } | undefined;
-    const blocks = message?.content ?? [];
-    const parts: string[] = [];
-    let color = 'blue';
-    let label = 'Assistant';
+    const blocks = (msg.message as { content?: unknown[] } | undefined)?.content ?? [];
+    const out: ParsedChunk[] = [];
 
     for (const block of blocks) {
       if (!block || typeof block !== 'object') continue;
       const b = block as Record<string, unknown>;
-      if (b.type === 'text') {
+
+      if (b.type === 'thinking') {
+        const text = String(b.thinking ?? '').trim();
+        if (text) out.push({ kind: 'thinking', text });
+      } else if (b.type === 'text') {
         const text = String(b.text ?? '').trim();
-        if (text) parts.push(text.slice(0, 300) + (text.length > 300 ? '…' : ''));
+        if (text) out.push({ kind: 'text', label: 'Assistant', detail: text, color: 'blue' });
       } else if (b.type === 'tool_use') {
-        const name = String(b.name ?? 'tool');
-        const input = b.input as Record<string, unknown> | undefined;
-        const inputStr = input
-          ? Object.values(input)
-              .slice(0, 2)
-              .map((v) => String(v).slice(0, 120))
-              .join(', ')
-          : '';
-        parts.push(`${name}(${inputStr})`);
-        label = 'Tool call';
-        color = 'orange';
+        out.push({ kind: 'tool', name: String(b.name ?? 'tool'), input: (b.input as Record<string, unknown>) ?? {}, color: 'orange' });
       }
     }
-
-    if (parts.length === 0) return null;
-    return { label, detail: parts.join('\n'), color };
+    return out;
   }
 
   if (msg.type === 'user') {
-    const message = msg.message as { content?: unknown[] } | undefined;
-    const blocks = message?.content ?? [];
-    const results: string[] = [];
-    let hasError = false;
+    const blocks = (msg.message as { content?: unknown[] } | undefined)?.content ?? [];
+    const out: ParsedChunk[] = [];
 
     for (const block of blocks) {
       if (!block || typeof block !== 'object') continue;
       const b = block as Record<string, unknown>;
-      if (b.type === 'tool_result') {
-        if (b.is_error) hasError = true;
-        const content = b.content;
-        const text =
-          typeof content === 'string'
-            ? content
-            : Array.isArray(content)
-              ? content
-                  .map((c) => (typeof c === 'object' && c !== null ? (c as Record<string, unknown>).text ?? '' : c))
-                  .join('')
-              : '';
-        const trimmed = String(text).trim().slice(0, 200);
-        if (trimmed) results.push(trimmed + (String(text).length > 200 ? '…' : ''));
-      }
+      if (b.type !== 'tool_result') continue;
+      const isError = !!b.is_error;
+      const content = b.content;
+      const rawText =
+        typeof content === 'string'
+          ? content
+          : Array.isArray(content)
+            ? content.map((c) => (typeof c === 'object' && c !== null ? (c as Record<string, unknown>).text ?? '' : c)).join('')
+            : '';
+      // Phase 2: structured JSON from executor
+      let displayText = rawText;
+      try {
+        const parsed = JSON.parse(rawText) as { path?: string; status?: string };
+        if (parsed.path && parsed.status) {
+          displayText = parsed.status === 'added' ? `Created ${parsed.path}` : `Modified ${parsed.path}`;
+        }
+      } catch { /* not JSON */ }
+      const trimmed = displayText.trim().slice(0, 300);
+      if (trimmed) out.push({ kind: 'tool_result', text: trimmed + (displayText.length > 300 ? '…' : ''), isError });
     }
-
-    if (results.length === 0) return null;
-    return {
-      label: hasError ? 'Tool error' : 'Tool result',
-      detail: results.join('\n'),
-      color: hasError ? 'red' : 'green',
-    };
+    return out;
   }
 
-  return null;
+  return [];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -132,6 +122,103 @@ function normalizeTimelineEvents(events: TimelineEventDto[]): StreamItem[] {
         : { kind, ...e.payload };
     return { id: `pg-${e.seq}`, seq: e.seq, event: eventPayload };
   });
+}
+
+function extractFileChanges(items: StreamItem[]): Map<string, FileChange> {
+  const changes = new Map<string, FileChange>();
+  // Fallback cwd: used only for events stored before the backend stripping was
+  // deployed (absolute paths already in Postgres).  New events arrive pre-stripped.
+  let fallbackCwd = '';
+
+  // macOS: /var is a symlink to /private/var — normalise before prefix-stripping
+  const depriv = (s: string) => (s.startsWith('/private/') ? s.slice('/private'.length) : s);
+  function toRelative(p: string): string {
+    if (!p.startsWith('/') || !fallbackCwd) return p;
+    const pNorm = depriv(p);
+    const wdNorm = depriv(fallbackCwd);
+    return pNorm.startsWith(wdNorm) ? pNorm.slice(wdNorm.length).replace(/^\//, '') : p;
+  }
+
+  for (const item of items) {
+    if (item.event?.kind !== 'chunk') continue;
+    const raw = (item.event as { raw?: unknown }).raw;
+    if (!raw || typeof raw !== 'object') continue;
+    const msg = raw as Record<string, unknown>;
+
+    if (msg.type === 'system') {
+      fallbackCwd = (msg.cwd as string | undefined) ?? fallbackCwd;
+      continue;
+    }
+
+    // tool_use: detect write/edit calls from both providers.
+    // Paths are stripped by the backend; toRelative() handles any pre-fix events.
+    //   Claude SDK  → tool names 'Write' / 'Edit', path field 'file_path'
+    //   OpenAI/Demo → tool names 'write_file' / 'edit_file', path field 'path'
+    if (msg.type === 'assistant') {
+      const blocks = (msg.message as { content?: unknown[] } | undefined)?.content ?? [];
+      for (const block of blocks) {
+        if (!block || typeof block !== 'object') continue;
+        const b = block as Record<string, unknown>;
+        if (b.type !== 'tool_use') continue;
+        const isWrite = b.name === 'Write' || b.name === 'write_file';
+        const isEdit = b.name === 'Edit' || b.name === 'edit_file';
+        if (!isWrite && !isEdit) continue;
+        const input = b.input as Record<string, unknown> | undefined;
+        const rawPath = (input?.file_path ?? input?.path) as string | undefined;
+        if (!rawPath) continue;
+        const path = toRelative(rawPath);
+        const existing = changes.get(path);
+        changes.set(path, {
+          path,
+          status: existing?.status ?? 'modified',
+          touchCount: (existing?.touchCount ?? 0) + 1,
+        });
+      }
+    }
+
+    // tool_result: Phase 2 — structured JSON from executor updates added/modified status
+    if (msg.type === 'user') {
+      const blocks = (msg.message as { content?: unknown[] } | undefined)?.content ?? [];
+      for (const block of blocks) {
+        if (!block || typeof block !== 'object') continue;
+        const b = block as Record<string, unknown>;
+        if (b.type !== 'tool_result' || b.is_error) continue;
+        const text = typeof b.content === 'string' ? b.content : '';
+        try {
+          const parsed = JSON.parse(text) as { path?: string; status?: string };
+          if (parsed.path && parsed.status) {
+            const relPath = toRelative(parsed.path);
+            const existing = changes.get(relPath);
+            if (existing) {
+              changes.set(relPath, { ...existing, status: parsed.status === 'added' ? 'added' : 'modified' });
+            }
+          }
+        } catch {
+          // not structured JSON — Phase 1, no update needed
+        }
+      }
+    }
+  }
+
+  return changes;
+}
+
+function ExpandableText({ text, color }: { text: string; color?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="timeline-detail" style={{ whiteSpace: 'pre-wrap', color }}>
+      {expanded ? text : text.slice(0, 120).trimEnd()}
+      {!expanded && '… '}
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        style={{ padding: '0 4px', fontSize: 11, verticalAlign: 'baseline' }}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {expanded ? 'less' : 'more'}
+      </button>
+    </div>
+  );
 }
 
 const PLAN_REVIEW_STATUSES = new Set(['plan_ready', 'plan_review']);
@@ -227,51 +314,59 @@ export function JobView() {
     [isTerminal, timelineQuery.data, items],
   );
 
+  const fileChanges = useMemo(() => extractFileChanges(resolvedItems), [resolvedItems]);
+
+  type TLItem =
+    | { itemType: 'default'; id: string; color: string; label: string; detail?: string; isPrompt: boolean; phase: string; text: string }
+    | { itemType: 'tool'; id: string; name: string; input: Record<string, unknown> }
+    | { itemType: 'tool_result'; id: string; text: string; isError: boolean }
+    | { itemType: 'thinking'; id: string; text: string };
+
   const timelineItems = useMemo(
     () =>
       resolvedItems.flatMap((item, idx) => {
         const kind = item.event?.kind ?? 'chunk';
-        let label = kind;
-        let detail: string | undefined;
-        let color = 'gray';
 
         if (kind === 'status-changed') {
           const ev = item.event as { from?: string; to?: string };
-          label = `${ev.from} → ${ev.to}`;
-          color = 'blue';
-        } else if (kind === 'chunk') {
-          const raw = (item.event as { raw?: unknown })?.raw;
-          const parsed = parseChunk(raw);
-          if (!parsed) return [];
-          label = parsed.label;
-          detail = parsed.detail;
-          color = parsed.color;
-        } else if (kind === 'prompt-snapshot') {
-          const ev = item.event as { phase?: string; systemPrompt?: string };
-          const phase = ev.phase ?? 'unknown';
-          const text = ev.systemPrompt ?? '';
-          return [{
-            id: `${item.id}-${idx}`,
-            color: 'purple',
-            label: `System prompt (${phase})`,
-            detail: undefined,
-            isPrompt: true,
-            phase,
-            text,
-          }];
-        } else if (kind === 'artifact-created') {
-          const ev = item.event as { artifactKind?: string; url?: string };
-          detail = `${ev.artifactKind}: ${ev.url ?? ''}`;
-          color = 'green';
-        } else if (kind === 'failed') {
-          const ev = item.event as { error?: string };
-          detail = ev.error;
-          color = 'red';
-        } else if (kind === 'completed') {
-          color = 'green';
+          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'blue', label: `${ev.from} → ${ev.to}`, isPrompt: false, phase: '', text: '' }];
         }
 
-        return [{ id: `${item.id}-${idx}`, color, label, detail, isPrompt: false, phase: '', text: '' }];
+        if (kind === 'chunk') {
+          const raw = (item.event as { raw?: unknown })?.raw;
+          const chunks = parseChunk(raw);
+          return chunks.map((c, ci): TLItem => {
+            const id = `${item.id}-${idx}-${ci}`;
+            if (c.kind === 'tool') return { itemType: 'tool', id, name: c.name, input: c.input };
+            if (c.kind === 'tool_result') return { itemType: 'tool_result', id, text: c.text, isError: c.isError };
+            if (c.kind === 'thinking') return { itemType: 'thinking', id, text: c.text };
+            if (c.kind === 'system') return { itemType: 'default', id, color: 'gray', label: c.label, isPrompt: false, phase: '', text: '' };
+            // text
+            return { itemType: 'default', id, color: c.color, label: c.label, detail: c.detail, isPrompt: false, phase: '', text: '' };
+          });
+        }
+
+        if (kind === 'prompt-snapshot') {
+          const ev = item.event as { phase?: string; systemPrompt?: string };
+          const phase = ev.phase ?? 'unknown';
+          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'purple', label: `System prompt (${phase})`, isPrompt: true, phase, text: ev.systemPrompt ?? '' }];
+        }
+
+        if (kind === 'artifact-created') {
+          const ev = item.event as { artifactKind?: string; url?: string };
+          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'green', label: kind, detail: `${ev.artifactKind}: ${ev.url ?? ''}`, isPrompt: false, phase: '', text: '' }];
+        }
+
+        if (kind === 'failed') {
+          const ev = item.event as { error?: string };
+          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'red', label: kind, detail: ev.error, isPrompt: false, phase: '', text: '' }];
+        }
+
+        if (kind === 'completed') {
+          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'green', label: kind, isPrompt: false, phase: '', text: '' }];
+        }
+
+        return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'gray', label: kind, isPrompt: false, phase: '', text: '' }];
       }),
     [resolvedItems],
   );
@@ -486,41 +581,123 @@ export function JobView() {
                   </p>
                 ) : (
                   <div className="timeline">
-                    {[...timelineItems].reverse().map((item, idx) => (
-                      <div key={item.id} className="timeline-item">
-                        <div className="timeline-dot-col">
-                          <div
-                            className="timeline-dot"
-                            style={{
-                              background:
-                                item.color === 'green' ? 'var(--c-success)'
-                                : item.color === 'red' ? 'var(--c-error)'
-                                : item.color === 'blue' ? 'var(--c-primary)'
-                                : item.color === 'orange' ? 'var(--c-warning)'
-                                : item.color === 'purple' ? '#7C3AED'
-                                : 'var(--c-border)',
-                            }}
-                          />
-                          {idx < timelineItems.length - 1 && <div className="timeline-line" />}
-                        </div>
-                        <div className="timeline-content">
-                          <div className="timeline-label">
-                            {item.label}
-                            {item.isPrompt && (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                style={{ marginLeft: 6, padding: '0 6px', fontSize: 11 }}
-                                onClick={() => showPrompt(item.phase, item.text)}
-                              >
-                                View
-                              </button>
+                    {[...timelineItems].reverse().map((item, idx) => {
+                      // Tool call — distinct card, no dot
+                      if (item.itemType === 'tool') {
+                        const fileKey = (item.input.file_path ?? item.input.path) as string | undefined;
+                        const displayPath = fileKey ?? Object.values(item.input)[0];
+                        return (
+                          <div key={item.id} className="timeline-item timeline-item--tool">
+                            <div className="timeline-dot-col">
+                              <div className="timeline-dot" style={{ background: 'var(--c-warning)', width: 7, height: 7 }} />
+                              {idx < timelineItems.length - 1 && <div className="timeline-line" />}
+                            </div>
+                            <div className="timeline-content" style={{ width: '100%' }}>
+                              <details style={{ width: '100%' }}>
+                                <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>{item.name}</Tag>
+                                  {displayPath && (
+                                    <span style={{ fontSize: 12, color: 'var(--c-text-2)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {String(displayPath)}
+                                    </span>
+                                  )}
+                                </summary>
+                                <pre style={{ margin: '6px 0 0', fontSize: 11, background: 'var(--c-surface-2)', borderRadius: 4, padding: '6px 8px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                  {JSON.stringify(item.input, null, 2)}
+                                </pre>
+                              </details>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Tool result
+                      if (item.itemType === 'tool_result') {
+                        const color = item.isError ? 'var(--c-error)' : undefined;
+                        return (
+                          <div key={item.id} className="timeline-item">
+                            <div className="timeline-dot-col">
+                              <div className="timeline-dot" style={{ background: item.isError ? 'var(--c-error)' : 'var(--c-success)', width: 7, height: 7 }} />
+                              {idx < timelineItems.length - 1 && <div className="timeline-line" />}
+                            </div>
+                            <div className="timeline-content" style={{ width: '100%' }}>
+                              {item.text.length > 120
+                                ? (
+                                  <ExpandableText text={item.text} color={color} />
+                                )
+                                : <div className="timeline-detail" style={{ color }}>{item.text}</div>
+                              }
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Thinking block — collapsed by default
+                      if (item.itemType === 'thinking') {
+                        return (
+                          <div key={item.id} className="timeline-item">
+                            <div className="timeline-dot-col">
+                              <div className="timeline-dot" style={{ background: '#7C3AED', width: 7, height: 7 }} />
+                              {idx < timelineItems.length - 1 && <div className="timeline-line" />}
+                            </div>
+                            <div className="timeline-content" style={{ width: '100%' }}>
+                              <details>
+                                <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 12, color: '#7C3AED', fontWeight: 500 }}>Thinking</span>
+                                  <span className="muted small">· {item.text.length > 60 ? item.text.slice(0, 60) + '…' : item.text}</span>
+                                </summary>
+                                <pre style={{ margin: '6px 0 0', fontSize: 11, background: 'var(--c-surface-2)', borderRadius: 4, padding: '6px 8px', overflowX: 'auto', whiteSpace: 'pre-wrap', color: 'var(--c-text-2)', fontFamily: 'inherit' }}>
+                                  {item.text}
+                                </pre>
+                              </details>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Default (status, text, prompt, other)
+                      return (
+                        <div key={item.id} className="timeline-item">
+                          <div className="timeline-dot-col">
+                            <div
+                              className="timeline-dot"
+                              style={{
+                                background:
+                                  item.color === 'green' ? 'var(--c-success)'
+                                  : item.color === 'red' ? 'var(--c-error)'
+                                  : item.color === 'blue' ? 'var(--c-primary)'
+                                  : item.color === 'orange' ? 'var(--c-warning)'
+                                  : item.color === 'purple' ? '#7C3AED'
+                                  : 'var(--c-border)',
+                              }}
+                            />
+                            {idx < timelineItems.length - 1 && <div className="timeline-line" />}
+                          </div>
+                          <div className="timeline-content">
+                            <div className="timeline-label">
+                              {item.label}
+                              {item.isPrompt && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ marginLeft: 6, padding: '0 6px', fontSize: 11 }}
+                                  onClick={() => showPrompt(item.phase, item.text)}
+                                >
+                                  View
+                                </button>
+                              )}
+                            </div>
+                            {item.detail && (
+                              item.label === 'Assistant' && item.detail.length > 120
+                                ? (
+                                  <ExpandableText text={item.detail} />
+                                )
+                                : <div className="timeline-detail">{item.detail}</div>
                             )}
                           </div>
-                          {item.detail && <div className="timeline-detail">{item.detail}</div>}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -528,12 +705,15 @@ export function JobView() {
           </div>
         )}
 
-        {/* Steps sidebar — same height as timeline */}
+        {/* Right column — steps + file changes stacked */}
         {jobId && (
-          <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', paddingBottom: 28, paddingLeft: showStream ? 16 : 0 }}>
+          <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 28, paddingLeft: showStream ? 16 : 0 }}>
+
+            {/* Steps panel */}
             <div
               style={{
-                flex: 1,
+                flexShrink: 0,
+                ...(fileChanges.size > 0 ? { maxHeight: 260 } : { flex: 1 }),
                 background: 'var(--c-surface)',
                 border: '1px solid var(--c-border)',
                 borderRadius: 10,
@@ -566,6 +746,46 @@ export function JobView() {
                 />
               </div>
             </div>
+
+            {/* File changes panel — appears once the agent starts writing files */}
+            {fileChanges.size > 0 && (
+              <div
+                style={{
+                  flex: 1,
+                  background: 'var(--c-surface)',
+                  border: '1px solid var(--c-border)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderBottom: '1px solid var(--c-border-subtle)',
+                    background: 'var(--c-surface-2)',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    textTransform: 'uppercase' as const,
+                    letterSpacing: '0.06em',
+                    color: 'var(--c-text-3)',
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span>Files</span>
+                  <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--c-text-3)' }}>
+                    {fileChanges.size}
+                  </span>
+                </div>
+                <div style={{ overflowY: 'auto', padding: '10px 12px' }}>
+                  <FileChangesSidebar fileChanges={fileChanges} />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

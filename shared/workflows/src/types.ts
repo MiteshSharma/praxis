@@ -22,6 +22,8 @@ export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;
 export const PlanStepDefSchema = z.object({
   kind: z.literal('plan'),
   name: z.string(),
+  /** Override the model for this step. Beats agent model and job model. */
+  model: z.string().optional(),
   agent: AgentRefSchema.optional().nullable(),
   // Skill used as the primary agent for this step (equivalent to agent)
   skillId: z.string().uuid().optional(),
@@ -30,6 +32,8 @@ export const PlanStepDefSchema = z.object({
 export const ExecuteStepDefSchema = z.object({
   kind: z.literal('execute'),
   name: z.string(),
+  /** Override the model for this step. Beats agent model and job model. */
+  model: z.string().optional(),
   agent: AgentRefSchema.optional().nullable(),
   // Skill used as the primary agent for this step (equivalent to agent)
   skillId: z.string().uuid().optional(),

@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { IExecService } from '../../services/exec.interface';
 import { ExecService } from '../../services/exec.service';
@@ -69,8 +69,15 @@ export class ToolExecutor {
   }
 
   private async writeFile(path: string, content: string): Promise<string> {
-    await writeFile(this.abs(path), content, 'utf-8');
-    return `Written ${path}`;
+    const absPath = this.abs(path);
+    let isNew = false;
+    try {
+      await access(absPath);
+    } catch {
+      isNew = true;
+    }
+    await writeFile(absPath, content, 'utf-8');
+    return JSON.stringify({ path, status: isNew ? 'added' : 'modified' });
   }
 
   private async editFile(path: string, oldString: string, newString: string): Promise<string> {
@@ -80,7 +87,7 @@ export class ToolExecutor {
     if (occurrences === 0) return `Error: old_string not found in ${path}`;
     if (occurrences > 1) return `Error: old_string is ambiguous — found ${occurrences} times in ${path}`;
     await writeFile(absPath, content.replace(oldString, newString), 'utf-8');
-    return `Edited ${path}`;
+    return JSON.stringify({ path, status: 'modified' });
   }
 
   private async bash(command: string, timeoutSeconds = 120): Promise<string> {

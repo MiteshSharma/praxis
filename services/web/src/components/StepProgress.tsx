@@ -91,11 +91,29 @@ export function StepProgress({ jobId, refetchInterval = 3000 }: StepProgressProp
               {step.kind}
             </Tag>
 
+            {(step.config as { model?: string })?.model && (
+              <Tag style={{ fontSize: 11 }}>
+                {(step.config as { model?: string }).model}
+              </Tag>
+            )}
+
             {durationMs != null && (
               <span className="muted small" style={{ whiteSpace: 'nowrap' }}>
                 {formatDuration(durationMs)}
               </span>
             )}
+
+            {(() => {
+              const out = step.output as { costUsd?: number; inputTokens?: number; outputTokens?: number } | null;
+              if (!out?.costUsd && !out?.inputTokens) return null;
+              return (
+                <Tooltip title={out.inputTokens ? `${out.inputTokens.toLocaleString()} in · ${(out.outputTokens ?? 0).toLocaleString()} out` : undefined}>
+                  <span className="muted small" style={{ whiteSpace: 'nowrap', cursor: out.inputTokens ? 'default' : undefined }}>
+                    {out.costUsd ? `$${out.costUsd.toFixed(4)}` : `${((out.inputTokens ?? 0) + (out.outputTokens ?? 0)).toLocaleString()} tok`}
+                  </span>
+                </Tooltip>
+              );
+            })()}
 
             {step.status === 'failed' && step.errorMessage && (
               <Tooltip title={step.errorMessage}>
