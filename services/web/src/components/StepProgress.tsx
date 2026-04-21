@@ -11,8 +11,8 @@ const STEP_STATE: Record<string, { icon: string; color: string; dotClass: string
 };
 
 const KIND_COLORS: Record<string, string> = {
-  plan:    'blue',
-  execute: 'green',
+  plan:    'geekblue',
+  execute: 'cyan',
   check:   'purple',
 };
 
