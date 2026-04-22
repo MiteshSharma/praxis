@@ -17,6 +17,7 @@ import { WorkflowsService } from '../services/workflows.service';
 import { MemoriesRepository } from '../repositories/memories.repository';
 import { healthRoutes } from './health';
 import { planReviewRoutes } from './plan-review';
+import { publicMcpRoutes } from './public-mcp';
 import { rpcRoutes } from './rpc';
 import { sseRoutes } from './sse';
 
@@ -45,6 +46,7 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
 
   healthRoutes(app);
   sseRoutes(app);
+  publicMcpRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, memoriesService });
   registerMcpRoutes(app, { db: deps.db, log: deps.log, mcpSecret: env.MCP_SHARED_SECRET, memoryBackend });
   if (env.MCP_SHARED_SECRET) {
     planReviewRoutes(app, { plansService, mcpSecret: env.MCP_SHARED_SECRET });

@@ -9,6 +9,26 @@ export class JobsRepository {
     return this.db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
   }
 
+  /**
+   * Reverse-lookup: given a PR branch name (e.g. "praxis/job-aabbccdd"),
+   * returns the job that owns that branch. Used by the GitHub webhook path
+   * (approach A) where only the branch name is known from the webhook payload.
+   */
+  async findByPrBranch(branchName: string): Promise<typeof jobs.$inferSelect | undefined> {
+    // Filter in application code because Drizzle jsonb path queries are dialect-specific
+    const rows = await this.db
+      .select({ jobId: artifacts.jobId, metadata: artifacts.metadata })
+      .from(artifacts)
+      .where(eq(artifacts.kind, 'pr'));
+
+    const match = rows.find((r) => {
+      const m = r.metadata as { branchName?: string } | null;
+      return m?.branchName === branchName;
+    });
+    if (!match) return undefined;
+    return this.db.query.jobs.findFirst({ where: eq(jobs.id, match.jobId) });
+  }
+
   async findMany(
     limit: number,
     filters?: { sessionId?: string; status?: JobStatus },

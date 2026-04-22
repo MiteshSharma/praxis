@@ -56,6 +56,12 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const jobsResumeFromPlan = os.jobs.resumeFromPlan.handler(({ input }) =>
     deps.jobsService.resumeFromPlan(input.jobId),
   );
+  const jobsGetReviewComments = os.jobs.getReviewComments.handler(({ input }) =>
+    deps.jobsService.getReviewComments(input.jobId),
+  );
+  const jobsCreateFollowup = os.jobs.createFollowup.handler(({ input }) =>
+    deps.jobsService.createFollowup(input.jobId, input.task),
+  );
 
   const jobsPlanGet = os.jobs.planGet.handler(({ input }) =>
     deps.plansService.getLatestPlan(input.jobId),
@@ -218,6 +224,8 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       restart: jobsRestart,
       delete: jobsDelete,
       resumeFromPlan: jobsResumeFromPlan,
+      getReviewComments: jobsGetReviewComments,
+      createFollowup: jobsCreateFollowup,
       planGet: jobsPlanGet,
       planList: jobsPlanList,
       planApprove: jobsPlanApprove,

@@ -1,9 +1,10 @@
 import { ORPCError } from '@orpc/server';
-import type { ArtifactDto, JobDto, JobStatus, JobStepDto, TimelineEventDto } from '@shared/contracts';
+import type { ArtifactDto, JobDto, JobStatus, JobStepDto, PrReviewComment, ReviewCommentDto, TimelineEventDto } from '@shared/contracts';
 import { JOB_EXECUTE_QUEUE, TaskIngestService, appendTimeline, splitWebInput } from '@shared/core';
-import { type Database, jobTimeline, jobs, messages, plans, sandboxes } from '@shared/db';
+import { type Database, artifacts, jobTimeline, jobs, messages, plans, sandboxes } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
-import { and, asc, eq, gt } from 'drizzle-orm';
+import { Octokit } from '@octokit/rest';
+import { and, asc, desc, eq, gt } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
 import { JobsRepository, toJobDto } from '../repositories/jobs.repository';
 import { SessionsRepository } from '../repositories/sessions.repository';
@@ -202,6 +203,149 @@ export class JobsService {
     };
   }
 
+  async getReviewComments(jobId: string): Promise<ReviewCommentDto[]> {
+    const githubToken = process.env.GITHUB_TOKEN ?? '';
+    if (!githubToken) throw new ORPCError('BAD_REQUEST', { message: 'GITHUB_TOKEN not configured' });
+
+    const artifact = await this.db.query.artifacts.findFirst({
+      where: and(eq(artifacts.jobId, jobId), eq(artifacts.kind, 'pr')),
+      orderBy: desc(artifacts.createdAt),
+    });
+    if (!artifact?.url) throw new ORPCError('NOT_FOUND', { message: 'no PR artifact found for this job' });
+
+    const meta = artifact.metadata as { prNumber?: number; repoUrl?: string };
+    if (!meta.prNumber || !meta.repoUrl) {
+      throw new ORPCError('BAD_REQUEST', { message: 'PR metadata incomplete' });
+    }
+
+    const match = meta.repoUrl.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?/);
+    if (!match) throw new ORPCError('BAD_REQUEST', { message: 'cannot parse repoUrl' });
+    const [, owner, repo] = match;
+
+    const octokit = new Octokit({ auth: githubToken });
+
+    const [reviewComments, issueComments] = await Promise.all([
+      octokit.pulls.listReviewComments({ owner, repo, pull_number: meta.prNumber, per_page: 100 }),
+      octokit.issues.listComments({ owner, repo, issue_number: meta.prNumber, per_page: 100 }),
+    ]);
+
+    const result: ReviewCommentDto[] = [
+      ...reviewComments.data.map((c) => ({
+        id: c.id,
+        body: c.body,
+        path: c.path ?? null,
+        line: c.line ?? c.original_line ?? null,
+        user: c.user?.login ?? null,
+        createdAt: c.created_at,
+      })),
+      ...issueComments.data.map((c) => ({
+        id: c.id,
+        body: c.body ?? '',
+        path: null,
+        line: null,
+        user: c.user?.login ?? null,
+        createdAt: c.created_at,
+      })),
+    ];
+
+    return result.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  /**
+   * UI path (approach B): user types a task and submits from the job detail page.
+   * Looks up the PR artifact from the job and delegates to the shared core.
+   */
+  async createFollowup(jobId: string, task: string): Promise<{ jobId: string }> {
+    const original = await this.repo.findById(jobId);
+    if (!original) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
+    if (original.status !== 'completed') {
+      throw new ORPCError('BAD_REQUEST', { message: 'can only create follow-ups on completed jobs' });
+    }
+
+    const prArtifact = await this.db.query.artifacts.findFirst({
+      where: and(eq(artifacts.jobId, jobId), eq(artifacts.kind, 'pr')),
+      orderBy: desc(artifacts.createdAt),
+    });
+    if (!prArtifact) throw new ORPCError('BAD_REQUEST', { message: 'no PR artifact found — job has no open PR' });
+
+    const meta = prArtifact.metadata as { branchName?: string; prNumber?: number };
+    if (!meta.branchName) throw new ORPCError('BAD_REQUEST', { message: 'PR artifact missing branchName' });
+
+    return this._createFollowupJob(jobId, meta.branchName, task, []);
+  }
+
+  /**
+   * Webhook path (approach A): called by the GitHub webhook handler when a
+   * pull_request_review event fires with state=changes_requested.
+   *
+   * The caller supplies the PR branch name (from the webhook payload) and the
+   * pre-parsed review comments. This method resolves the job via reverse lookup
+   * and delegates to the shared core.
+   *
+   * Wire-up (approach A):
+   *   POST /webhooks/github/:token
+   *     → parse payload
+   *     → jobsService.createFollowupFromReview(prBranch, comments, review.body)
+   *   OR via channel dispatch:
+   *     dispatchToConversation(db, conversationId, { type: 'pr.review_requested', ... })
+   *     → channel.onPrReviewRequested() calls this method
+   */
+  async createFollowupFromReview(
+    prBranch: string,
+    comments: PrReviewComment[],
+    reviewNote?: string | null,
+  ): Promise<{ jobId: string }> {
+    const original = await this.repo.findByPrBranch(prBranch);
+    if (!original) throw new ORPCError('NOT_FOUND', { message: `no job found for PR branch: ${prBranch}` });
+    if (original.status !== 'completed') {
+      throw new ORPCError('BAD_REQUEST', { message: 'job is not yet completed' });
+    }
+
+    const task = buildTaskFromComments(comments, reviewNote);
+    return this._createFollowupJob(original.id, prBranch, task, comments);
+  }
+
+  /**
+   * Shared core: creates a follow-up job on an existing PR branch with the
+   * original plan injected as context. Called by both approach B (UI) and
+   * approach A (webhook).
+   */
+  private async _createFollowupJob(
+    jobId: string,
+    prBranch: string,
+    task: string,
+    comments: PrReviewComment[],
+  ): Promise<{ jobId: string }> {
+    const original = await this.repo.findById(jobId);
+    if (!original) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
+
+    const plan = await this.db.query.plans.findFirst({
+      where: and(eq(plans.jobId, jobId), eq(plans.status, 'approved')),
+      orderBy: desc(plans.version),
+    });
+
+    const taskWithContext = plan
+      ? `${task}\n\n---\nOriginal plan context:\n${plan.data.summary}\n\nOriginal steps:\n${(plan.data as { steps?: Array<{ content: string }> }).steps?.map((s) => `- ${s.content}`).join('\n') ?? ''}`
+      : task;
+
+    const { id } = await this.ingest.ingest({
+      source: 'web',
+      triggerKind: 'pr_followup',
+      title: task.slice(0, 120),
+      description: taskWithContext,
+      metadata: { prFollowupBranch: prBranch, parentJobId: jobId, commentCount: comments.length },
+      githubUrl: original.githubUrl,
+      githubBranch: original.githubBranch,
+      conversationId: original.conversationId ?? undefined,
+      parentJobId: jobId,
+      workflowVersionId: original.workflowVersionId ?? undefined,
+      model: original.model ?? null,
+      autoApprove: original.autoApprove,
+    });
+
+    return { jobId: id };
+  }
+
   async restart(jobId: string): Promise<{ jobId: string }> {
     const original = await this.repo.findById(jobId);
     if (!original) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
@@ -229,4 +373,28 @@ export class JobsService {
 
     return { jobId: id };
   }
+}
+
+/**
+ * Builds a plain-English task string from structured review comments.
+ * Used by the webhook path (approach A) where comments come from GitHub payload.
+ * The UI path (approach B) accepts a user-typed task string directly.
+ */
+function buildTaskFromComments(comments: PrReviewComment[], reviewNote?: string | null): string {
+  const lines: string[] = [];
+
+  if (reviewNote?.trim()) {
+    lines.push(`Review feedback: ${reviewNote.trim()}`);
+    lines.push('');
+  }
+
+  if (comments.length > 0) {
+    lines.push('Address the following review comments:');
+    for (const c of comments) {
+      const location = c.path ? `[${c.path}${c.line ? `:${c.line}` : ''}]` : '[general]';
+      lines.push(`${location} ${c.body.trim()}`);
+    }
+  }
+
+  return lines.join('\n') || 'Address review feedback.';
 }

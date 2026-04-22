@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   AgentSchema,
   ArtifactSchema,
+  ReviewCommentSchema,
   SessionChannelSchema,
   SessionSchema,
   JobSchema,
@@ -88,6 +89,14 @@ export const contract = {
 
     resumeFromPlan: oc
       .input(z.object({ jobId: z.string().uuid() }))
+      .output(z.object({ jobId: z.string().uuid() })),
+
+    getReviewComments: oc
+      .input(z.object({ jobId: z.string().uuid() }))
+      .output(z.array(ReviewCommentSchema)),
+
+    createFollowup: oc
+      .input(z.object({ jobId: z.string().uuid(), task: z.string().min(1) }))
       .output(z.object({ jobId: z.string().uuid() })),
   },
 

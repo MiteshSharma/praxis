@@ -10,9 +10,10 @@ import type { PraxisChannel } from './types.js';
 
 export async function dispatchEvent(channel: PraxisChannel, event: PraxisEvent): Promise<void> {
   switch (event.type) {
-    case 'plan.ready':    return channel.onPlanReady?.(event);
-    case 'job.completed': return channel.onJobCompleted?.(event);
-    case 'job.failed':    return channel.onJobFailed?.(event);
+    case 'plan.ready':           return channel.onPlanReady?.(event);
+    case 'job.completed':        return channel.onJobCompleted?.(event);
+    case 'job.failed':           return channel.onJobFailed?.(event);
+    case 'pr.review_requested':  return channel.onPrReviewRequested?.(event);
   }
 }
 

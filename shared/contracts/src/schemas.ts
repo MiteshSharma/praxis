@@ -200,6 +200,18 @@ export const RepoMemorySchema = RepoMemoryListItemSchema.extend({
 });
 export type RepoMemoryDto = z.infer<typeof RepoMemorySchema>;
 
+// ── PR Review comments ────────────────────────────────────────────────────────
+
+export const ReviewCommentSchema = z.object({
+  id: z.number(),
+  body: z.string(),
+  path: z.string().nullable(),
+  line: z.number().nullable(),
+  user: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type ReviewCommentDto = z.infer<typeof ReviewCommentSchema>;
+
 // ── Session channels ──────────────────────────────────────────────────────────
 
 export const SessionChannelSchema = z.object({

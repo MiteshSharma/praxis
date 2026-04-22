@@ -16,6 +16,13 @@ export interface OctokitLike {
       head: string;
       base: string;
     }): Promise<{ data: { number: number; html_url: string } }>;
+    list(params: {
+      owner: string;
+      repo: string;
+      state: 'open' | 'closed' | 'all';
+      head: string;
+      per_page: number;
+    }): Promise<{ data: Array<{ number: number; html_url: string }> }>;
   };
 }
 
@@ -76,6 +83,24 @@ export class PublishService {
 
     const { owner, repo } = parseOwnerRepo(input.repoUrl);
     const octokit = this.createOctokit(input.githubToken);
+
+    // Check if a PR already exists for this branch (follow-up jobs reuse the same branch)
+    const { data: existing } = await octokit.pulls.list({
+      owner,
+      repo,
+      state: 'open',
+      head: `${owner}:${input.branchName}`,
+      per_page: 1,
+    });
+
+    if (existing.length > 0) {
+      return {
+        branchName: input.branchName,
+        commitSha,
+        prNumber: existing[0].number,
+        prUrl: existing[0].html_url,
+      };
+    }
 
     const { data } = await octokit.pulls.create({
       owner,

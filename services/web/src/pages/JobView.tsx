@@ -1,6 +1,6 @@
-import type { JobStatus, TimelineEventDto } from '@shared/contracts';
+import type { JobStatus, ReviewCommentDto, TimelineEventDto } from '@shared/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Collapse, Descriptions, Drawer, Dropdown, Modal, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Collapse, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tag, Typography } from 'antd';
 import Markdown from 'react-markdown';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -237,6 +237,9 @@ export function JobView() {
   const [showPlanDrawer, setShowPlanDrawer] = useState(false);
   const showPrompt = useCallback((phase: string, text: string) => setPromptModal({ phase, text }), []);
 
+  const [reviewModal, setReviewModal] = useState(false);
+  const [followupTask, setFollowupTask] = useState('');
+
   const cancelMutation = useMutation({
     mutationFn: () => rpc.jobs.cancel({ jobId: jobId ?? '' }),
     onSuccess: () => jobQuery.refetch(),
@@ -280,6 +283,21 @@ export function JobView() {
     queryKey: ['job', jobId, 'artifacts'],
     queryFn: () => rpc.jobs.listArtifacts({ jobId: jobId ?? '' }),
     enabled: !!jobId && ['publishing', 'learning', 'completed'].includes(jobQuery.data?.status ?? ''),
+  });
+
+  const reviewCommentsQuery = useQuery({
+    queryKey: ['job', jobId, 'reviewComments'],
+    queryFn: () => rpc.jobs.getReviewComments({ jobId: jobId ?? '' }),
+    enabled: !!jobId && reviewModal,
+  });
+
+  const createFollowupMutation = useMutation({
+    mutationFn: () => rpc.jobs.createFollowup({ jobId: jobId ?? '', task: followupTask }),
+    onSuccess: ({ jobId: newJobId }) => {
+      setReviewModal(false);
+      setFollowupTask('');
+      navigate(`/jobs/${newJobId}`);
+    },
   });
 
   const isTerminal = TERMINAL_STATUSES.has(jobQuery.data?.status ?? '');
@@ -532,29 +550,81 @@ export function JobView() {
 
         {/* PR banner */}
         {prUrl && (
-          <a
-            href={prUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 16px',
-              background: 'var(--c-success-bg)',
-              border: '1px solid #A9EFC5',
-              borderRadius: 10,
-              color: 'var(--c-success)',
-              fontWeight: 600,
-              textDecoration: 'none',
-              fontSize: 14,
-              marginBottom: 14,
-            }}
-          >
-            <span>Pull request created →</span>
-            <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--c-text-2)', marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prUrl}</span>
-          </a>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 16px',
+                  background: 'var(--c-success-bg)',
+                  border: '1px solid #A9EFC5',
+                  borderRadius: 10,
+                  color: 'var(--c-success)',
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                  fontSize: 14,
+                  minWidth: 0,
+                }}
+              >
+                <span>Pull request created →</span>
+                <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--c-text-2)', marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prUrl}</span>
+              </a>
+              {job.status === 'completed' && (
+                <Button onClick={() => setReviewModal(true)}>Fix Review Comments</Button>
+              )}
+            </div>
+          </div>
         )}
+
+        {/* Fix review comments modal */}
+        <Modal
+          title="Fix Review Comments"
+          open={reviewModal}
+          onCancel={() => { setReviewModal(false); setFollowupTask(''); }}
+          onOk={() => createFollowupMutation.mutate()}
+          okText="Create follow-up job"
+          confirmLoading={createFollowupMutation.isPending}
+          okButtonProps={{ disabled: !followupTask.trim() }}
+          width={640}
+        >
+          {reviewCommentsQuery.isLoading && <p className="muted small">Loading review comments…</p>}
+          {reviewCommentsQuery.data && reviewCommentsQuery.data.length > 0 && (
+            <div style={{ marginBottom: 16, maxHeight: 280, overflowY: 'auto', border: '1px solid var(--c-border)', borderRadius: 8, padding: '8px 12px' }}>
+              {reviewCommentsQuery.data.map((c: ReviewCommentDto) => (
+                <div key={c.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--c-border-subtle)' }}>
+                  {c.path && (
+                    <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginBottom: 4 }}>
+                      {c.path}{c.line ? `:${c.line}` : ''}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.body}</div>
+                  <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 4 }}>
+                    {c.user ?? 'unknown'} · {new Date(c.createdAt).toLocaleDateString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {reviewCommentsQuery.data?.length === 0 && (
+            <Alert type="info" message="No review comments found on this PR." style={{ marginBottom: 16 }} />
+          )}
+          <div style={{ marginBottom: 8, fontWeight: 500, fontSize: 13 }}>What should the agent fix?</div>
+          <Input.TextArea
+            rows={4}
+            placeholder="Describe what changes to make based on the review comments above, or type your own instructions…"
+            value={followupTask}
+            onChange={(e) => setFollowupTask(e.target.value)}
+          />
+          {createFollowupMutation.error && (
+            <Alert type="error" message={String(createFollowupMutation.error)} style={{ marginTop: 12 }} />
+          )}
+        </Modal>
       </div>
 
       {/* ── Fills remaining screen ──────────────────────────────────────────── */}

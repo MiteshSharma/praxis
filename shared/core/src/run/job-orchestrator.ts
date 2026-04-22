@@ -280,9 +280,14 @@ export class JobOrchestrator {
   ): Promise<void> {
     const { sandbox, db } = this.deps;
     const cloneUrl = injectGithubToken(job.githubUrl);
+    const meta = (job.metadata ?? {}) as Record<string, unknown>;
+    const prFollowupBranch = typeof meta.prFollowupBranch === 'string' ? meta.prFollowupBranch : null;
+
+    // For follow-up jobs, clone from the existing PR branch; otherwise clone base branch
+    const cloneBranch = prFollowupBranch ?? job.githubBranch;
     const clone = await sandbox.exec(
       sandboxInfo.providerId,
-      `git clone --depth 1 --branch ${job.githubBranch} ${cloneUrl} .`,
+      `git clone --depth 1 --branch ${cloneBranch} ${cloneUrl} .`,
       { cwd: workspace, timeoutSeconds: 120 },
     );
     if (clone.exitCode !== 0) {
@@ -294,18 +299,25 @@ export class JobOrchestrator {
     const commitSha = shaResult.stdout.trim();
     await db.update(jobs).set({ githubCommitSha: commitSha }).where(eq(jobs.id, job.id));
 
-    // Create a dedicated branch for this job's changes (worktree pattern)
-    const branchName = `praxis/job-${job.id.substring(0, 8)}`;
-    const branch = await sandbox.exec(
-      sandboxInfo.providerId,
-      `git checkout -b ${branchName}`,
-      { cwd: workspace },
-    );
-    if (branch.exitCode !== 0) {
-      throw new Error(`git checkout -b failed: ${branch.stderr.slice(0, 500)}`);
+    let branchName: string;
+    if (prFollowupBranch) {
+      // Already on the PR branch after clone — no new branch needed
+      branchName = prFollowupBranch;
+    } else {
+      // Create a dedicated branch for this job's changes
+      branchName = `praxis/job-${job.id.substring(0, 8)}`;
+      const branch = await sandbox.exec(
+        sandboxInfo.providerId,
+        `git checkout -b ${branchName}`,
+        { cwd: workspace },
+      );
+      if (branch.exitCode !== 0) {
+        throw new Error(`git checkout -b failed: ${branch.stderr.slice(0, 500)}`);
+      }
     }
+
     await appendTimeline(db, job.id, 'sandbox-ready', { event: 'branch-created', branchName });
-    log.info({ commitSha, branchName }, 'repo cloned, branch created');
+    log.info({ commitSha, branchName }, 'repo cloned, branch ready');
   }
 
   /**
@@ -423,6 +435,10 @@ export class JobOrchestrator {
     const prTitle = await this.generatePrTitle(job, plan, sandboxInfo, log);
     const prBody = buildPrBody(job, plan);
 
+    const meta = (job.metadata ?? {}) as Record<string, unknown>;
+    const prFollowupBranch = typeof meta.prFollowupBranch === 'string' ? meta.prFollowupBranch : null;
+    const branchName = prFollowupBranch ?? `praxis/job-${job.id.substring(0, 8)}`;
+
     const requestId = randomUUID();
     const response = await (this.deps.fetchFn ?? fetch)(`${sandboxInfo.endpoint}/publish`, {
       method: 'POST',
@@ -431,7 +447,7 @@ export class JobOrchestrator {
         sessionId: job.id,
         repoUrl: job.githubUrl,
         baseBranch: job.githubBranch,
-        branchName: `praxis/job-${job.id.substring(0, 8)}`,
+        branchName,
         commitMessage: prTitle,
         prTitle,
         prBody,

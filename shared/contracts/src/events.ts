@@ -105,6 +105,13 @@ export type NotifyPayload = z.infer<typeof NotifyPayloadSchema>;
 
 // ── PraxisEvent — typed vocabulary for all external communications ────────────
 
+export type PrReviewComment = {
+  path: string | null;
+  line: number | null;
+  body: string;
+  user: string | null;
+};
+
 export type PraxisEvent =
   | {
       type: 'plan.ready';
@@ -121,6 +128,24 @@ export type PraxisEvent =
       callbackUrl: string;
     }
   | { type: 'job.completed'; job: { id: string; title: string; githubUrl: string }; prUrl: string }
-  | { type: 'job.failed'; job: { id: string; title: string; githubUrl: string }; error: string };
+  | { type: 'job.failed'; job: { id: string; title: string; githubUrl: string }; error: string }
+  | {
+      /**
+       * Fired when a PR review requests changes — either from the UI (approach B)
+       * or from a GitHub webhook (approach A). The handler creates a follow-up job
+       * on the same PR branch using `onPrReviewRequested` on any registered channel.
+       *
+       * Approach A wiring: POST /webhooks/github/:token → parse payload →
+       *   dispatchToConversation(db, conversationId, { type: 'pr.review_requested', ... })
+       */
+      type: 'pr.review_requested';
+      prBranch: string;
+      prNumber: number;
+      repoUrl: string;
+      /** Optional high-level review summary (GitHub review body or user note). */
+      reviewNote: string | null;
+      /** Individual line/file comments from the review. */
+      comments: PrReviewComment[];
+    };
 
 export type PraxisEventType = PraxisEvent['type'];
