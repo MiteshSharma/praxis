@@ -442,6 +442,16 @@ export function JobView() {
             ← Back to conversation
           </button>
         )}
+        {job.parentJobId && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => navigate(`/jobs/${job.parentJobId}`)}
+            style={{ paddingLeft: 0, marginBottom: 12 }}
+          >
+            ← Back to parent job
+          </button>
+        )}
 
         {/* Phase bar */}
         <div style={{ marginBottom: 14 }}>
@@ -491,12 +501,14 @@ export function JobView() {
                   Stop
                 </Button>
               )}
-              <Button size="small" onClick={() => restartMutation.mutate()} loading={restartMutation.isPending}>
-                Restart
-              </Button>
+              {isTerminal && (
+                <Button size="small" onClick={() => restartMutation.mutate()} loading={restartMutation.isPending}>
+                  Restart
+                </Button>
+              )}
               <Dropdown
                 menu={{ items: [
-                  { key: 'export-timeline', label: 'Export Timeline', onClick: () => window.open(`http://localhost:3000/jobs/${jobId}/audit`, '_blank') },
+                  { key: 'export-timeline', label: 'Export Timeline', disabled: !isTerminal, onClick: () => window.open(`http://localhost:3000/jobs/${jobId}/audit`, '_blank') },
                   { key: 'delete', label: 'Delete job', danger: true, onClick: handleDelete },
                 ] }}
                 trigger={['click']}
