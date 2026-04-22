@@ -442,6 +442,16 @@ export function JobView() {
             ← Back to conversation
           </button>
         )}
+        {job.parentJobId && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => navigate(`/jobs/${job.parentJobId}`)}
+            style={{ paddingLeft: 0, marginBottom: 12 }}
+          >
+            ← Back to parent job
+          </button>
+        )}
 
         {/* Phase bar */}
         <div style={{ marginBottom: 14 }}>

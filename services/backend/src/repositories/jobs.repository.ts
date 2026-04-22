@@ -109,6 +109,7 @@ export function toJobDto(row: typeof jobs.$inferSelect): JobDto {
   return {
     id: row.id,
     sessionId: row.conversationId ?? null,
+    parentJobId: row.parentJobId ?? null,
     source: row.source,
     externalId: row.externalId,
     externalUrl: row.externalUrl,
