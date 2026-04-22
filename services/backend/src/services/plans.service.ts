@@ -48,7 +48,7 @@ export class PlansService {
     if (!plan) throw new ORPCError('NOT_FOUND', { message: 'no plan found for job' });
 
     await this.tracker.approvePlan(plan.id);
-    await this.appendTimeline(jobId, 'plan-approved', { planId: plan.id, version: plan.version });
+    await this.appendTimeline(jobId, 'plan-approved', { planId: plan.id, version: plan.version, actor: 'user' });
 
     // Hot path: publish wake signal if sandbox is still held
     const isHot = job.planReviewHoldUntil && job.planReviewHoldUntil > new Date();
@@ -86,6 +86,7 @@ export class PlansService {
       planId: plan.id,
       version: plan.version,
       revisionCount: revisionCount + 1,
+      actor: 'user',
     });
 
     const isHot = job.planReviewHoldUntil && job.planReviewHoldUntil > new Date();
@@ -110,7 +111,7 @@ export class PlansService {
     if (!plan) throw new ORPCError('NOT_FOUND', { message: 'no plan found for job' });
 
     await this.tracker.rejectPlan(plan.id, reason);
-    await this.appendTimeline(jobId, 'plan-rejected', { planId: plan.id, reason: reason ?? null });
+    await this.appendTimeline(jobId, 'plan-rejected', { planId: plan.id, reason: reason ?? null, actor: 'user' });
 
     const isHot = job.planReviewHoldUntil && job.planReviewHoldUntil > new Date();
     if (isHot) {

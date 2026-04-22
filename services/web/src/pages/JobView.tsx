@@ -494,6 +494,12 @@ export function JobView() {
               <Button size="small" onClick={() => restartMutation.mutate()} loading={restartMutation.isPending}>
                 Restart
               </Button>
+              <Button
+                size="small"
+                onClick={() => window.open(`http://localhost:3000/jobs/${jobId}/audit`, '_blank')}
+              >
+                Export Timeline
+              </Button>
               <Dropdown
                 menu={{ items: [{ key: 'delete', label: 'Delete job', danger: true, onClick: handleDelete }] }}
                 trigger={['click']}

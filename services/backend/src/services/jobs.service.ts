@@ -133,7 +133,7 @@ export class JobsService {
       })
       .where(eq(jobs.id, jobId));
 
-    await appendTimeline(this.db, jobId, 'status-changed', { from: row.status, to: 'cancelled' });
+    await appendTimeline(this.db, jobId, 'status-changed', { from: row.status, to: 'cancelled', actor: 'user' });
 
     // Signal the sandbox to stop immediately if one is active for this job.
     const [sandbox] = await this.db
