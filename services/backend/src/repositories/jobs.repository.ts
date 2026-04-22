@@ -138,5 +138,7 @@ export function toJobDto(row: typeof jobs.$inferSelect): JobDto {
     totalInputTokens: row.totalInputTokens ?? null,
     totalOutputTokens: row.totalOutputTokens ?? null,
     totalCostUsd: row.totalCostUsd ?? null,
+    noChanges: row.noChanges,
+    output: (row.output ?? null) as Record<string, unknown> | null,
   };
 }

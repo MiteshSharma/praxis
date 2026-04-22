@@ -31,6 +31,9 @@ export const jobs = pgTable(
     workflowVersionId: uuid('workflow_version_id'),
     disableLearning: boolean('disable_learning').notNull().default(false),
     model: text('model'),
+    noChanges:     boolean('no_changes').notNull().default(false),
+    output:        jsonb('output').$type<Record<string, unknown>>(),
+    contextJobIds: jsonb('context_job_ids').$type<string[]>(),
 
     githubUrl: text('github_url').notNull(),
     githubBranch: text('github_branch').notNull().default('main'),

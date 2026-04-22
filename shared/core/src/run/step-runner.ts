@@ -5,7 +5,7 @@ import { type Database, type Job, type JobStep, agentSkills, agentVersions, agen
 import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
 import type { AgentRef } from '@shared/workflows';
-import { asc, desc, eq } from 'drizzle-orm';
+import { asc, desc, eq, inArray } from 'drizzle-orm';
 import Redis from 'ioredis';
 import type PgBoss from 'pg-boss';
 import { emitNotification } from '../egress/notify';
@@ -15,9 +15,12 @@ import { dispatchToConversation } from '../channels/dispatch';
 import { buildExecuteSystemPrompt } from '../prompts/execute-session';
 import { buildMemorySection, buildPlanSessionSystemPrompt } from '../prompts/plan-session';
 import { buildRevisionSystemPrompt } from '../prompts/revision-session';
+import { buildScoutSystemPrompt } from '../prompts/scout-session';
+import { SCOUT_AGENT } from '../defaults/scout-agent';
 import type { TaskTracker } from '../task-tracker/task-tracker';
 import { parseSSE } from './sse';
 import { appendTimeline, transitionJob } from './transitions';
+import { buildResumeContext, isContextOverflowError } from './compress';
 
 const DEFAULT_PLAN_HOLD_HOURS = 24;
 
@@ -35,6 +38,8 @@ export interface StepRunnerDeps {
   mcpSecret?: string;
   /** Repo memory markdown loaded during the preparing phase. Injected into plan-session prompts. */
   memoryMarkdown?: string | null;
+  /** Resolved provider API keys (DB or env fallback). Set by JobOrchestrator before run(). */
+  providerEnv?: Record<string, string>;
   /** Public base URL of this control-plane, e.g. http://localhost:3000. Used to build callback URLs for plan review channels. */
   controlPlaneUrl?: string;
   /** Override plugin registry factory for testing */
@@ -45,6 +50,11 @@ export interface StepRunnerDeps {
   createRedis?: (url: string) => import('ioredis').Redis;
   /** Override MCP token minting for testing */
   mintMcpToken?: (jobId: string) => Promise<string | undefined>;
+  /**
+   * Auxiliary model for context compression (haiku / flash). If not set,
+   * falls back to the SETTING_DEFAULTS value. Set by JobOrchestrator.
+   */
+  auxiliaryModel?: string;
 }
 
 export class CheckFailedError extends Error {
@@ -155,6 +165,16 @@ export class StepRunner {
     this.deps.memoryMarkdown = memoryMarkdown;
   }
 
+  /** Called by JobOrchestrator with resolved provider API keys before run(). */
+  setProviderEnv(env: Record<string, string>): void {
+    this.deps.providerEnv = env;
+  }
+
+  /** Called by JobOrchestrator with the auxiliary model for compression passes. */
+  setAuxiliaryModel(model: string): void {
+    this.deps.auxiliaryModel = model;
+  }
+
   /** Returns accumulated token + cost totals across all steps run so far. */
   getCostSummary(): { inputTokens: number; outputTokens: number; costUsd: number } {
     return {
@@ -220,6 +240,9 @@ export class StepRunner {
             break;
           case 'check':
             await this.runCheckStep(job, step, sandboxInfo, workspace, log);
+            break;
+          case 'scout':
+            await this.runScoutStep(job, step, sandboxInfo, workspace, log);
             break;
           default:
             throw new Error(`unknown step kind: ${step.kind}`);
@@ -410,6 +433,21 @@ export class StepRunner {
       systemPrompt = DEFAULT_AGENT.systemPrompt;
     }
 
+    // Inject upstream context from scout/verify jobs declared in contextJobIds
+    const ctxIds = job.contextJobIds as string[] | null;
+    if (ctxIds?.length) {
+      const upstream = await this.deps.db.query.jobs.findMany({
+        where: inArray(jobs.id, ctxIds),
+        columns: { id: true, title: true, output: true, triggerKind: true },
+      });
+      const parts = upstream
+        .filter((j) => j.output != null)
+        .map((j) => `### Findings from: ${j.title} (${j.triggerKind})\n${JSON.stringify(j.output, null, 2)}`);
+      if (parts.length > 0) {
+        systemPrompt += `\n\n---\n## Upstream findings\n\n${parts.join('\n\n')}`;
+      }
+    }
+
     const resolvedPlugins = await this.resolvePlugins(job.conversationId);
 
     const resolved = await this.resolveStepAgent(step, job.model ?? undefined);
@@ -423,22 +461,45 @@ export class StepRunner {
     const mcpToken = await this.mintToken(job.id);
 
     await this.mustTransition(job.id, 'preparing', 'executing');
-    await this.callSandboxPrompt(
-      job,
-      sandboxInfo,
-      {
-        model: resolved?.model ?? job.model ?? undefined,
-        systemPrompt,
-        allowedTools: resolved?.allowedTools,
-        workingDir: workspace,
-        mcpToken,
-        mcpEndpoint: this.deps.mcpEndpoint,
-        sessionPhase: 'execute',
-        plugins: resolvedPlugins,
-        stepId: step.id,
-      },
-      log,
-    );
+
+    const MAX_RESUME_ATTEMPTS = 2;
+    let resumeContext = '';
+    let attempt = 0;
+
+    while (true) {
+      try {
+        await this.callSandboxPrompt(
+          job,
+          sandboxInfo,
+          {
+            model: resolved?.model ?? job.model ?? undefined,
+            systemPrompt: systemPrompt + resumeContext,
+            allowedTools: resolved?.allowedTools,
+            workingDir: workspace,
+            mcpToken,
+            mcpEndpoint: this.deps.mcpEndpoint,
+            sessionPhase: 'execute',
+            plugins: resolvedPlugins,
+            stepId: step.id,
+          },
+          log,
+        );
+        break; // success
+      } catch (err) {
+        if (!isContextOverflowError(err) || attempt >= MAX_RESUME_ATTEMPTS) throw err;
+        attempt++;
+        log.warn({ jobId: job.id, attempt }, 'execute: context overflow — compressing and retrying');
+        await appendTimeline(this.deps.db, job.id, 'context-compressed', { attempt });
+        resumeContext = await buildResumeContext(job.id, sandboxInfo, workspace, {
+          db: this.deps.db,
+          log,
+          auxiliaryModel: this.deps.auxiliaryModel ?? 'claude-haiku-4-5-20251001',
+          providerEnv: this.deps.providerEnv ?? {},
+          fetchFn: this.deps.fetchFn,
+        });
+      }
+    }
+
     await this.mustTransition(job.id, 'executing', 'preparing');
   }
 
@@ -512,6 +573,39 @@ export class StepRunner {
     }
 
     log.info({ command: cfg.command, exitCode: result.exitCode }, 'check step passed');
+  }
+
+  private async runScoutStep(
+    job: Job,
+    step: JobStep,
+    sandboxInfo: SandboxInfo,
+    workspace: string,
+    log: Logger,
+  ): Promise<void> {
+    const systemPrompt = buildScoutSystemPrompt(
+      job.description ?? job.title,
+      workspace,
+    );
+
+    const execPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'scout', systemPrompt });
+    await this.emit(job.id, execPromptSeq, { kind: 'prompt-snapshot', phase: 'scout', systemPrompt });
+
+    await this.mustTransition(job.id, 'preparing', 'executing');
+    const stepModel = (step.config as { model?: string }).model;
+    await this.callSandboxPrompt(
+      job,
+      sandboxInfo,
+      {
+        model: stepModel ?? job.model ?? undefined,
+        systemPrompt,
+        allowedTools: SCOUT_AGENT.allowedTools,
+        workingDir: workspace,
+        sessionPhase: 'scout',
+        stepId: step.id,
+      },
+      log,
+    );
+    await this.mustTransition(job.id, 'executing', 'preparing');
   }
 
   // ── Revision session ───────────────────────────────────────────────────────
@@ -907,9 +1001,10 @@ export class StepRunner {
         systemPrompt: opts.systemPrompt,
         allowedTools: opts.allowedTools,
         sessionPhase: opts.sessionPhase,
-        env: {
+        env: this.deps.providerEnv ?? {
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
           OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+          OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? '',
         },
         mcpToken: opts.mcpToken,
         mcpEndpoint: opts.mcpEndpoint,

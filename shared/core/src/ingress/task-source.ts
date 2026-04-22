@@ -7,7 +7,7 @@ export interface NormalizedTask {
   title: string;
   description?: string | null;
   metadata: Record<string, unknown>;
-  triggerKind: 'user_prompt' | 'event' | 'schedule' | 'follow_up' | 'restart';
+  triggerKind: 'user_prompt' | 'event' | 'schedule' | 'follow_up' | 'restart' | 'pr_followup' | 'scout';
   githubUrl: string;
   githubBranch?: string;
   workflowId?: string;
@@ -18,6 +18,10 @@ export interface NormalizedTask {
   autoApprove?: boolean;
   /** Model override for this job. Null = use system default. */
   model?: string | null;
+  /** Job IDs whose output should be injected into this job's execute prompt. */
+  contextJobIds?: string[];
+  /** When true, a structured report is generated after the job completes. Automatically set for scout jobs. */
+  generateReport?: boolean;
 }
 
 export interface TaskSource {

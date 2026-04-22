@@ -46,6 +46,7 @@ export class WorkflowsService {
     return {
       kind: s.kind,
       name: s.name,
+      ...(s.model ? { model: s.model } : {}),
       ...(s.agentId ? { agent: { ref: 'id' as const, agentId: s.agentId } } : {}),
       ...(s.skillId ? { skillId: s.skillId } : {}),
       ...(s.condition ? { condition: s.condition } : {}),

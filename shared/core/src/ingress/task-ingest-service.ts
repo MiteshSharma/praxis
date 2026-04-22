@@ -40,8 +40,11 @@ export class TaskIngestService {
           metadata: {
             ...normalized.metadata,
             workflowInputs: normalized.workflowInputs ?? {},
+            // Scout jobs always generate a report; explicit flag overrides for other trigger kinds
+            generateReport: normalized.generateReport ?? normalized.triggerKind === 'scout',
           },
           triggerKind: normalized.triggerKind,
+          contextJobIds: normalized.contextJobIds ?? null,
           githubUrl: normalized.githubUrl,
           githubBranch: normalized.githubBranch ?? 'main',
           conversationId: normalized.conversationId ?? null,

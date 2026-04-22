@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link, Route, Routes, useLocation } from 'react-router-dom';
 import { AgentBrowse } from './pages/AgentBrowse';
+import { CostDashboard } from './pages/CostDashboard';
 import { SessionDetail } from './pages/SessionDetail';
 import { SessionList } from './pages/SessionList';
 import { JobView } from './pages/JobView';
 import { MemoryEditor } from './pages/MemoryEditor';
 import { MemoryList } from './pages/MemoryList';
 import { WorkflowBrowse } from './pages/WorkflowBrowse';
+import { SettingsPage } from './pages/Settings';
 
 const NAV_ITEMS = [
   {
@@ -47,6 +49,26 @@ const NAV_ITEMS = [
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M8 1a5 5 0 0 1 5 5c0 2-.8 3.7-2 4.8V13H5v-2.2A5 5 0 0 1 3 6a5 5 0 0 1 5-5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
         <path d="M5 13h6M6 15h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    key: '/costs',
+    label: 'Costs',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6.3" stroke="currentColor" strokeWidth="1.4"/>
+        <path d="M8 4v1.5M8 10.5V12M6 6.5c0-.8.9-1.5 2-1.5s2 .7 2 1.5S9.1 8 8 8s-2 .7-2 1.5S7 11 8 11s2-.7 2-1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    key: '/settings',
+    label: 'Settings',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4"/>
+        <path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.93 2.93l1.41 1.41M11.66 11.66l1.41 1.41M2.93 13.07l1.41-1.41M11.66 4.34l1.41-1.41" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
       </svg>
     ),
   },
@@ -100,6 +122,8 @@ export function App() {
             <Route path="/agents" element={<AgentBrowse />} />
             <Route path="/memories" element={<MemoryList />} />
             <Route path="/memories/*" element={<MemoryEditor />} />
+            <Route path="/costs" element={<CostDashboard />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </div>
       </main>

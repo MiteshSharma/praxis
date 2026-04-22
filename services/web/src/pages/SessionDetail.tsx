@@ -163,6 +163,7 @@ export function SessionDetail() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [githubUrlOverride, setGithubUrlOverride] = useState('');
   const [autoApprove, setAutoApprove] = useState(false);
+  const [jobMode, setJobMode] = useState<'implement' | 'scout'>('implement');
 
   const sessionQuery = useQuery({
     queryKey: ['session', id],
@@ -213,6 +214,7 @@ export function SessionDetail() {
         task: content,
         githubUrl: githubUrlOverride || undefined,
         autoApprove: autoApprove || undefined,
+        triggerKind: jobMode === 'scout' ? 'scout' : 'user_prompt',
       }),
     onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ['session', id, 'messages'] });
@@ -322,13 +324,50 @@ export function SessionDetail() {
             rows={3}
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
-            placeholder={'Describe what you want done…\nFirst line becomes the job title.'}
+            placeholder={jobMode === 'scout'
+              ? 'Describe what to investigate…\nThe agent will read the codebase and return a findings report.'
+              : 'Describe what you want done…\nFirst line becomes the job title.'
+            }
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
             }}
           />
           <div className="compose-footer">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Mode toggle: Implement vs Scout */}
+              <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--c-border)', flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => setJobMode('implement')}
+                  style={{
+                    padding: '3px 10px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: jobMode === 'implement' ? 'var(--c-primary)' : 'transparent',
+                    color: jobMode === 'implement' ? '#fff' : 'var(--c-text-2)',
+                  }}
+                >
+                  Implement
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJobMode('scout')}
+                  style={{
+                    padding: '3px 10px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    border: 'none',
+                    borderLeft: '1px solid var(--c-border)',
+                    cursor: 'pointer',
+                    background: jobMode === 'scout' ? '#0ea5e9' : 'transparent',
+                    color: jobMode === 'scout' ? '#fff' : 'var(--c-text-2)',
+                  }}
+                >
+                  Scout
+                </button>
+              </div>
               <Checkbox checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)}>
                 <span style={{ fontSize: 13 }}>Auto-approve plan</span>
               </Checkbox>
@@ -345,8 +384,9 @@ export function SessionDetail() {
               className="btn btn-primary"
               disabled={!messageInput.trim() || sendMutation.isPending}
               onClick={handleSend}
+              style={jobMode === 'scout' ? { background: '#0ea5e9', borderColor: '#0ea5e9' } : undefined}
             >
-              {sendMutation.isPending ? 'Submitting…' : 'Submit Job'}
+              {sendMutation.isPending ? 'Submitting…' : jobMode === 'scout' ? 'Scout' : 'Submit Job'}
               <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>⌘↵</span>
             </button>
           </div>

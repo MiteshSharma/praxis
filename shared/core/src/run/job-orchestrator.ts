@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { parse as parseYaml } from 'yaml';
 import type { JobStatus, NotifyEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
-import { type Database, type Job, artifacts, jobSteps, jobs, plans, sandboxes, workflowVersions } from '@shared/db';
+import { type Database, type Job, SETTING_DEFAULTS, SETTING_KEYS, type SettingKey, artifacts, jobSteps, jobTimeline, jobs, plans, sandboxes, settings, workflowVersions } from '@shared/db';
 import { type MemoryBackend, S3MemoryBackend, normalizeRepoKey } from '@shared/memory';
 import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
+import type { SecretBackend } from '../plugins/secret-backends/types.js';
 import type { Logger } from '@shared/telemetry';
 import type { WorkflowDefinition } from '@shared/workflows';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -16,6 +18,8 @@ import type { TaskTracker } from '../task-tracker/task-tracker';
 import { HoldTimeoutError, PlanRejectedError, StepRunner } from './step-runner';
 import { appendTimeline, transitionJob } from './transitions';
 import { runLearningPass } from './learning';
+import { runReportPass } from './report';
+import { SCOUT_WORKFLOW } from '../defaults/scout-workflow';
 import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
 import { parseSSE } from './sse';
 
@@ -37,6 +41,8 @@ export interface JobOrchestratorDeps {
   taskTracker?: TaskTracker;
   /** Memory backend — defaults to S3MemoryBackend when omitted */
   memoryBackend?: MemoryBackend;
+  /** Secret backend — used to resolve provider API keys stored via the UI */
+  secretBackend?: SecretBackend;
   /** Override step runner for testing */
   stepRunner?: StepRunner;
   /** Override fetch for testing */
@@ -72,6 +78,7 @@ export class JobOrchestrator {
 
     const jobLog = log.child({ jobId });
     let sandboxInfo: SandboxInfo | undefined;
+    const providerEnv = await this.resolveProviderEnv();
 
     try {
       // ── Cold resume from plan_review (after hot hold expired) ────────────
@@ -114,28 +121,71 @@ export class JobOrchestrator {
       }
 
       // ── Run steps ────────────────────────────────────────────────────────
+      const { learningModel: auxModel } = await this.resolveAuxiliaryModels();
+      this.stepRunner.setProviderEnv(providerEnv);
+      this.stepRunner.setAuxiliaryModel(auxModel);
       await this.stepRunner.run(jobRow, sandboxInfo);
 
-      // ── Publish (PR creation) ────────────────────────────────────────────
-      await this.mustTransition(jobId, 'preparing', 'publishing');
-      await this.finalize(jobRow, sandboxInfo, workspace, jobLog);
+      // ── QA loop ──────────────────────────────────────────────────────────
+      const praxisConfig = await this.readPraxisConfig(sandboxInfo, workspace, jobLog);
+      if (praxisConfig?.qa?.steps?.length) {
+        await this.runQaLoop(jobRow, sandboxInfo, workspace, praxisConfig.qa, jobLog, providerEnv);
+      }
 
-      // ── Learning pass (after PR) ─────────────────────────────────────────
+      // ── Publish / Scout completion ───────────────────────────────────────
+      await this.mustTransition(jobId, 'preparing', 'publishing');
+
       const stepCost = this.stepRunner.getCostSummary();
       let totalInputTokens = stepCost.inputTokens;
       let totalOutputTokens = stepCost.outputTokens;
       let totalCostUsd = stepCost.costUsd;
 
       const freshJob = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
-      if (!freshJob?.disableLearning) {
+      const meta = (freshJob?.metadata ?? {}) as Record<string, unknown>;
+
+      let noChanges = false;
+      if (jobRow.triggerKind === 'scout') {
+        // Scout jobs: skip publish, mark no-changes, extract findings from agent result
+        const scoutOutput = await extractScoutOutput(db, jobId);
+        await db.update(jobs).set({ noChanges: true, ...(scoutOutput ? { output: scoutOutput } : {}) }).where(eq(jobs.id, jobId));
+        const seq = await appendTimeline(db, jobId, 'no-changes', {});
+        await this.emit(jobId, seq, { kind: 'no-changes' } as NotifyEvent);
+        if (scoutOutput) {
+          const rSeq = await appendTimeline(db, jobId, 'report-generated', {
+            jobType: 'scout',
+            summary: typeof scoutOutput.summary === 'string' ? scoutOutput.summary : '',
+          });
+          jobLog.info({ jobId, seq: rSeq }, 'scout output extracted and stored');
+        } else {
+          jobLog.warn({ jobId }, 'scout output: could not extract JSON from agent result');
+        }
+        noChanges = true;
+      } else {
+        const finalizeResult = await this.finalize(jobRow, sandboxInfo, workspace, jobLog, providerEnv);
+        noChanges = finalizeResult.noChanges;
+      }
+
+      // ── Learning pass (skipped for scout and no-op jobs) ─────────────────
+      const { learningModel, reportModel } = await this.resolveAuxiliaryModels();
+      const skipLearning = freshJob?.disableLearning || noChanges;
+      if (!skipLearning) {
         await this.mustTransition(jobId, 'publishing', 'learning');
-        const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log: jobLog });
+        const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log: jobLog, auxiliaryModel: learningModel });
         totalInputTokens += learningCost.inputTokens;
         totalOutputTokens += learningCost.outputTokens;
         totalCostUsd += learningCost.costUsd;
         await this.mustTransition(jobId, 'learning', 'completed', { completedAt: new Date() });
       } else {
         await this.mustTransition(jobId, 'publishing', 'completed', { completedAt: new Date() });
+      }
+
+      // ── Report pass (implement jobs with generateReport=true only) ──
+      // Scout jobs store output directly from the agent result above — no second LLM call needed.
+      if (jobRow.triggerKind !== 'scout' && meta.generateReport) {
+        const reportCost = await runReportPass(jobId, sandboxInfo, workspace, { db, log: jobLog, providerEnv, auxiliaryModel: reportModel });
+        totalInputTokens += reportCost.inputTokens;
+        totalOutputTokens += reportCost.outputTokens;
+        totalCostUsd += reportCost.costUsd;
       }
 
       await db.update(jobs).set({ totalInputTokens, totalOutputTokens, totalCostUsd }).where(eq(jobs.id, jobId));
@@ -204,28 +254,49 @@ export class JobOrchestrator {
         const memoryMarkdown = await this.loadRepoMemory(jobRow, log);
         this.stepRunner.setMemory(memoryMarkdown);
 
+        const providerEnv = await this.resolveProviderEnv();
+        const { learningModel: coldAuxModel } = await this.resolveAuxiliaryModels();
+        this.stepRunner.setProviderEnv(providerEnv);
+        this.stepRunner.setAuxiliaryModel(coldAuxModel);
         await this.stepRunner.run(jobRow, sandboxInfo);
 
-        // ── Publish (PR creation) ──────────────────────────────────────────
-        await this.mustTransition(jobId, 'preparing', 'publishing');
-        await this.finalize(jobRow, sandboxInfo, workspace, log);
+        // ── QA loop ────────────────────────────────────────────────────────
+        const praxisConfig = await this.readPraxisConfig(sandboxInfo, workspace, log);
+        if (praxisConfig?.qa?.steps?.length) {
+          await this.runQaLoop(jobRow, sandboxInfo, workspace, praxisConfig.qa, log, providerEnv);
+        }
 
-        // ── Learning pass (after PR) ───────────────────────────────────────
+        // ── Publish / no-op handling ───────────────────────────────────────
+        await this.mustTransition(jobId, 'preparing', 'publishing');
+        const finalizeResult = await this.finalize(jobRow, sandboxInfo, workspace, log, providerEnv);
+
+        // ── Learning pass (skipped for no-op) ─────────────────────────────
         const stepCost = this.stepRunner.getCostSummary();
         let totalInputTokens = stepCost.inputTokens;
         let totalOutputTokens = stepCost.outputTokens;
         let totalCostUsd = stepCost.costUsd;
 
         const freshJob = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
-        if (!freshJob?.disableLearning) {
+        const meta = (freshJob?.metadata ?? {}) as Record<string, unknown>;
+        const { learningModel: coldLearningModel, reportModel: coldReportModel } = await this.resolveAuxiliaryModels();
+        const skipLearning = freshJob?.disableLearning || finalizeResult.noChanges;
+        if (!skipLearning) {
           await this.mustTransition(jobId, 'publishing', 'learning');
-          const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log });
+          const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log, auxiliaryModel: coldLearningModel });
           totalInputTokens += learningCost.inputTokens;
           totalOutputTokens += learningCost.outputTokens;
           totalCostUsd += learningCost.costUsd;
           await this.mustTransition(jobId, 'learning', 'completed', { completedAt: new Date() });
         } else {
           await this.mustTransition(jobId, 'publishing', 'completed', { completedAt: new Date() });
+        }
+
+        // ── Report pass ────────────────────────────────────────────────────
+        if (meta.generateReport) {
+          const reportCost = await runReportPass(jobId, sandboxInfo, workspace, { db, log, auxiliaryModel: coldReportModel });
+          totalInputTokens += reportCost.inputTokens;
+          totalOutputTokens += reportCost.outputTokens;
+          totalCostUsd += reportCost.costUsd;
         }
 
         await db.update(jobs).set({ totalInputTokens, totalOutputTokens, totalCostUsd }).where(eq(jobs.id, jobId));
@@ -250,6 +321,19 @@ export class JobOrchestrator {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /** Reads learning_model and report_model from the settings table, falling back to defaults. */
+  private async resolveAuxiliaryModels(): Promise<{ learningModel: string; reportModel: string }> {
+    const { db } = this.deps;
+    const rows = await db.query.settings.findMany({
+      where: (s, { inArray: inn }) => inn(s.key, [SETTING_KEYS.LEARNING_MODEL, SETTING_KEYS.REPORT_MODEL]),
+    });
+    const map = new Map(rows.map((r) => [r.key, r.value]));
+    return {
+      learningModel: map.get(SETTING_KEYS.LEARNING_MODEL) ?? SETTING_DEFAULTS[SETTING_KEYS.LEARNING_MODEL],
+      reportModel: map.get(SETTING_KEYS.REPORT_MODEL) ?? SETTING_DEFAULTS[SETTING_KEYS.REPORT_MODEL],
+    };
+  }
 
   private async loadRepoMemory(job: Job, log: Logger): Promise<string | null> {
     const { db } = this.deps;
@@ -330,8 +414,24 @@ export class JobOrchestrator {
     const { db } = this.deps;
 
     // Resolve workflow definition
+    // Scout jobs always use SCOUT_WORKFLOW regardless of any specified workflowVersionId,
+    // but inherit the model from the actual workflow version so the right provider is used.
     let workflow: WorkflowDefinition;
-    if (job.workflowVersionId) {
+    let inheritedModel: string | undefined;
+    if (job.triggerKind === 'scout') {
+      workflow = SCOUT_WORKFLOW;
+      if (job.workflowVersionId) {
+        const [version] = await db
+          .select()
+          .from(workflowVersions)
+          .where(eq(workflowVersions.id, job.workflowVersionId))
+          .limit(1);
+        const wfDef = version?.definition as WorkflowDefinition | undefined;
+        // Take the model from the first non-check step of the referenced workflow
+        const firstStep = wfDef?.steps.find((s) => s.kind !== 'check') as { model?: string } | undefined;
+        inheritedModel = firstStep?.model ?? undefined;
+      }
+    } else if (job.workflowVersionId) {
       const [version] = await db
         .select()
         .from(workflowVersions)
@@ -347,14 +447,21 @@ export class JobOrchestrator {
       prompt: job.description ?? job.title,
     };
 
-    const rows = workflow.steps.map((step, index) => ({
-      jobId: job.id,
-      stepIndex: index,
-      kind: step.kind,
-      name: step.name,
-      config: substituteInputs(step as Record<string, unknown>, inputs),
-      status: 'pending',
-    }));
+    const rows = workflow.steps.map((step, index) => {
+      const config = substituteInputs(step as Record<string, unknown>, inputs) as Record<string, unknown>;
+      // Inject inherited model into scout steps that have no model of their own
+      if (step.kind === 'scout' && !(config.model) && inheritedModel) {
+        config.model = inheritedModel;
+      }
+      return {
+        jobId: job.id,
+        stepIndex: index,
+        kind: step.kind,
+        name: step.name,
+        config,
+        status: 'pending',
+      };
+    });
 
     await db.insert(jobSteps).values(rows);
   }
@@ -368,9 +475,10 @@ export class JobOrchestrator {
     sandboxInfo: SandboxInfo,
     _workspace: string,
     log: Logger,
-  ): Promise<void> {
+    providerEnv: Record<string, string> = {},
+  ): Promise<{ noChanges: boolean }> {
     const { db } = this.deps;
-    const publishResult = await this.publish(job, sandboxInfo, log);
+    const publishResult = await this.publish(job, sandboxInfo, log, providerEnv);
 
     if (publishResult) {
       const [artifact] = await db
@@ -401,9 +509,16 @@ export class JobOrchestrator {
           url: artifact.url ?? undefined,
         });
       }
+      log.info({ prUrl: publishResult.prUrl }, 'PR created, entering learning phase');
+      return { noChanges: false };
     }
 
-    log.info({ prUrl: publishResult?.prUrl }, 'PR created, entering learning phase');
+    // No changes — mark on the job row and emit a timeline event
+    await db.update(jobs).set({ noChanges: true }).where(eq(jobs.id, job.id));
+    const seq = await appendTimeline(db, job.id, 'no-changes', {});
+    await this.emit(job.id, seq, { kind: 'no-changes' } as NotifyEvent);
+    log.info({ jobId: job.id }, 'job completed with no file changes (task did not apply)');
+    return { noChanges: true };
   }
 
   private async emitCompleted(jobId: string): Promise<void> {
@@ -419,6 +534,7 @@ export class JobOrchestrator {
     job: Job,
     sandboxInfo: SandboxInfo,
     log: Logger,
+    providerEnv: Record<string, string> = {},
   ): Promise<{
     branchName: string;
     commitSha: string;
@@ -432,7 +548,7 @@ export class JobOrchestrator {
     }
 
     const plan = await this.loadApprovedPlan(job.id);
-    const prTitle = await this.generatePrTitle(job, plan, sandboxInfo, log);
+    const prTitle = await this.generatePrTitle(job, plan, sandboxInfo, log, providerEnv);
     const prBody = buildPrBody(job, plan);
 
     const meta = (job.metadata ?? {}) as Record<string, unknown>;
@@ -462,12 +578,15 @@ export class JobOrchestrator {
       throw new Error(`publish failed: ${response.status} ${detail}`);
     }
 
-    return (await response.json()) as {
-      branchName: string;
-      commitSha: string;
-      prNumber: number;
-      prUrl: string;
-    };
+    const result = await response.json() as Record<string, unknown>;
+
+    // publish.service.ts returns { error: 'no_changes' } when the working tree is clean.
+    // Treat this as a valid outcome — not a failure.
+    if (result.error === 'no_changes') {
+      return null;
+    }
+
+    return result as { branchName: string; commitSha: string; prNumber: number; prUrl: string };
   }
 
   /**
@@ -534,6 +653,7 @@ export class JobOrchestrator {
     plan: Plan | null,
     sandboxInfo: SandboxInfo,
     log: Logger,
+    providerEnv: Record<string, string> = {},
   ): Promise<string> {
     const context = [
       `Task: ${job.title}`,
@@ -554,10 +674,7 @@ export class JobOrchestrator {
         description: context,
         model: 'claude-haiku-4-5-20251001',
         systemPrompt: PR_TITLE_SYSTEM_PROMPT,
-        env: {
-          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
-          OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
-        },
+        env: providerEnv,
         fetchFn: this.deps.fetchFn,
       });
       const generated = result.trim();
@@ -600,6 +717,184 @@ export class JobOrchestrator {
     }
   }
 
+  // ── Provider key resolution ────────────────────────────────────────────────
+
+  private async resolveProviderEnv(): Promise<Record<string, string>> {
+    const { secretBackend } = this.deps;
+    const env: Record<string, string> = {};
+
+    const pairs: Array<[string, string]> = [
+      ['provider:anthropic', 'ANTHROPIC_API_KEY'],
+      ['provider:openai', 'OPENAI_API_KEY'],
+      ['provider:openrouter', 'OPENROUTER_API_KEY'],
+    ];
+
+    for (const [secretKey, envKey] of pairs) {
+      const dbKey = secretBackend ? await secretBackend.get(secretKey) : null;
+      const resolved = dbKey ?? process.env[envKey] ?? '';
+      if (resolved) env[envKey] = resolved;
+    }
+
+    return env;
+  }
+
+  // ── praxis.yml + QA loop ───────────────────────────────────────────────────
+
+  private async readPraxisConfig(
+    sandboxInfo: SandboxInfo,
+    workspace: string,
+    log: Logger,
+  ): Promise<PraxisConfig | null> {
+    try {
+      const result = await this.deps.sandbox.exec(
+        sandboxInfo.providerId,
+        'cat praxis.yml',
+        { cwd: workspace },
+      );
+      if (result.exitCode !== 0 || !result.stdout.trim()) return null;
+      const config = parseYaml(result.stdout) as PraxisConfig;
+      log.info({ qaSteps: config.qa?.steps?.length ?? 0 }, 'praxis.yml loaded');
+      return config;
+    } catch (err) {
+      log.warn({ err }, 'could not read praxis.yml — skipping QA');
+      return null;
+    }
+  }
+
+  private async runQaLoop(
+    job: Job,
+    sandboxInfo: SandboxInfo,
+    workspace: string,
+    qaConfig: QaConfig,
+    log: Logger,
+    providerEnv: Record<string, string> = {},
+  ): Promise<void> {
+    const { db } = this.deps;
+    const maxIterations = qaConfig.max_iterations ?? 3;
+
+    for (let iteration = 1; iteration <= maxIterations; iteration++) {
+      await this.mustTransition(job.id, 'preparing', 'qa_running');
+
+      const startSeq = await appendTimeline(db, job.id, 'qa-started', { iteration, maxIterations, steps: qaConfig.steps.length });
+      await this.emit(job.id, startSeq, { kind: 'chunk', raw: { type: 'qa-started', iteration, maxIterations } });
+
+      const failures: QaStepFailure[] = [];
+
+      for (const step of qaConfig.steps) {
+        const stepStartSeq = await appendTimeline(db, job.id, 'qa-step-started', { name: step.name, command: step.command });
+        await this.emit(job.id, stepStartSeq, { kind: 'chunk', raw: { type: 'qa-step-started', name: step.name, command: step.command } });
+
+        const result = await (this.deps.fetchFn ?? fetch)(`${sandboxInfo.endpoint}/exec`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ command: step.command, cwd: workspace, timeoutSeconds: 300 }),
+        }).then((r) => r.json() as Promise<{ exitCode: number; stdout: string; stderr: string; durationMs: number }>);
+
+        const output = `${result.stdout}\n${result.stderr}`.trim().slice(0, 4000);
+        const passed = result.exitCode === 0;
+
+        const stepDoneSeq = await appendTimeline(db, job.id, 'qa-step-result', {
+          name: step.name,
+          command: step.command,
+          exitCode: result.exitCode,
+          passed,
+          output,
+          durationMs: result.durationMs,
+        });
+        await this.emit(job.id, stepDoneSeq, { kind: 'chunk', raw: { type: 'qa-step-result', name: step.name, passed, exitCode: result.exitCode, output } });
+
+        if (!passed) {
+          failures.push({ name: step.name, command: step.command, exitCode: result.exitCode, output });
+        }
+      }
+
+      if (failures.length === 0) {
+        await this.mustTransition(job.id, 'qa_running', 'preparing');
+        const passedSeq = await appendTimeline(db, job.id, 'qa-passed', { iteration });
+        await this.emit(job.id, passedSeq, { kind: 'chunk', raw: { type: 'qa-passed', iteration } });
+        log.info({ iteration }, 'QA passed');
+        return;
+      }
+
+      // QA failed this iteration
+      const failedSeq = await appendTimeline(db, job.id, 'qa-iteration-failed', {
+        iteration,
+        failures: failures.map((f) => ({ name: f.name, exitCode: f.exitCode })),
+      });
+      await this.emit(job.id, failedSeq, { kind: 'chunk', raw: { type: 'qa-iteration-failed', iteration, failures: failures.map((f) => f.name) } });
+      log.warn({ iteration, failures: failures.map((f) => f.name) }, 'QA iteration failed');
+
+      await this.mustTransition(job.id, 'qa_running', 'preparing');
+
+      if (iteration === maxIterations) {
+        throw new Error(
+          `QA failed after ${maxIterations} iteration${maxIterations === 1 ? '' : 's'}. ` +
+          `Failing steps: ${failures.map((f) => f.name).join(', ')}`,
+        );
+      }
+
+      // Run a fix session then loop back
+      await this.runQaFix(job, sandboxInfo, workspace, failures, iteration, maxIterations, log, providerEnv);
+    }
+  }
+
+  private async runQaFix(
+    job: Job,
+    sandboxInfo: SandboxInfo,
+    workspace: string,
+    failures: QaStepFailure[],
+    iteration: number,
+    maxIterations: number,
+    log: Logger,
+    providerEnv: Record<string, string> = {},
+  ): Promise<void> {
+    const { db } = this.deps;
+    const systemPrompt = buildQaFixSystemPrompt(failures, iteration, maxIterations, workspace);
+
+    await this.mustTransition(job.id, 'preparing', 'executing');
+
+    const fixSeq = await appendTimeline(db, job.id, 'qa-fix-started', { iteration });
+    await this.emit(job.id, fixSeq, { kind: 'chunk', raw: { type: 'qa-fix-started', iteration } });
+
+    const response = await (this.deps.fetchFn ?? fetch)(`${sandboxInfo.endpoint}/prompt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-request-id': randomUUID() },
+      body: JSON.stringify({
+        sessionId: `${job.id}:qa-fix-${iteration}`,
+        jobId: job.id,
+        title: job.title,
+        description: `QA fix — iteration ${iteration} of ${maxIterations}`,
+        workingDir: workspace,
+        model: job.model ?? undefined,
+        systemPrompt,
+        sessionPhase: 'qa-fix',
+        env: providerEnv,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`sandbox /prompt failed during QA fix: ${response.status}`);
+    }
+
+    for await (const chunk of parseSSE(response.body)) {
+      let parsed: unknown = chunk;
+      try { parsed = JSON.parse(chunk); } catch { /* leave as string */ }
+
+      if (parsed && typeof parsed === 'object') {
+        const msg = parsed as Record<string, unknown>;
+        if (msg.type === 'error' && typeof msg.error === 'string') {
+          throw new Error(`QA fix agent error: ${msg.error}`);
+        }
+      }
+
+      const seq = await appendTimeline(db, job.id, 'chunk', { chunk: parsed });
+      await this.emit(job.id, seq, { kind: 'chunk', raw: parsed });
+    }
+
+    await this.mustTransition(job.id, 'executing', 'preparing');
+    log.info({ iteration }, 'QA fix session complete');
+  }
+
   private async failJob(
     jobId: string,
     _staleStatus: JobStatus,
@@ -639,7 +934,59 @@ export class JobOrchestrator {
   }
 }
 
+// ── Types ──────────────────────────────────────────────────────────────────
+
+interface QaStep {
+  name: string;
+  command: string;
+  requires_services?: boolean;
+}
+
+interface QaConfig {
+  max_iterations?: number;
+  steps: QaStep[];
+}
+
+interface PraxisConfig {
+  qa?: QaConfig;
+}
+
+interface QaStepFailure {
+  name: string;
+  command: string;
+  exitCode: number;
+  output: string;
+}
+
 // ── Utilities ──────────────────────────────────────────────────────────────
+
+function buildQaFixSystemPrompt(
+  failures: QaStepFailure[],
+  iteration: number,
+  maxIterations: number,
+  workspace: string,
+): string {
+  const failureText = failures
+    .map(
+      (f) =>
+        `### ${f.name}\nCommand: \`${f.command}\`\nExit code: ${f.exitCode}\n\nOutput:\n\`\`\`\n${f.output}\n\`\`\``,
+    )
+    .join('\n\n');
+
+  return `\
+You are fixing code issues found by the QA step (iteration ${iteration} of ${maxIterations}).
+
+The repo is at ${workspace}. Read CLAUDE.md there for the file tree and conventions.
+
+The following QA commands failed after the previous execute step. Fix the source code so all commands pass.
+Do NOT modify test files — only fix the source code being tested.
+When you are done, summarize what you changed.
+
+## Failed QA steps
+
+${failureText}
+`;
+}
 
 const PR_TITLE_SYSTEM_PROMPT = `You generate pull request titles using conventional commits format.
 Respond with ONLY the title — no explanation, no markdown, no punctuation at the end.
@@ -689,3 +1036,49 @@ async function callSandboxSingleTurn(
   return text;
 }
 
+/**
+ * Reads the most recent 'result' chunk from the scout step's timeline events and
+ * attempts to parse a JSON findings object from the agent's text output.
+ */
+async function extractScoutOutput(
+  db: Database,
+  jobId: string,
+): Promise<Record<string, unknown> | null> {
+  const rows = await db
+    .select({ payload: jobTimeline.payload })
+    .from(jobTimeline)
+    .where(eq(jobTimeline.jobId, jobId))
+    .orderBy(desc(jobTimeline.seq))
+    .limit(100);
+
+  for (const row of rows) {
+    const p = row.payload as Record<string, unknown>;
+    const chunk = p.chunk as Record<string, unknown> | undefined;
+    if (chunk?.type === 'result' && typeof chunk.result === 'string') {
+      return parseJsonFromText(chunk.result);
+    }
+  }
+  return null;
+}
+
+/**
+ * Best-effort JSON extraction from a text that may contain markdown fences,
+ * surrounding explanation, or raw JSON.
+ */
+function parseJsonFromText(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  // 1. Try direct parse
+  try { return JSON.parse(trimmed) as Record<string, unknown>; } catch { /* fall through */ }
+  // 2. Extract from ```json ... ``` fence
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch?.[1]) {
+    try { return JSON.parse(fenceMatch[1].trim()) as Record<string, unknown>; } catch { /* fall through */ }
+  }
+  // 3. Extract first {...} block
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>; } catch { /* fall through */ }
+  }
+  return null;
+}

@@ -221,6 +221,129 @@ function ExpandableText({ text, color }: { text: string; color?: string }) {
   );
 }
 
+function ReportPanel({ output }: { output: Record<string, unknown> }) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : null);
+  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+
+  const summary = str(output.summary);
+  const frameworks = arr(output.frameworks);
+  const patterns = arr(output.patterns);
+  const changesMade = arr(output.changesMade);
+  const apisChanged = arr(output.apisChanged);
+  const missingPieces = arr(output.missingPieces);
+  const openQuestions = arr(output.openQuestions);
+  const notDone = arr(output.notDone);
+
+  const tagList = (items: string[], color?: string) =>
+    items.length > 0
+      ? items.map((t, i) => <Tag key={i} color={color} style={{ marginBottom: 4, fontSize: 11 }}>{t}</Tag>)
+      : null;
+
+  return (
+    <Descriptions size="small" column={1} styles={{ label: { fontSize: 11, width: 110 }, content: { fontSize: 11 } }}>
+      {summary && (
+        <Descriptions.Item label="Summary">
+          <span style={{ whiteSpace: 'pre-wrap' }}>{summary}</span>
+        </Descriptions.Item>
+      )}
+      {frameworks.length > 0 && (
+        <Descriptions.Item label="Frameworks">{tagList(frameworks)}</Descriptions.Item>
+      )}
+      {patterns.length > 0 && (
+        <Descriptions.Item label="Patterns">{tagList(patterns, 'geekblue')}</Descriptions.Item>
+      )}
+      {changesMade.length > 0 && (
+        <Descriptions.Item label="Changes made">{tagList(changesMade, 'green')}</Descriptions.Item>
+      )}
+      {apisChanged.length > 0 && (
+        <Descriptions.Item label="APIs changed">{tagList(apisChanged, 'purple')}</Descriptions.Item>
+      )}
+      {missingPieces.length > 0 && (
+        <Descriptions.Item label="Missing">{tagList(missingPieces, 'orange')}</Descriptions.Item>
+      )}
+      {notDone.length > 0 && (
+        <Descriptions.Item label="Not done">{tagList(notDone, 'red')}</Descriptions.Item>
+      )}
+      {openQuestions.length > 0 && (
+        <Descriptions.Item label="Questions">{tagList(openQuestions, 'gold')}</Descriptions.Item>
+      )}
+    </Descriptions>
+  );
+}
+
+function ReportModalContent({ output }: { output: Record<string, unknown> }) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : null);
+  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+
+  const summary = str(output.summary);
+  const objective = str(output.objective);
+  const frameworks = arr(output.frameworks);
+  const patterns = arr(output.patterns);
+  const existingImpls = arr(output.existingImplementations);
+  const changesMade = arr(output.changesMade);
+  const apisChanged = arr(output.apisChanged);
+  const dependenciesDiscovered = arr(output.dependenciesDiscovered);
+  const missingPieces = arr(output.missingPieces);
+  const notDone = arr(output.notDone);
+  const noteworthy = arr(output.noteworthy);
+  const openQuestions = arr(output.openQuestions);
+
+  const section = (title: string, items: string[], color?: string) =>
+    items.length === 0 ? null : (
+      <div style={{ marginBottom: 20 }}>
+        <Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--c-text-3)' }}>
+          {title}
+        </Typography.Text>
+        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {items.map((t, i) => (
+            <Tag key={i} color={color} style={{ fontSize: 12, padding: '2px 8px' }}>{t}</Tag>
+          ))}
+        </div>
+      </div>
+    );
+
+  return (
+    <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
+      {objective && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--c-surface-2)', borderRadius: 8, borderLeft: '3px solid var(--c-primary, #1677ff)' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Objective</Typography.Text>
+          <div style={{ marginTop: 4, fontSize: 13 }}>{objective}</div>
+        </div>
+      )}
+      {summary && (
+        <div style={{ marginBottom: 20, padding: '10px 14px', background: 'var(--c-surface-2)', borderRadius: 8 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Summary</Typography.Text>
+          <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{summary}</div>
+        </div>
+      )}
+      {section('Frameworks & Libraries', frameworks)}
+      {section('Patterns', patterns, 'geekblue')}
+      {section('Existing Implementations', existingImpls, 'cyan')}
+      {section('Changes Made', changesMade, 'green')}
+      {section('APIs Changed', apisChanged, 'purple')}
+      {section('Dependencies Discovered', dependenciesDiscovered, 'volcano')}
+      {section('Missing Pieces', missingPieces, 'orange')}
+      {section('Not Done', notDone, 'red')}
+      {section('Noteworthy', noteworthy, 'gold')}
+      {openQuestions.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--c-text-3)' }}>
+            Open Questions
+          </Typography.Text>
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {openQuestions.map((q, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13 }}>
+                <span style={{ color: 'var(--c-text-3)', flexShrink: 0 }}>{i + 1}.</span>
+                <span style={{ lineHeight: 1.5 }}>{q}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PLAN_REVIEW_STATUSES = new Set(['plan_ready', 'plan_review']);
 
 const PLAN_VIEWABLE_STATUSES = new Set([
@@ -239,6 +362,7 @@ export function JobView() {
 
   const [reviewModal, setReviewModal] = useState(false);
   const [followupTask, setFollowupTask] = useState('');
+  const [showReportModal, setShowReportModal] = useState(false);
 
   const cancelMutation = useMutation({
     mutationFn: () => rpc.jobs.cancel({ jobId: jobId ?? '' }),
@@ -478,6 +602,12 @@ export function JobView() {
             </div>
             <Space size={6}>
               <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>
+              {job.noChanges && (
+                <Tag color="default" style={{ borderStyle: 'dashed' }}>No changes</Tag>
+              )}
+              {job.triggerKind === 'scout' && (
+                <Tag color="blue" style={{ borderStyle: 'solid' }}>Scout</Tag>
+              )}
               {latestPlanQuery.data && (
                 <Button size="small" onClick={() => setShowPlanDrawer(true)}>View Plan</Button>
               )}
@@ -822,11 +952,11 @@ export function JobView() {
         {jobId && (
           <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 28, paddingLeft: 16 }}>
 
-            {/* Steps panel */}
+            {/* Steps panel — always compact, scrollable if many steps */}
             <div
               style={{
                 flexShrink: 0,
-                ...(fileChanges.size > 0 ? { maxHeight: 260 } : { flex: 1 }),
+                maxHeight: 220,
                 background: 'var(--c-surface)',
                 border: '1px solid var(--c-border)',
                 borderRadius: 10,
@@ -837,11 +967,11 @@ export function JobView() {
             >
               <div
                 style={{
-                  padding: '10px 14px',
+                  padding: '8px 14px',
                   borderBottom: '1px solid var(--c-border-subtle)',
                   background: 'var(--c-surface-2)',
                   fontWeight: 600,
-                  fontSize: 12,
+                  fontSize: 11,
                   textTransform: 'uppercase' as const,
                   letterSpacing: '0.06em',
                   color: 'var(--c-text-3)',
@@ -850,7 +980,7 @@ export function JobView() {
               >
                 Steps
               </div>
-              <div style={{ overflowY: 'auto', padding: '10px 12px' }}>
+              <div style={{ overflowY: 'auto', padding: '8px 12px' }}>
                 <StepProgress
                   jobId={jobId}
                   refetchInterval={
@@ -860,11 +990,12 @@ export function JobView() {
               </div>
             </div>
 
-            {/* File changes panel — appears once the agent starts writing files */}
-            {fileChanges.size > 0 && (
+            {/* Report panel — takes remaining space when visible */}
+            {job.output && (
               <div
                 style={{
                   flex: 1,
+                  minHeight: 0,
                   background: 'var(--c-surface)',
                   border: '1px solid var(--c-border)',
                   borderRadius: 10,
@@ -875,11 +1006,60 @@ export function JobView() {
               >
                 <div
                   style={{
-                    padding: '10px 14px',
+                    padding: '8px 14px',
                     borderBottom: '1px solid var(--c-border-subtle)',
                     background: 'var(--c-surface-2)',
                     fontWeight: 600,
-                    fontSize: 12,
+                    fontSize: 11,
+                    textTransform: 'uppercase' as const,
+                    letterSpacing: '0.06em',
+                    color: 'var(--c-text-3)',
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <span>Report</span>
+                    {job.triggerKind === 'scout' && <Tag color="blue" style={{ marginBottom: 0, fontSize: 10 }}>scout</Tag>}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ padding: '0 6px', fontSize: 11, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}
+                    onClick={() => setShowReportModal(true)}
+                  >
+                    Full view
+                  </button>
+                </div>
+                <div style={{ overflowY: 'auto', padding: '8px 12px' }}>
+                  <ReportPanel output={job.output} />
+                </div>
+              </div>
+            )}
+
+            {/* File changes panel — appears once the agent starts writing files */}
+            {fileChanges.size > 0 && (
+              <div
+                style={{
+                  ...(job.output ? { flexShrink: 0, maxHeight: 200 } : { flex: 1 }),
+                  minHeight: 0,
+                  background: 'var(--c-surface)',
+                  border: '1px solid var(--c-border)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '8px 14px',
+                    borderBottom: '1px solid var(--c-border-subtle)',
+                    background: 'var(--c-surface-2)',
+                    fontWeight: 600,
+                    fontSize: 11,
                     textTransform: 'uppercase' as const,
                     letterSpacing: '0.06em',
                     color: 'var(--c-text-3)',
@@ -894,7 +1074,7 @@ export function JobView() {
                     {fileChanges.size}
                   </span>
                 </div>
-                <div style={{ overflowY: 'auto', padding: '10px 12px' }}>
+                <div style={{ overflowY: 'auto', padding: '8px 12px' }}>
                   <FileChangesSidebar fileChanges={fileChanges} />
                 </div>
               </div>
@@ -979,6 +1159,27 @@ export function JobView() {
           {promptModal?.text}
         </pre>
       </Modal>
+
+      {/* Report full-view modal */}
+      {job?.output && (
+        <Modal
+          title={
+            <Space size={8}>
+              <span>Report</span>
+              {job.triggerKind === 'scout' && <Tag color="blue">scout</Tag>}
+              <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+                {job.title}
+              </Typography.Text>
+            </Space>
+          }
+          open={showReportModal}
+          onCancel={() => setShowReportModal(false)}
+          footer={null}
+          width={700}
+        >
+          <ReportModalContent output={job.output} />
+        </Modal>
+      )}
     </div>
   );
 }

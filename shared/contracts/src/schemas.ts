@@ -71,6 +71,8 @@ export const JobSchema = z.object({
   updatedAt: z.string(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
+  noChanges: z.boolean().optional().default(false),
+  output: z.record(z.unknown()).nullable().optional(),
 });
 export type JobDto = z.infer<typeof JobSchema>;
 
@@ -84,6 +86,34 @@ export const ArtifactSchema = z.object({
   createdAt: z.string(),
 });
 export type ArtifactDto = z.infer<typeof ArtifactSchema>;
+
+// ── Cost dashboard ────────────────────────────────────────────────────────────
+
+export const CostSummarySchema = z.object({
+  totalCostUsd: z.number(),
+  avgCostPerJob: z.number(),
+  totalJobs: z.number(),
+  completedJobs: z.number(),
+  failedJobs: z.number(),
+  totalInputTokens: z.number(),
+  totalOutputTokens: z.number(),
+});
+export type CostSummaryDto = z.infer<typeof CostSummarySchema>;
+
+export const DailyCostSchema = z.object({
+  date: z.string(),
+  costUsd: z.number(),
+  jobCount: z.number(),
+});
+export type DailyCostDto = z.infer<typeof DailyCostSchema>;
+
+export const RepoCostSchema = z.object({
+  githubUrl: z.string(),
+  costUsd: z.number(),
+  jobCount: z.number(),
+  avgCostUsd: z.number(),
+});
+export type RepoCostDto = z.infer<typeof RepoCostSchema>;
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
 
@@ -227,6 +257,29 @@ export const SessionChannelSchema = z.object({
 export type SessionChannelDto = z.infer<typeof SessionChannelSchema>;
 
 // ── Plugins ───────────────────────────────────────────────────────────────────
+
+// ── Provider configs ──────────────────────────────────────────────────────────
+
+// ── Global settings ───────────────────────────────────────────────────────────
+
+export const SettingSchema = z.object({
+  key: z.string(),
+  value: z.string(),
+  description: z.string(),
+  defaultValue: z.string(),
+  updatedAt: z.string(),
+});
+export type SettingDto = z.infer<typeof SettingSchema>;
+
+// ── Provider configs ──────────────────────────────────────────────────────────
+
+export const ProviderConfigSchema = z.object({
+  provider: z.enum(['anthropic', 'openai', 'openrouter']),
+  configured: z.boolean(),
+  maskedKey: z.string().nullable(),
+  config: z.record(z.string()),
+});
+export type ProviderConfigDto = z.infer<typeof ProviderConfigSchema>;
 
 export const PluginSchema = z.object({
   id: z.string().uuid(),

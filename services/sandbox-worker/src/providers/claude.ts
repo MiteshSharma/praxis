@@ -179,6 +179,6 @@ export class ClaudeProvider implements AgentProvider {
 }
 
 registerProvider(
-  (model, env) => model.startsWith('claude-') || !!env.ANTHROPIC_API_KEY,
+  (model) => model.startsWith('claude-'),
   () => new ClaudeProvider(),
 );

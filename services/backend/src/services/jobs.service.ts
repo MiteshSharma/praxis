@@ -18,6 +18,7 @@ interface CreateFromSessionInput {
   githubUrl?: string;
   workflowId?: string;
   autoApprove?: boolean;
+  triggerKind?: 'user_prompt' | 'scout';
 }
 
 /**
@@ -75,7 +76,7 @@ export class JobsService {
 
     const { id: jobId } = await this.ingest.ingest({
       source: 'web',
-      triggerKind: 'user_prompt',
+      triggerKind: input.triggerKind ?? 'user_prompt',
       title,
       description,
       metadata: {},
@@ -350,9 +351,13 @@ export class JobsService {
     const original = await this.repo.findById(jobId);
     if (!original) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
 
+    // Preserve the original triggerKind for scout jobs so they re-run the scout path.
+    // All other job types restart as 'restart' (which follows the standard plan→execute path).
+    const triggerKind = original.triggerKind === 'scout' ? 'scout' : 'restart';
+
     const { id } = await this.ingest.ingest({
       source: 'web',
-      triggerKind: 'restart',
+      triggerKind,
       title: original.title,
       description: original.description ?? undefined,
       metadata: { restartedFromJobId: original.id },
@@ -360,6 +365,7 @@ export class JobsService {
       githubBranch: original.githubBranch,
       workflowVersionId: original.workflowVersionId ?? undefined,
       conversationId: original.conversationId ?? undefined,
+      model: original.model ?? null,
     });
 
     // Re-point any conversation messages that referenced the old job to the new one,

@@ -1,5 +1,5 @@
 // @shared/core triggers self-registration of channels + memory backends on import
-import { JOB_EXECUTE_QUEUE, JobOrchestrator, type ResumeMode, memoryBackendRegistry } from '@shared/core';
+import { JOB_EXECUTE_QUEUE, JobOrchestrator, type ResumeMode, memoryBackendRegistry, secretBackendRegistry } from '@shared/core';
 import type { Database } from '@shared/db';
 import type { SandboxProvider } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
@@ -24,6 +24,7 @@ export async function registerJobExecute(
   },
 ): Promise<void> {
   const memoryBackend = memoryBackendRegistry.create(env.MEMORY_BACKEND, { db: deps.db });
+  const secretBackend = secretBackendRegistry.create(env.SECRET_BACKEND, { db: deps.db });
 
   const orchestrator = new JobOrchestrator({
     db: deps.db,
@@ -35,6 +36,7 @@ export async function registerJobExecute(
     mcpSecret: env.MCP_SHARED_SECRET,
     controlPlaneUrl: env.CONTROL_PLANE_URL ?? `http://localhost:${env.PORT}`,
     memoryBackend,
+    secretBackend,
   });
 
   await boss.createQueue(JOB_EXECUTE_QUEUE);

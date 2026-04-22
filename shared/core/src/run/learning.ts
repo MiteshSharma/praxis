@@ -36,7 +36,7 @@ export async function runLearningPass(
   jobId: string,
   sandboxInfo: SandboxInfo,
   workspace: string,
-  deps: { db: Database; log: Logger; memoryBackend?: MemoryBackend; storagePut?: StoragePutFn; fetchFn?: typeof fetch },
+  deps: { db: Database; log: Logger; memoryBackend?: MemoryBackend; storagePut?: StoragePutFn; fetchFn?: typeof fetch; auxiliaryModel?: string },
 ): Promise<LearningCost> {
   const { db, log } = deps;
   const memoryBackend = deps.memoryBackend ?? new S3MemoryBackend(db);
@@ -85,12 +85,13 @@ Please return the updated memory file in full. Use job id "${job.id.substring(0,
       title: `Learning pass for job ${job.id.substring(0, 8)}`,
       description: userPrompt,
       workingDir: workspace,
-      model: LEARNING_AGENT.model,
+      model: deps.auxiliaryModel ?? LEARNING_AGENT.model,
       systemPrompt: LEARNING_AGENT.systemPrompt,
       maxTurns: 1,
       env: {
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
         OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+        OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? '',
       },
       fetchFn: deps.fetchFn,
     });

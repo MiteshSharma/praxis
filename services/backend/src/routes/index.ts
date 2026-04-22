@@ -1,4 +1,4 @@
-import { memoryBackendRegistry } from '@shared/core';
+import { memoryBackendRegistry, secretBackendRegistry } from '@shared/core';
 import type { Database } from '@shared/db';
 import type { Logger } from '@shared/telemetry';
 import type { Hono } from 'hono';
@@ -14,7 +14,12 @@ import { ChannelsService } from '../services/channels.service';
 import { PlansService } from '../services/plans.service';
 import { PluginsService } from '../services/plugins.service';
 import { WorkflowsService } from '../services/workflows.service';
+import { CostsService } from '../services/costs.service';
+import { ProviderConfigsService } from '../services/provider-configs.service';
+import { ProviderConfigsRepository } from '../repositories/provider-configs.repository';
 import { MemoriesRepository } from '../repositories/memories.repository';
+import { SettingsRepository } from '../repositories/settings.repository';
+import { SettingsService } from '../services/settings.service';
 import { auditRoutes } from './audit';
 import { healthRoutes } from './health';
 import { planReviewRoutes } from './plan-review';
@@ -44,6 +49,10 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   const pluginsService = new PluginsService(deps.db);
   const memoriesService = new MemoriesService(memoriesRepo, memoryBackend);
   const channelsService = new ChannelsService(deps.db);
+  const costsService = new CostsService(deps.db);
+  const secretBackend = secretBackendRegistry.create(env.SECRET_BACKEND, { db: deps.db });
+  const providerConfigsService = new ProviderConfigsService(new ProviderConfigsRepository(deps.db), secretBackend);
+  const settingsService = new SettingsService(new SettingsRepository(deps.db));
 
   healthRoutes(app);
   sseRoutes(app);
@@ -53,6 +62,6 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   if (env.MCP_SHARED_SECRET) {
     planReviewRoutes(app, { plansService, mcpSecret: env.MCP_SHARED_SECRET });
   }
-  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, pluginsService, memoriesService, channelsService });
+  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, pluginsService, memoriesService, channelsService, costsService, providerConfigsService, settingsService });
   await registerOpenApi(app);
 }

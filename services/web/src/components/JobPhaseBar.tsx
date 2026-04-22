@@ -11,6 +11,7 @@ const STATUS_TO_PHASE: Record<JobStatus, number> = {
   plan_rejected: 1,
   executing: 2,
   checking: 2,
+  qa_running: 2,
   publishing: 3,
   learning: 4,
   completed: 5,

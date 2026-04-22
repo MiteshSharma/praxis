@@ -31,6 +31,8 @@ const EnvSchema = z.object({
   CONTROL_PLANE_URL: z.string().url().optional(),
   /** Memory backend. 's3' requires STORAGE_* vars; 'builtin' uses Postgres only. */
   MEMORY_BACKEND: z.enum(['s3', 'builtin']).default('s3'),
+  /** Secret backend. 'db' stores secrets in the secrets table (default). */
+  SECRET_BACKEND: z.string().default('db'),
   /** MinIO / S3-compatible storage for memory files and artifacts. All optional in dev. */
   STORAGE_ENDPOINT: z.string().url().optional(),
   STORAGE_BUCKET: z.string().default('praxis'),

@@ -1,0 +1,11 @@
+qa:
+  max_iterations: 3
+  steps:
+    - name: Install dependencies
+      command: pnpm install --frozen-lockfile
+
+    - name: Type check
+      command: pnpm run typecheck
+
+    - name: Lint
+      command: pnpm run lint

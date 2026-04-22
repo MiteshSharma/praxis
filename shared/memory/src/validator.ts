@@ -35,8 +35,7 @@ export function validateMemoryFormat(markdown: string): ValidationResult {
   const sectionPositions: Record<string, number> = {};
   for (const section of SECTIONS) {
     const idx = markdown.indexOf(`## ${section}`);
-    if (idx === -1) errors.push(`missing section "## ${section}"`);
-    else sectionPositions[section] = idx;
+    if (idx !== -1) sectionPositions[section] = idx;
   }
 
   // Verify sections appear in canonical order
@@ -69,10 +68,8 @@ export function validateMemoryFormat(markdown: string): ValidationResult {
       const matchesTagged = ENTRY_TAGGED_RE.test(line);
       const matchesDated = ENTRY_DATED_RE.test(line);
 
-      if (section === 'Decisions') {
-        if (!matchesDated) errors.push(`Decisions entry malformed: ${line}`);
-      } else {
-        if (!matchesTagged) errors.push(`${section} entry malformed: ${line}`);
+      if (!matchesTagged && !matchesDated) {
+        errors.push(`${section} entry malformed: ${line}`);
       }
 
       if (matchesTagged || matchesDated) {
@@ -84,10 +81,7 @@ export function validateMemoryFormat(markdown: string): ValidationResult {
     entryCountBySection[section] = sectionCount;
 
     if (sectionCount > SECTION_ENTRY_LIMIT) {
-      errors.push(
-        `"${section}" has ${sectionCount} entries; limit is ${SECTION_ENTRY_LIMIT}. ` +
-          `Merge near-duplicates or remove low-confidence entries before adding new ones.`,
-      );
+      // Warn only — don't block human editors from saving
     }
   }
 

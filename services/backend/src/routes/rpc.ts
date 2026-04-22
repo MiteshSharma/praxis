@@ -10,6 +10,9 @@ import type { PlansService } from '../services/plans.service';
 import type { ChannelsService } from '../services/channels.service';
 import type { PluginsService } from '../services/plugins.service';
 import type { WorkflowsService } from '../services/workflows.service';
+import type { CostsService } from '../services/costs.service';
+import type { ProviderConfigsService } from '../services/provider-configs.service';
+import type { SettingsService } from '../services/settings.service';
 
 interface RpcDeps {
   jobsService: JobsService;
@@ -20,6 +23,9 @@ interface RpcDeps {
   pluginsService: PluginsService;
   memoriesService: MemoriesService;
   channelsService: ChannelsService;
+  costsService: CostsService;
+  providerConfigsService: ProviderConfigsService;
+  settingsService: SettingsService;
 }
 
 /**
@@ -285,6 +291,30 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       create: channelsCreate,
       toggle: channelsToggle,
       delete: channelsDelete,
+    },
+    providers: {
+      list: os.providers.list.handler(() => deps.providerConfigsService.list()),
+      upsert: os.providers.upsert.handler(async ({ input }) => {
+        await deps.providerConfigsService.upsert(input.provider, input.apiKey, input.config ?? {});
+        return { ok: true };
+      }),
+      delete: os.providers.delete.handler(async ({ input }) => {
+        await deps.providerConfigsService.delete(input.provider);
+        return { ok: true };
+      }),
+    },
+
+    settings: {
+      list: os.settings.list.handler(() => deps.settingsService.list()),
+      update: os.settings.update.handler(({ input }) =>
+        deps.settingsService.update(input.key, input.value),
+      ),
+    },
+
+    costs: {
+      summary: os.costs.summary.handler(({ input }) => deps.costsService.summary(input)),
+      daily: os.costs.daily.handler(({ input }) => deps.costsService.daily(input)),
+      byRepo: os.costs.byRepo.handler(({ input }) => deps.costsService.byRepo(input)),
     },
   };
 

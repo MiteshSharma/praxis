@@ -8,4 +8,5 @@ export { providerRegistry } from './registry.js';
 // Registration order: most specific → least specific
 import './claude.js';
 import './openai.js';
+import './openrouter.js';
 import './demo.js'; // catch-all, must be last

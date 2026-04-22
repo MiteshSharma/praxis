@@ -11,3 +11,6 @@ export * from './plugins';
 export * from './repo-memories';
 export * from './memory-chunks';
 export * from './conversation-channels';
+export * from './secrets';
+export * from './provider-configs';
+export * from './settings';

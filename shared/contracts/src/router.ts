@@ -3,6 +3,9 @@ import { z } from 'zod';
 import {
   AgentSchema,
   ArtifactSchema,
+  CostSummarySchema,
+  DailyCostSchema,
+  RepoCostSchema,
   ReviewCommentSchema,
   SessionChannelSchema,
   SessionSchema,
@@ -11,8 +14,10 @@ import {
   MessageSchema,
   PlanSchema,
   PluginSchema,
+  ProviderConfigSchema,
   RepoMemoryListItemSchema,
   RepoMemorySchema,
+  SettingSchema,
   TimelineEventSchema,
   WorkflowSchema,
 } from './schemas';
@@ -35,6 +40,7 @@ export const contract = {
           githubUrl: z.string().url().optional(),
           workflowId: z.string().uuid().optional(),
           autoApprove: z.boolean().optional(),
+          triggerKind: z.enum(['user_prompt', 'scout']).optional(),
         }),
       )
       .output(JobSchema),
@@ -387,6 +393,46 @@ export const contract = {
       .output(PluginSchema),
 
     delete: oc.input(z.object({ pluginId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+  },
+
+  providers: {
+    list: oc.output(z.array(ProviderConfigSchema)),
+
+    upsert: oc
+      .input(
+        z.object({
+          provider: z.enum(['anthropic', 'openai', 'openrouter']),
+          apiKey: z.string().min(1),
+          config: z.record(z.string()).optional(),
+        }),
+      )
+      .output(z.object({ ok: z.boolean() })),
+
+    delete: oc
+      .input(z.object({ provider: z.enum(['anthropic', 'openai', 'openrouter']) }))
+      .output(z.object({ ok: z.boolean() })),
+  },
+
+  settings: {
+    list: oc.output(z.array(SettingSchema)),
+
+    update: oc
+      .input(z.object({ key: z.string(), value: z.string() }))
+      .output(SettingSchema),
+  },
+
+  costs: {
+    summary: oc
+      .input(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() }).optional())
+      .output(CostSummarySchema),
+
+    daily: oc
+      .input(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() }).optional())
+      .output(z.array(DailyCostSchema)),
+
+    byRepo: oc
+      .input(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() }).optional())
+      .output(z.array(RepoCostSchema)),
   },
 };
 
