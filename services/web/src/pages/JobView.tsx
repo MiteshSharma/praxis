@@ -302,6 +302,13 @@ export function JobView() {
 
   const isTerminal = TERMINAL_STATUSES.has(jobQuery.data?.status ?? '');
 
+  const childJobsQuery = useQuery({
+    queryKey: ['job', jobId, 'children'],
+    queryFn: () => rpc.jobs.list({ parentJobId: jobId ?? '' }),
+    enabled: !!jobId,
+    refetchInterval: isTerminal ? false : 5000,
+  });
+
   const timelineQuery = useQuery({
     queryKey: ['job', jobId, 'timeline'],
     queryFn: () => rpc.timeline.get({ jobId: jobId ?? '', limit: 500 }),
@@ -414,7 +421,6 @@ export function JobView() {
 
   const prUrl = prUrlFromStream ?? artifactsQuery.data?.find((a) => a.kind === 'pr')?.url;
   const showPlanReview = PLAN_REVIEW_STATUSES.has(job.status);
-  const showStream = STREAM_STATUSES.has(job.status) || isTerminal || items.length > 0;
 
   const handleDelete = () => {
     Modal.confirm({
@@ -597,6 +603,26 @@ export function JobView() {
           </div>
         )}
 
+        {/* Child jobs (review follow-ups) */}
+        {(childJobsQuery.data?.length ?? 0) > 0 && (
+          <div style={{ marginBottom: 14, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--c-border-subtle)', background: 'var(--c-surface-2)', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)' }}>
+              Review follow-ups
+            </div>
+            {childJobsQuery.data!.map((child) => (
+              <div
+                key={child.id}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--c-border-subtle)', cursor: 'pointer' }}
+                onClick={() => navigate(`/jobs/${child.id}`)}
+              >
+                <Tag color={STATUS_COLORS[child.status] ?? 'default'} style={{ flexShrink: 0 }}>{child.status.toUpperCase()}</Tag>
+                <span style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{child.title}</span>
+                <span style={{ fontSize: 11, color: 'var(--c-text-3)', flexShrink: 0 }}>{new Date(child.createdAt).toLocaleDateString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Fix review comments modal */}
         <Modal
           title="Fix Review Comments"
@@ -645,9 +671,8 @@ export function JobView() {
       {/* ── Fills remaining screen ──────────────────────────────────────────── */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', gap: 0, padding: '0 28px 0' }}>
 
-        {/* Timeline — grows to fill height */}
-        {showStream && (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 28 }}>
+        {/* Timeline — always present, grows to fill height */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 28 }}>
             <div
               style={{
                 flex: 1,
@@ -803,11 +828,10 @@ export function JobView() {
               </div>
             </div>
           </div>
-        )}
 
         {/* Right column — steps + file changes stacked */}
         {jobId && (
-          <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 28, paddingLeft: showStream ? 16 : 0 }}>
+          <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 28, paddingLeft: 16 }}>
 
             {/* Steps panel */}
             <div

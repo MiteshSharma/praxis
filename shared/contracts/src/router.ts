@@ -48,6 +48,7 @@ export const contract = {
             limit: z.number().int().positive().max(100).default(50),
             sessionId: z.string().uuid().optional(),
             status: JobStatusSchema.optional(),
+            parentJobId: z.string().uuid().optional(),
           })
           .optional(),
       )

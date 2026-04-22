@@ -37,6 +37,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     deps.jobsService.list(input?.limit ?? 50, {
       sessionId: input?.sessionId,
       status: input?.status,
+      parentJobId: input?.parentJobId,
     }),
   );
   const jobsCancel = os.jobs.cancel.handler(async ({ input }) => {

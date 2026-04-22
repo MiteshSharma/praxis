@@ -103,7 +103,7 @@ export class JobsService {
 
   async list(
     limit = 50,
-    filters?: { sessionId?: string; status?: JobStatus },
+    filters?: { sessionId?: string; status?: JobStatus; parentJobId?: string },
   ): Promise<JobDto[]> {
     return this.repo.findMany(limit, filters);
   }

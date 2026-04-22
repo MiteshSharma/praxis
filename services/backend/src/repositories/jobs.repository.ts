@@ -1,6 +1,6 @@
 import type { ArtifactDto, JobDto, JobStepDto, JobStatus } from '@shared/contracts';
 import { type Database, artifacts, jobSteps, jobs } from '@shared/db';
-import { and, asc, desc, eq, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, notInArray } from 'drizzle-orm';
 
 export class JobsRepository {
   constructor(private readonly db: Database) {}
@@ -31,11 +31,18 @@ export class JobsRepository {
 
   async findMany(
     limit: number,
-    filters?: { sessionId?: string; status?: JobStatus },
+    filters?: { sessionId?: string; status?: JobStatus; parentJobId?: string | null },
   ): Promise<JobDto[]> {
     const conditions = [];
     if (filters?.sessionId) conditions.push(eq(jobs.conversationId, filters.sessionId));
     if (filters?.status) conditions.push(eq(jobs.status, filters.status));
+    if (filters?.parentJobId !== undefined) {
+      conditions.push(
+        filters.parentJobId === null
+          ? isNull(jobs.parentJobId)
+          : eq(jobs.parentJobId, filters.parentJobId),
+      );
+    }
 
     const rows = await this.db
       .select()
