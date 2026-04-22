@@ -438,27 +438,16 @@ export function JobView() {
       {/* ── Static top section ─────────────────────────────────────────────── */}
       <div style={{ flexShrink: 0, padding: '16px 28px 0', background: 'var(--c-bg)' }}>
         {/* Breadcrumb */}
-        {job.sessionId && (
+        {(job.parentJobId || job.sessionId) && (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() => navigate(`/sessions/${job.sessionId}`)}
+            onClick={() => navigate(job.parentJobId ? `/jobs/${job.parentJobId}` : `/sessions/${job.sessionId}`)}
             style={{ paddingLeft: 0, marginBottom: 12 }}
           >
-            ← Back to conversation
+            {job.parentJobId ? '← Back to job' : '← Back to session'}
           </button>
         )}
-        {job.parentJobId && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => navigate(`/jobs/${job.parentJobId}`)}
-            style={{ paddingLeft: 0, marginBottom: 12 }}
-          >
-            ← Back to parent job
-          </button>
-        )}
-
         {/* Phase bar */}
         <div style={{ marginBottom: 14 }}>
           <JobPhaseBar status={job.status as JobStatus} />
