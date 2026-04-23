@@ -722,13 +722,23 @@ export function JobView() {
           </div>
         )}
 
-        {/* Child jobs (review follow-ups) */}
-        {(childJobsQuery.data?.length ?? 0) > 0 && (
+        {/* Child jobs — plan review ones get a full card; the rest go in the follow-ups list */}
+        {/* Only show child plan-review cards when the current job is NOT itself awaiting review */}
+        {!showPlanReview && (childJobsQuery.data ?? []).filter((c) => c.status === 'plan_ready' || c.status === 'plan_review').map((child) => (
+          <div key={child.id} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+              Plan review — {child.title}
+            </div>
+            <PlanReviewCard jobId={child.id} />
+          </div>
+        ))}
+
+        {(childJobsQuery.data ?? []).filter((c) => c.status !== 'plan_ready' && c.status !== 'plan_review').length > 0 && (
           <div style={{ marginBottom: 14, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--c-border-subtle)', background: 'var(--c-surface-2)', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)' }}>
               Review follow-ups
             </div>
-            {childJobsQuery.data!.map((child) => (
+            {(childJobsQuery.data ?? []).filter((c) => c.status !== 'plan_ready' && c.status !== 'plan_review').map((child) => (
               <div
                 key={child.id}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--c-border-subtle)', cursor: 'pointer' }}

@@ -1021,6 +1021,22 @@ body {
 .muted { color: var(--c-text-3); }
 .small { font-size: 12px; }
 
+/* ── Fleet DAG node pulse ──────────────────────────────────────────────────── */
+@keyframes fleet-node-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.7); }
+}
+
+.fleet-node-pulse {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  animation: fleet-node-pulse 1.2s ease-in-out infinite;
+}
+
 /* ── Mobile ────────────────────────────────────────────────────────────────── */
 .mobile-header {
   display: none;

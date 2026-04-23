@@ -9,6 +9,8 @@ import { MemoryEditor } from './pages/MemoryEditor';
 import { MemoryList } from './pages/MemoryList';
 import { WorkflowBrowse } from './pages/WorkflowBrowse';
 import { SettingsPage } from './pages/Settings';
+import { FleetList } from './pages/FleetList';
+import { FleetDetail } from './pages/FleetDetail';
 
 const NAV_ITEMS = [
   {
@@ -49,6 +51,17 @@ const NAV_ITEMS = [
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M8 1a5 5 0 0 1 5 5c0 2-.8 3.7-2 4.8V13H5v-2.2A5 5 0 0 1 3 6a5 5 0 0 1 5-5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
         <path d="M5 13h6M6 15h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    key: '/fleets',
+    label: 'Fleets',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="4" width="4" height="8" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+        <rect x="6" y="2" width="4" height="10" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+        <rect x="11" y="5" width="4" height="7" rx="1" stroke="currentColor" strokeWidth="1.4"/>
       </svg>
     ),
   },
@@ -122,6 +135,8 @@ export function App() {
             <Route path="/agents" element={<AgentBrowse />} />
             <Route path="/memories" element={<MemoryList />} />
             <Route path="/memories/*" element={<MemoryEditor />} />
+            <Route path="/fleets" element={<FleetList />} />
+            <Route path="/fleets/:fleetId" element={<FleetDetail />} />
             <Route path="/costs" element={<CostDashboard />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>

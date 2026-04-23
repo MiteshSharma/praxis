@@ -7,6 +7,7 @@ export { providerRegistry } from './registry.js';
 
 // Registration order: most specific → least specific
 import './claude.js';
+import './azure.js';   // before openai: Azure intercepts gpt-*/o-series when Azure keys are present
 import './openai.js';
 import './openrouter.js';
 import './demo.js'; // catch-all, must be last

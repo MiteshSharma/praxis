@@ -38,6 +38,7 @@ export function toPluginDto(row: typeof plugins.$inferSelect): PluginDto {
     command: row.command,
     url: row.url,
     env: (row.env ?? {}) as Record<string, string>,
+    requiredEnv: (row.requiredEnv as string[] | null) ?? [],
     enabled: row.enabled,
     createdAt: row.createdAt.toISOString(),
   };
@@ -121,6 +122,7 @@ export class SessionsRepository {
         role: messages.role,
         content: messages.content,
         jobId: messages.jobId,
+        fleetJobId: messages.fleetJobId,
         metadata: messages.metadata,
         createdAt: messages.createdAt,
         prArtifactUrl: artifacts.url,
@@ -144,6 +146,7 @@ export class SessionsRepository {
     role: 'user' | 'assistant' | 'system';
     content: string;
     jobId?: string | null;
+    fleetJobId?: string | null;
   }): Promise<MessageDto> {
     const [row] = await this.db
       .insert(messages)
@@ -152,6 +155,7 @@ export class SessionsRepository {
         role: data.role,
         content: data.content,
         jobId: data.jobId ?? null,
+        fleetJobId: data.fleetJobId ?? null,
       })
       .returning();
     if (!row) throw new Error('message insert failed');

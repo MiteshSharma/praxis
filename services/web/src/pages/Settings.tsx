@@ -5,7 +5,7 @@ import { rpc } from '../rpc';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-type Provider = 'anthropic' | 'openai' | 'openrouter';
+type Provider = 'anthropic' | 'openai' | 'openrouter' | 'azure';
 
 const PROVIDERS: Array<{
   id: Provider;
@@ -43,6 +43,17 @@ const PROVIDERS: Array<{
     extraFields: [
       { key: 'site_url',  label: 'Site URL',  placeholder: 'https://yourapp.com', required: false },
       { key: 'site_name', label: 'Site name', placeholder: 'My App',              required: false },
+    ],
+  },
+  {
+    id: 'azure',
+    name: 'Azure AI Foundry',
+    description: 'Azure OpenAI deployments. Model name must be your deployment name (not the underlying model), prefixed with azure/.',
+    docsHint: 'Endpoint and key are in Azure portal → Azure OpenAI → Keys and Endpoint. The model name after azure/ must match your deployment name exactly.',
+    modelExamples: ['azure/<your-deployment-name>'],
+    extraFields: [
+      { key: 'endpoint',    label: 'Endpoint',    placeholder: 'https://<resource>.openai.azure.com/ or https://<project>.services.ai.azure.com/models', required: true },
+      { key: 'api_version', label: 'API version', placeholder: '2025-01-01-preview (leave blank for default)',                                            required: false },
     ],
   },
 ];
@@ -216,6 +227,7 @@ const MODEL_EXAMPLES = [
   { label: 'OpenAI GPT-4o Mini',   value: 'gpt-4o-mini' },
   { label: 'OpenRouter — Gemini Flash', value: 'openrouter/google/gemini-2.0-flash-001' },
   { label: 'OpenRouter — Kimi K2', value: 'openrouter/moonshot/kimi-k2' },
+  { label: 'Azure — (use your deployment name)', value: 'azure/' },
 ];
 
 function SettingRow({ setting, onSave }: { setting: SettingDto; onSave: (key: string, value: string) => Promise<void> }) {

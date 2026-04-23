@@ -5,8 +5,11 @@
  * For OpenAI and other providers, use these definitions to build the function
  * list and ToolExecutor to execute the calls.
  *
- * Split into FILE_TOOLS (always available) and PLAN_TOOLS (plan phase only,
- * requires mcpEndpoint + mcpToken to be configured).
+ * READ_TOOLS  — read-only; used during plan phase so the agent can explore but
+ *               cannot skip straight to execution by editing files.
+ * FILE_TOOLS  — READ_TOOLS + write tools; used during execute phase.
+ * PLAN_TOOLS  — submit_plan only; added during plan/revise phases.
+ * MEMORY_TOOLS — query_memory; added when MCP is configured.
  */
 
 export interface ToolDefinition {
@@ -15,7 +18,8 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>; // JSON Schema object
 }
 
-export const FILE_TOOLS: ToolDefinition[] = [
+/** Read-only tools — safe during plan phase */
+export const READ_TOOLS: ToolDefinition[] = [
   {
     name: 'read_file',
     description: 'Read the full contents of a file.',
@@ -27,6 +31,37 @@ export const FILE_TOOLS: ToolDefinition[] = [
       required: ['path'],
     },
   },
+  {
+    name: 'glob',
+    description: 'Find files in the workspace matching a glob pattern, e.g. "src/**/*.ts".',
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', description: 'Glob pattern' },
+      },
+      required: ['pattern'],
+    },
+  },
+  {
+    name: 'grep',
+    description: 'Search for a regex pattern across files in the workspace.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', description: 'Regex pattern to search for' },
+        path: {
+          type: 'string',
+          description: 'Directory or file to search in (default: workspace root)',
+        },
+        glob: { type: 'string', description: 'File glob filter, e.g. "*.ts"' },
+      },
+      required: ['pattern'],
+    },
+  },
+];
+
+/** Write tools — execute phase only */
+const WRITE_TOOLS: ToolDefinition[] = [
   {
     name: 'write_file',
     description: 'Write content to a file, creating it if it does not exist.',
@@ -68,34 +103,10 @@ export const FILE_TOOLS: ToolDefinition[] = [
       required: ['command'],
     },
   },
-  {
-    name: 'glob',
-    description: 'Find files in the workspace matching a glob pattern, e.g. "src/**/*.ts".',
-    parameters: {
-      type: 'object',
-      properties: {
-        pattern: { type: 'string', description: 'Glob pattern' },
-      },
-      required: ['pattern'],
-    },
-  },
-  {
-    name: 'grep',
-    description: 'Search for a regex pattern across files in the workspace.',
-    parameters: {
-      type: 'object',
-      properties: {
-        pattern: { type: 'string', description: 'Regex pattern to search for' },
-        path: {
-          type: 'string',
-          description: 'Directory or file to search in (default: workspace root)',
-        },
-        glob: { type: 'string', description: 'File glob filter, e.g. "*.ts"' },
-      },
-      required: ['pattern'],
-    },
-  },
 ];
+
+/** All file tools — read + write; used during execute phase */
+export const FILE_TOOLS: ToolDefinition[] = [...READ_TOOLS, ...WRITE_TOOLS];
 
 export const MEMORY_TOOLS: ToolDefinition[] = [
   {

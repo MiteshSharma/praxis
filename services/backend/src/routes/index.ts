@@ -20,6 +20,7 @@ import { ProviderConfigsRepository } from '../repositories/provider-configs.repo
 import { MemoriesRepository } from '../repositories/memories.repository';
 import { SettingsRepository } from '../repositories/settings.repository';
 import { SettingsService } from '../services/settings.service';
+import { FleetsService } from '../services/fleets.service';
 import { auditRoutes } from './audit';
 import { healthRoutes } from './health';
 import { planReviewRoutes } from './plan-review';
@@ -53,6 +54,7 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   const secretBackend = secretBackendRegistry.create(env.SECRET_BACKEND, { db: deps.db });
   const providerConfigsService = new ProviderConfigsService(new ProviderConfigsRepository(deps.db), secretBackend);
   const settingsService = new SettingsService(new SettingsRepository(deps.db));
+  const fleetsService = new FleetsService(deps.db, deps.boss, deps.log);
 
   healthRoutes(app);
   sseRoutes(app);
@@ -62,6 +64,6 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   if (env.MCP_SHARED_SECRET) {
     planReviewRoutes(app, { plansService, mcpSecret: env.MCP_SHARED_SECRET });
   }
-  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, pluginsService, memoriesService, channelsService, costsService, providerConfigsService, settingsService });
+  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, pluginsService, memoriesService, channelsService, costsService, providerConfigsService, settingsService, fleetsService });
   await registerOpenApi(app);
 }

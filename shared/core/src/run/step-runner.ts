@@ -17,10 +17,12 @@ import { buildMemorySection, buildPlanSessionSystemPrompt } from '../prompts/pla
 import { buildRevisionSystemPrompt } from '../prompts/revision-session';
 import { buildScoutSystemPrompt } from '../prompts/scout-session';
 import { SCOUT_AGENT } from '../defaults/scout-agent';
+import { expandToolSets, type ToolSetName } from '../defaults/tool-sets';
 import type { TaskTracker } from '../task-tracker/task-tracker';
 import { parseSSE } from './sse';
 import { appendTimeline, transitionJob } from './transitions';
 import { buildResumeContext, isContextOverflowError } from './compress';
+import { classifyProviderError, jitteredBackoff } from './errors';
 
 const DEFAULT_PLAN_HOLD_HOURS = 24;
 
@@ -343,13 +345,22 @@ export class StepRunner {
     const planPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'plan', systemPrompt });
     await this.emit(job.id, planPromptSeq, { kind: 'prompt-snapshot', phase: 'plan', systemPrompt });
 
+    const planCfg = _step.config as { toolSets?: ToolSetName[] };
+    // Plan phase: only read-only tools. Write/Edit/Bash are forbidden so the
+    // agent cannot skip review by editing files directly — it must call submit_plan.
+    // MCP tools (submit_plan, query_memory) are auto-whitelisted by the provider.
+    const PLAN_READONLY_TOOLS = ['Read', 'Glob', 'Grep'];
+    const planAllowedTools = planCfg.toolSets?.length
+      ? expandToolSets(planCfg.toolSets, PLAN_READONLY_TOOLS)
+      : PLAN_READONLY_TOOLS;
+
     await this.callSandboxPrompt(
       job,
       sandboxInfo,
       {
         model: resolved?.model ?? job.model ?? undefined,
         systemPrompt,
-        allowedTools: resolved?.allowedTools,
+        allowedTools: planAllowedTools,
         workingDir: workspace,
         mcpToken,
         mcpEndpoint: this.deps.mcpEndpoint,
@@ -359,6 +370,17 @@ export class StepRunner {
       },
       log,
     );
+
+    // Verify the agent actually called submit_plan before finishing.
+    // Without this check, agents that edit files directly (ignoring plan-phase
+    // instructions) silently enter plan_review with no plan to show.
+    const submittedPlan = await this.deps.taskTracker.getLatestPlanForJob(job.id);
+    if (!submittedPlan) {
+      throw new Error(
+        'Plan phase ended without submit_plan being called. ' +
+        'The agent must call submit_plan to complete the planning phase.',
+      );
+    }
 
     await this.mustTransition(job.id, 'building', 'plan_ready');
     await this.mustTransition(job.id, 'plan_ready', 'plan_review');
@@ -458,6 +480,11 @@ export class StepRunner {
     const execPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'execute', systemPrompt });
     await this.emit(job.id, execPromptSeq, { kind: 'prompt-snapshot', phase: 'execute', systemPrompt });
 
+    const execCfg = step.config as { toolSets?: ToolSetName[]; condition?: string; recoveryContext?: string };
+    const execAllowedTools = execCfg.toolSets?.length
+      ? expandToolSets(execCfg.toolSets, resolved?.allowedTools)
+      : resolved?.allowedTools;
+
     const mcpToken = await this.mintToken(job.id);
 
     await this.mustTransition(job.id, 'preparing', 'executing');
@@ -474,7 +501,7 @@ export class StepRunner {
           {
             model: resolved?.model ?? job.model ?? undefined,
             systemPrompt: systemPrompt + resumeContext,
-            allowedTools: resolved?.allowedTools,
+            allowedTools: execAllowedTools,
             workingDir: workspace,
             mcpToken,
             mcpEndpoint: this.deps.mcpEndpoint,
@@ -645,6 +672,7 @@ export class StepRunner {
       sandboxInfo,
       {
         systemPrompt,
+        allowedTools: ['Read', 'Glob', 'Grep'],
         workingDir: workspace,
         mcpToken,
         mcpEndpoint: this.deps.mcpEndpoint,
@@ -970,6 +998,51 @@ export class StepRunner {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private async callSandboxPrompt(
+    job: Job,
+    sandboxInfo: SandboxInfo,
+    opts: {
+      model?: string;
+      systemPrompt: string;
+      allowedTools?: string[];
+      workingDir: string;
+      mcpToken?: string;
+      mcpEndpoint?: string;
+      sessionPhase: string;
+      plugins?: import('@shared/mcp').ResolvedPlugin[];
+      stepId?: string;
+    },
+    log: Logger,
+  ): Promise<void> {
+    const MAX_RETRIES = 4;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await this._callSandboxPromptOnce(job, sandboxInfo, opts, log);
+        return;
+      } catch (err) {
+        // Context overflow must be handled by the caller (needs buildResumeContext)
+        if (isContextOverflowError(err)) throw err;
+
+        const classified = classifyProviderError(err);
+        if (!classified.retryable || attempt === MAX_RETRIES) {
+          log.warn({ reason: classified.reason, attempt }, 'sandbox call failed — non-retryable or max retries');
+          throw err;
+        }
+
+        const delaySec = jitteredBackoff(
+          attempt,
+          classified.reason === 'rate_limit' ? 30 : 5,
+          classified.reason === 'rate_limit' ? 300 : 60,
+        );
+        log.warn(
+          { reason: classified.reason, attempt, delaySec: Math.round(delaySec) },
+          'sandbox call failed — retrying after delay',
+        );
+        await sleep(delaySec * 1000);
+      }
+    }
+  }
+
+  private async _callSandboxPromptOnce(
     job: Job,
     sandboxInfo: SandboxInfo,
     opts: {

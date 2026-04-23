@@ -10,6 +10,7 @@ interface CreatePluginInput {
   command?: string;
   url?: string;
   env?: Record<string, string>;
+  requiredEnv?: string[];
 }
 
 export class PluginsService {
@@ -30,6 +31,19 @@ export class PluginsService {
     if (input.transport === 'http' && !input.url) {
       throw new ORPCError('BAD_REQUEST', { message: 'url required for http transport' });
     }
+
+    if (input.requiredEnv?.length) {
+      const env = input.env ?? {};
+      const missing = input.requiredEnv.filter(
+        (key) => !(key in env) && !(key in process.env),
+      );
+      if (missing.length > 0) {
+        throw new ORPCError('BAD_REQUEST', {
+          message: `Plugin is missing required env vars: ${missing.join(', ')}`,
+        });
+      }
+    }
+
     return this.repo.create(input);
   }
 

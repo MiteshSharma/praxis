@@ -13,6 +13,7 @@ import type { WorkflowsService } from '../services/workflows.service';
 import type { CostsService } from '../services/costs.service';
 import type { ProviderConfigsService } from '../services/provider-configs.service';
 import type { SettingsService } from '../services/settings.service';
+import type { FleetsService } from '../services/fleets.service';
 
 interface RpcDeps {
   jobsService: JobsService;
@@ -26,6 +27,7 @@ interface RpcDeps {
   costsService: CostsService;
   providerConfigsService: ProviderConfigsService;
   settingsService: SettingsService;
+  fleetsService: FleetsService;
 }
 
 /**
@@ -315,6 +317,18 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
       summary: os.costs.summary.handler(({ input }) => deps.costsService.summary(input)),
       daily: os.costs.daily.handler(({ input }) => deps.costsService.daily(input)),
       byRepo: os.costs.byRepo.handler(({ input }) => deps.costsService.byRepo(input)),
+    },
+
+    fleets: {
+      list: os.fleets.list.handler(({ input }) => deps.fleetsService.list(input?.limit ?? 50)),
+      get: os.fleets.get.handler(({ input }) => deps.fleetsService.get(input.fleetId)),
+      getGraph: os.fleets.getGraph.handler(({ input }) => deps.fleetsService.getGraph(input.fleetId)),
+      createFanOut: os.fleets.createFanOut.handler(({ input }) => deps.fleetsService.createFanOut(input)),
+      cancel: os.fleets.cancel.handler(async ({ input }) => {
+        await deps.fleetsService.cancel(input.fleetId);
+        return { ok: true };
+      }),
+      spawnJob: os.fleets.spawnJob.handler(({ input }) => deps.fleetsService.spawnJob(input)),
     },
   };
 

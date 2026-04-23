@@ -1,4 +1,5 @@
 export { JobOrchestrator, type JobOrchestratorDeps, type ResumeMode } from './job-orchestrator';
+export { classifyProviderError, jitteredBackoff, type ClassifiedError, type ErrorReason } from './errors';
 export { StepRunner, type StepRunnerDeps, CheckFailedError, PlanRejectedError, HoldTimeoutError } from './step-runner';
 export { transitionJob, appendTimeline, type TransitionResult } from './transitions';
 export { recoverStuckJobs } from './recovery';

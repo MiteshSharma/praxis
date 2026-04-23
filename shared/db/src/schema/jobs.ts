@@ -34,6 +34,7 @@ export const jobs = pgTable(
     noChanges:     boolean('no_changes').notNull().default(false),
     output:        jsonb('output').$type<Record<string, unknown>>(),
     contextJobIds: jsonb('context_job_ids').$type<string[]>(),
+    messageId: uuid('message_id'), // message that created this job — enables all jobs from one message
 
     githubUrl: text('github_url').notNull(),
     githubBranch: text('github_branch').notNull().default('main'),

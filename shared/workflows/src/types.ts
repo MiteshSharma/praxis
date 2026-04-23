@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const TOOL_SET_NAMES = ['file', 'shell', 'memory', 'plan'] as const;
+
 // ── Agent definition ─────────────────────────────────────────────────────────
 
 export const AgentRefSchema = z.discriminatedUnion('ref', [
@@ -27,6 +29,8 @@ export const PlanStepDefSchema = z.object({
   agent: AgentRefSchema.optional().nullable(),
   // Skill used as the primary agent for this step (equivalent to agent)
   skillId: z.string().uuid().optional(),
+  /** Named tool sets to enable. Expanded into allowedTools before the step runs. */
+  toolSets: z.array(z.enum(TOOL_SET_NAMES)).optional(),
 });
 
 export const ExecuteStepDefSchema = z.object({
@@ -38,6 +42,8 @@ export const ExecuteStepDefSchema = z.object({
   // Skill used as the primary agent for this step (equivalent to agent)
   skillId: z.string().uuid().optional(),
   condition: z.enum(['previous_check_failed']).optional(),
+  /** Named tool sets to enable. Expanded into allowedTools before the step runs. */
+  toolSets: z.array(z.enum(TOOL_SET_NAMES)).optional(),
 });
 
 export const CheckStepDefSchema = z.object({

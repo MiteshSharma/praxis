@@ -36,12 +36,19 @@ export class ClaudeProvider implements AgentProvider {
     if (body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
     if (body.allowedTools?.length) options.allowedTools = body.allowedTools;
 
+    // Plan/revise phase: restrict built-in tools to read-only set so that
+    // Edit, Write, Bash are not available in the model's context at all.
+    // The model must call submit_plan (MCP) instead of editing files directly.
+    const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
+    if (isPlanPhase) {
+      options.tools = ['Read', 'Glob', 'Grep'];
+    }
+
     // Wire up in-process MCP tools (submit_plan for planning phases, query_memory always)
     if (body.mcpToken && body.mcpEndpoint) {
       const mcpEndpoint = body.mcpEndpoint;
       const mcpToken = body.mcpToken;
       const INTERNAL_MCP_SERVER = 'praxis-control-plane';
-      const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
 
       const submitPlanTool = isPlanPhase ? tool(
         'submit_plan',

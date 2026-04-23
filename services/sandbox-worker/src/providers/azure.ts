@@ -1,28 +1,42 @@
-import OpenAI from 'openai';
+import OpenAI, { AzureOpenAI } from 'openai';
 import type { PromptBody } from '../dto/agent.dto.js';
 import { registerProvider } from './registry.js';
 import type { AgentProvider } from './types.js';
 import { ToolExecutor } from './tools/executor.js';
 import { FILE_TOOLS, MEMORY_TOOLS, PLAN_TOOLS, READ_TOOLS, type ToolDefinition } from './tools/definitions.js';
 
-// Read-only tools that can be executed in parallel without side effects.
 const SAFE_TOOLS = new Set(['read_file', 'glob', 'grep', 'query_memory']);
 
 /**
- * OpenAI provider — GPT-4o, o-series, and Codex models.
- * Uses the openai SDK directly with a manual tool-calling loop.
- * Tools are passed as OpenAI function-calling format (JSON Schema) — no Zod bridge needed.
+ * Azure AI Foundry provider — supports two endpoint types:
+ *
+ * 1. Classic Azure OpenAI  (endpoint contains "openai.azure.com")
+ *    Endpoint:  https://<resource>.openai.azure.com/
+ *    Model:     azure/<deployment-name>  e.g. azure/gpt-4o
+ *    Uses AzureOpenAI client; api_version matters.
+ *
+ * 2. Azure AI Foundry project  (endpoint contains "services.ai.azure.com")
+ *    Endpoint:  https://<project>.services.ai.azure.com/models
+ *    Model:     azure/<model-name>  e.g. azure/gpt-4o
+ *    Uses standard OpenAI client with endpoint as baseURL; api_version ignored.
+ *
+ * Settings fields:
+ *   AZURE_OPENAI_API_KEY     — API key from Azure portal
+ *   AZURE_OPENAI_ENDPOINT    — endpoint URL (either format above)
+ *   AZURE_OPENAI_API_VERSION — optional, defaults to 2025-01-01-preview (classic only)
  */
-export class OpenAIProvider implements AgentProvider {
+export class AzureProvider implements AgentProvider {
   async run(
     body: PromptBody,
     signal: AbortSignal,
     emit: (chunk: unknown) => Promise<void>,
   ): Promise<void> {
-    const apiKey = body.env?.OPENAI_API_KEY ?? '';
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is required for the OpenAI provider');
-    }
+    const apiKey = body.env?.AZURE_OPENAI_API_KEY ?? '';
+    const endpoint = body.env?.AZURE_OPENAI_ENDPOINT ?? '';
+    if (!apiKey) throw new Error('AZURE_OPENAI_API_KEY is required for the Azure provider');
+    if (!endpoint) throw new Error('AZURE_OPENAI_ENDPOINT is required for the Azure provider');
+
+    const deployment = body.model ?? 'gpt-5.1-codex-mini';
 
     const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
     const hasMcp = !!(body.mcpToken && body.mcpEndpoint);
@@ -33,6 +47,8 @@ export class OpenAIProvider implements AgentProvider {
       mcpToken: body.mcpToken,
     });
 
+    // Plan phase gets read-only tools so the agent cannot skip to execution
+    // by editing files directly — it must call submit_plan instead.
     const defs: ToolDefinition[] = [
       ...(isPlanPhase ? READ_TOOLS : FILE_TOOLS),
       ...(isPlanPhase ? PLAN_TOOLS : []),
@@ -48,14 +64,25 @@ export class OpenAIProvider implements AgentProvider {
       },
     }));
 
-    const model = body.model ?? 'gpt-4o';
-    const userPrompt = [body.title, body.description ?? ''].filter(Boolean).join('\n\n');
-    const client = new OpenAI({ apiKey });
+    // Detect endpoint type and build the appropriate client.
+    // Foundry project endpoints use the standard OpenAI client with a custom baseURL.
+    // Classic Azure OpenAI endpoints use the AzureOpenAI client.
+    let client: OpenAI;
+    if (endpoint.includes('services.ai.azure.com')) {
+      // Azure AI Foundry project endpoint — OpenAI-compatible, no api-version needed
+      const baseURL = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
+      client = new OpenAI({ apiKey, baseURL });
+    } else {
+      // Classic Azure OpenAI endpoint
+      const apiVersion = body.env?.AZURE_OPENAI_API_VERSION ?? '2025-01-01-preview';
+      client = new AzureOpenAI({ apiKey, endpoint, apiVersion, deployment });
+    }
 
-    await emit({ type: 'system', model, cwd: body.workingDir });
+    await emit({ type: 'system', model: `azure/${deployment}`, cwd: body.workingDir });
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     if (body.systemPrompt) messages.push({ role: 'system', content: body.systemPrompt });
+    const userPrompt = [body.title, body.description ?? ''].filter(Boolean).join('\n\n');
     messages.push({ role: 'user', content: userPrompt });
 
     const maxTurns = body.maxTurns ?? 100;
@@ -70,7 +97,7 @@ export class OpenAIProvider implements AgentProvider {
         turns++;
 
         const response = await client.chat.completions.create({
-          model,
+          model: deployment,
           messages,
           ...(tools.length > 0 && { tools, tool_choice: 'auto' }),
         });
@@ -84,12 +111,10 @@ export class OpenAIProvider implements AgentProvider {
         const msg = choice.message;
         messages.push(msg as OpenAI.Chat.ChatCompletionMessageParam);
 
-        // Only process function-type tool calls (filter out custom tool calls)
         const fnCalls = (msg.tool_calls ?? []).filter(
           (tc): tc is OpenAI.Chat.ChatCompletionMessageFunctionToolCall => tc.type === 'function',
         );
 
-        // Emit normalized assistant message
         await emit({
           type: 'assistant',
           message: {
@@ -110,7 +135,6 @@ export class OpenAIProvider implements AgentProvider {
           break;
         }
 
-        // Execute safe (read-only) tool calls in parallel, unsafe ones sequentially.
         const safeCalls = fnCalls.filter((tc) => SAFE_TOOLS.has(tc.function.name));
         const unsafeCalls = fnCalls.filter((tc) => !SAFE_TOOLS.has(tc.function.name));
 
@@ -156,12 +180,11 @@ function parseJson(s: string): unknown {
   }
 }
 
+// Route gpt-*/o-series models to Azure when Azure keys are configured.
 registerProvider(
-  (model) =>
-    model.startsWith('gpt-') ||
-    model.startsWith('o1') ||
-    model.startsWith('o3') ||
-    model.startsWith('o4') ||
-    model.startsWith('codex-'),
-  () => new OpenAIProvider(),
+  (model, env) =>
+    !!env.AZURE_OPENAI_API_KEY &&
+    !!env.AZURE_OPENAI_ENDPOINT &&
+    (model.startsWith('gpt-') || model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4')),
+  () => new AzureProvider(),
 );

@@ -11,6 +11,7 @@ interface CreatePluginForm {
   transport: 'stdio' | 'http';
   command?: string;
   url?: string;
+  requiredEnv?: string;
 }
 
 export function PluginsPanel({ sessionId }: PluginsPanelProps) {
@@ -23,8 +24,12 @@ export function PluginsPanel({ sessionId }: PluginsPanelProps) {
   });
 
   const createMutation = useMutation({
-    mutationFn: (values: CreatePluginForm) =>
-      rpc.plugins.create({ sessionId, ...values }),
+    mutationFn: ({ requiredEnv, ...values }: CreatePluginForm) =>
+      rpc.plugins.create({
+        sessionId,
+        ...values,
+        requiredEnv: requiredEnv ? requiredEnv.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['plugins', sessionId] });
       form.resetFields();
@@ -54,28 +59,38 @@ export function PluginsPanel({ sessionId }: PluginsPanelProps) {
         </Typography.Text>
       )}
 
-      {pluginsQuery.data?.map((p) => (
-        <div
-          key={p.id}
-          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-        >
-          <Switch
-            size="small"
-            checked={p.enabled}
-            onChange={(enabled) => toggleMutation.mutate({ id: p.id, enabled })}
-          />
-          <Typography.Text style={{ flex: 1 }}>{p.name}</Typography.Text>
-          <Tag>{p.transport}</Tag>
-          <Button
-            size="small"
-            danger
-            type="text"
-            onClick={() => deleteMutation.mutate(p.id)}
-          >
-            ×
-          </Button>
-        </div>
-      ))}
+      {pluginsQuery.data?.map((p) => {
+        const missingEnv = (p.requiredEnv ?? []).filter((k) => !(k in (p.env ?? {})));
+        return (
+          <div key={p.id}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Switch
+                size="small"
+                checked={p.enabled}
+                onChange={(enabled) => toggleMutation.mutate({ id: p.id, enabled })}
+              />
+              <Typography.Text style={{ flex: 1 }}>{p.name}</Typography.Text>
+              <Tag>{p.transport}</Tag>
+              <Button
+                size="small"
+                danger
+                type="text"
+                onClick={() => deleteMutation.mutate(p.id)}
+              >
+                ×
+              </Button>
+            </div>
+            {missingEnv.length > 0 && (
+              <Alert
+                type="warning"
+                message={`Missing env vars (may be set on server): ${missingEnv.join(', ')}`}
+                style={{ marginTop: 4, fontSize: 11 }}
+                showIcon
+              />
+            )}
+          </div>
+        );
+      })}
 
       <Divider style={{ margin: '12px 0' }} />
 
@@ -99,6 +114,9 @@ export function PluginsPanel({ sessionId }: PluginsPanelProps) {
             <Input placeholder="http://mcp-server:3000" />
           </Form.Item>
         )}
+        <Form.Item name="requiredEnv" label="Required env vars" style={{ marginBottom: 8 }}>
+          <Input placeholder="API_KEY, SECRET_TOKEN (comma-separated)" />
+        </Form.Item>
         {createMutation.error && (
           <Alert type="error" message={String(createMutation.error)} style={{ marginBottom: 8 }} />
         )}

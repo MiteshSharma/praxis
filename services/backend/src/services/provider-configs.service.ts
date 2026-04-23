@@ -1,7 +1,7 @@
 import type { SecretBackend } from '@shared/core';
 import type { ProviderConfigsRepository } from '../repositories/provider-configs.repository';
 
-export const SUPPORTED_PROVIDERS = ['anthropic', 'openai', 'openrouter'] as const;
+export const SUPPORTED_PROVIDERS = ['anthropic', 'openai', 'openrouter', 'azure'] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 export interface ProviderConfigDto {

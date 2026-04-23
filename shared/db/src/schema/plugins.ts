@@ -14,6 +14,7 @@ export const plugins = pgTable(
     command: text('command'),
     url: text('url'),
     env: jsonb('env').notNull().default(sql`'{}'::jsonb`),
+    requiredEnv: jsonb('required_env').notNull().default(sql`'[]'::jsonb`),
     enabled: boolean('enabled').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

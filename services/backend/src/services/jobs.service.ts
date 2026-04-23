@@ -19,6 +19,7 @@ interface CreateFromSessionInput {
   workflowId?: string;
   autoApprove?: boolean;
   triggerKind?: 'user_prompt' | 'scout';
+  fleetJobId?: string;
 }
 
 /**
@@ -60,7 +61,6 @@ export class JobsService {
       });
     }
 
-    const parentJobId = await this.sessionsRepo.findLastCompletedJobId(input.sessionId);
     const { title, description } = splitWebInput(input.task);
 
     const resolvedWorkflowId = input.workflowId ?? session.defaultWorkflowId ?? null;
@@ -72,6 +72,7 @@ export class JobsService {
       sessionId: input.sessionId,
       role: 'user',
       content: input.task,
+      fleetJobId: input.fleetJobId ?? null,
     });
 
     const { id: jobId } = await this.ingest.ingest({
@@ -83,13 +84,16 @@ export class JobsService {
       githubUrl,
       githubBranch: 'main',
       conversationId: input.sessionId,
-      parentJobId: parentJobId ?? undefined,
+      parentJobId: undefined,
       workflowVersionId,
       model: session.model ?? null,
       autoApprove: input.autoApprove ?? false,
     });
 
     await this.sessionsRepo.updateMessageJobId(userMsg.id, jobId);
+
+    // Set jobs.message_id so we can find all jobs created from this message
+    await this.db.update(jobs).set({ messageId: userMsg.id }).where(eq(jobs.id, jobId));
 
     const row = await this.repo.findById(jobId);
     if (!row) throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'job not found after creation' });

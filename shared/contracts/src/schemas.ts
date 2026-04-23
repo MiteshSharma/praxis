@@ -274,7 +274,7 @@ export type SettingDto = z.infer<typeof SettingSchema>;
 // ── Provider configs ──────────────────────────────────────────────────────────
 
 export const ProviderConfigSchema = z.object({
-  provider: z.enum(['anthropic', 'openai', 'openrouter']),
+  provider: z.enum(['anthropic', 'openai', 'openrouter', 'azure']),
   configured: z.boolean(),
   maskedKey: z.string().nullable(),
   config: z.record(z.string()),
@@ -289,7 +289,10 @@ export const PluginSchema = z.object({
   command: z.string().nullable(),
   url: z.string().nullable(),
   env: z.record(z.string()),
+  requiredEnv: z.array(z.string()).optional(),
   enabled: z.boolean(),
   createdAt: z.string(),
 });
 export type PluginDto = z.infer<typeof PluginSchema>;
+
+export * from './fleet-schemas';

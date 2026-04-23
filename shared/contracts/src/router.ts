@@ -22,6 +22,7 @@ import {
   WorkflowSchema,
 } from './schemas';
 import { JobStatusSchema } from './events';
+import { FleetSchema, FleetJobSchema, FleetGraphSchema } from './fleet-schemas';
 
 /**
  * The contract. Handlers are implemented in services/backend via oRPC's
@@ -384,6 +385,7 @@ export const contract = {
           command: z.string().optional(),
           url: z.string().url().optional(),
           env: z.record(z.string()).optional(),
+          requiredEnv: z.array(z.string()).optional(),
         }),
       )
       .output(PluginSchema),
@@ -401,7 +403,7 @@ export const contract = {
     upsert: oc
       .input(
         z.object({
-          provider: z.enum(['anthropic', 'openai', 'openrouter']),
+          provider: z.enum(['anthropic', 'openai', 'openrouter', 'azure']),
           apiKey: z.string().min(1),
           config: z.record(z.string()).optional(),
         }),
@@ -409,7 +411,7 @@ export const contract = {
       .output(z.object({ ok: z.boolean() })),
 
     delete: oc
-      .input(z.object({ provider: z.enum(['anthropic', 'openai', 'openrouter']) }))
+      .input(z.object({ provider: z.enum(['anthropic', 'openai', 'openrouter', 'azure']) }))
       .output(z.object({ ok: z.boolean() })),
   },
 
@@ -433,6 +435,49 @@ export const contract = {
     byRepo: oc
       .input(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() }).optional())
       .output(z.array(RepoCostSchema)),
+  },
+
+  fleets: {
+    list: oc
+      .input(z.object({ limit: z.number().int().positive().max(100).default(50) }).optional())
+      .output(z.array(FleetSchema)),
+
+    get: oc
+      .input(z.object({ fleetId: z.string().uuid() }))
+      .output(FleetSchema.extend({ jobs: z.array(FleetJobSchema) })),
+
+    getGraph: oc
+      .input(z.object({ fleetId: z.string().uuid() }))
+      .output(FleetGraphSchema),
+
+    createFanOut: oc
+      .input(
+        z.object({
+          title: z.string().min(1),
+          goal: z.string().min(1),
+          task: z.string().min(1),
+          sessionIds: z.array(z.string().uuid()).min(1).max(50),
+          autoApprove: z.boolean().optional(),
+          maxParallel: z.number().int().min(1).max(50).optional(),
+        }),
+      )
+      .output(FleetSchema),
+
+    cancel: oc
+      .input(z.object({ fleetId: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
+
+    spawnJob: oc
+      .input(
+        z.object({
+          fleetId: z.string().uuid(),
+          jobType: z.enum(['scout', 'implement', 'verify']),
+          sessionId: z.string().uuid(),
+          task: z.string().min(1),
+          dependsOn: z.array(z.string().uuid()).optional(),
+        }),
+      )
+      .output(FleetJobSchema),
   },
 };
 

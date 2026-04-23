@@ -483,6 +483,7 @@ export function SessionDetail() {
                 </div>
               )}
             </div>
+
           );
         })}
 

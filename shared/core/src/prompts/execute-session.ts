@@ -23,5 +23,12 @@ changed in a final message.
 Do not deviate from the approved plan. If you discover the plan cannot
 be executed as written, stop and describe the problem in your final
 message — do not improvise.
+
+---
+As you work, if you observe something repo-specific that future jobs would benefit
+from knowing (a non-obvious convention, an architectural decision, a tech debt item),
+add a brief comment in the form:
+  <!-- PRAXIS_MEMORY: <observation> -->
+anywhere in your response. The learning pass will incorporate it into MEMORY.md.
 `;
 }

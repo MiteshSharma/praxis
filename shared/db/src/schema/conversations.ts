@@ -25,6 +25,7 @@ export const messages = pgTable(
     role: text('role').notNull(), // 'user' | 'assistant' | 'system'
     content: text('content').notNull(),
     jobId: uuid('job_id'), // references jobs — no FK here to avoid circular schema dep
+    fleetJobId: uuid('fleet_job_id'), // set when this message was sent by fleet runner
     metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

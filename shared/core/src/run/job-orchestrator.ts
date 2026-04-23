@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
 import type { JobStatus, NotifyEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
-import { type Database, type Job, SETTING_DEFAULTS, SETTING_KEYS, type SettingKey, artifacts, jobSteps, jobTimeline, jobs, plans, sandboxes, settings, workflowVersions } from '@shared/db';
+import { type Database, type Job, SETTING_DEFAULTS, SETTING_KEYS, type SettingKey, artifacts, jobSteps, jobTimeline, jobs, plans, providerConfigs, sandboxes, settings, workflowVersions } from '@shared/db';
 import { type MemoryBackend, S3MemoryBackend, normalizeRepoKey } from '@shared/memory';
 import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
 import type { SecretBackend } from '../plugins/secret-backends/types.js';
@@ -18,6 +18,7 @@ import type { TaskTracker } from '../task-tracker/task-tracker';
 import { HoldTimeoutError, PlanRejectedError, StepRunner } from './step-runner';
 import { appendTimeline, transitionJob } from './transitions';
 import { runLearningPass } from './learning';
+import { classifyProviderError } from './errors';
 import { runReportPass } from './report';
 import { SCOUT_WORKFLOW } from '../defaults/scout-workflow';
 import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
@@ -126,11 +127,7 @@ export class JobOrchestrator {
       this.stepRunner.setAuxiliaryModel(auxModel);
       await this.stepRunner.run(jobRow, sandboxInfo);
 
-      // ── QA loop ──────────────────────────────────────────────────────────
-      const praxisConfig = await this.readPraxisConfig(sandboxInfo, workspace, jobLog);
-      if (praxisConfig?.qa?.steps?.length) {
-        await this.runQaLoop(jobRow, sandboxInfo, workspace, praxisConfig.qa, jobLog, providerEnv);
-      }
+      // QA loop disabled
 
       // ── Publish / Scout completion ───────────────────────────────────────
       await this.mustTransition(jobId, 'preparing', 'publishing');
@@ -720,19 +717,39 @@ export class JobOrchestrator {
   // ── Provider key resolution ────────────────────────────────────────────────
 
   private async resolveProviderEnv(): Promise<Record<string, string>> {
-    const { secretBackend } = this.deps;
+    const { secretBackend, db } = this.deps;
     const env: Record<string, string> = {};
 
+    // Load API keys from secret backend (fall back to process.env)
     const pairs: Array<[string, string]> = [
       ['provider:anthropic', 'ANTHROPIC_API_KEY'],
       ['provider:openai', 'OPENAI_API_KEY'],
       ['provider:openrouter', 'OPENROUTER_API_KEY'],
+      ['provider:azure', 'AZURE_OPENAI_API_KEY'],
     ];
 
     for (const [secretKey, envKey] of pairs) {
       const dbKey = secretBackend ? await secretBackend.get(secretKey) : null;
       const resolved = dbKey ?? process.env[envKey] ?? '';
       if (resolved) env[envKey] = resolved;
+    }
+
+    // Load non-secret config fields from provider_configs table.
+    // Each provider maps its config keys to env var names.
+    const configEnvMap: Record<string, Record<string, string>> = {
+      openrouter: { site_url: 'OPENROUTER_SITE_URL', site_name: 'OPENROUTER_SITE_NAME' },
+      azure: { endpoint: 'AZURE_OPENAI_ENDPOINT', api_version: 'AZURE_OPENAI_API_VERSION' },
+    };
+
+    const rows = await db.select().from(providerConfigs);
+    for (const row of rows) {
+      const mapping = configEnvMap[row.provider];
+      if (!mapping) continue;
+      const config = (row.config ?? {}) as Record<string, string>;
+      for (const [configKey, envKey] of Object.entries(mapping)) {
+        const val = config[configKey] ?? process.env[envKey] ?? '';
+        if (val) env[envKey] = val;
+      }
     }
 
     return env;
@@ -902,7 +919,9 @@ export class JobOrchestrator {
     log: Logger,
   ): Promise<void> {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    log.error({ err }, 'job failed');
+    const classified = classifyProviderError(err);
+    const errorCategory = classified.retryable ? 'transient' : classified.reason;
+    log.error({ err, errorCategory }, 'job failed');
 
     // Re-query the actual current status — the initial jobRow snapshot is stale
     // after multiple transitions.
@@ -918,13 +937,13 @@ export class JobOrchestrator {
         assertTransition(currentStatus, 'failed');
         const failed = await transitionJob(this.deps.db, jobId, currentStatus, 'failed', {
           errorMessage,
-          errorCategory: 'permanent',
+          errorCategory,
         });
         if (failed) {
           await this.emit(jobId, failed.seq + 1, {
             kind: 'failed',
             error: errorMessage,
-            errorCategory: 'permanent',
+            errorCategory,
           });
         }
       } catch {

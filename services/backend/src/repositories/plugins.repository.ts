@@ -19,6 +19,7 @@ export class PluginsRepository {
     command?: string;
     url?: string;
     env?: Record<string, string>;
+    requiredEnv?: string[];
   }): Promise<PluginDto> {
     const [row] = await this.db.insert(plugins).values({
       conversationId: data.sessionId,
@@ -27,6 +28,7 @@ export class PluginsRepository {
       command: data.command ?? null,
       url: data.url ?? null,
       env: data.env ?? {},
+      requiredEnv: data.requiredEnv ?? [],
     }).returning();
     if (!row) throw new Error('plugin insert failed');
     return toPluginDto(row);

@@ -14,3 +14,4 @@ export * from './conversation-channels';
 export * from './secrets';
 export * from './provider-configs';
 export * from './settings';
+export * from './fleet';
