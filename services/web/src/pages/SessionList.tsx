@@ -120,7 +120,7 @@ export function SessionList() {
           </div>
           <p className="empty-state-title">No sessions yet</p>
           <p className="empty-state-description">
-            Create a session to start sending coding tasks to Praxis.
+            Create a session to start sending coding tasks to your repos.
           </p>
           <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
             New session
