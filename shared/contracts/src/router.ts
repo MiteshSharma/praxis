@@ -13,6 +13,7 @@ import {
   JobStepSchema,
   MessageSchema,
   PlanSchema,
+  PlatformConfigSchema,
   PluginSchema,
   ProviderConfigSchema,
   RepoMemoryListItemSchema,
@@ -412,6 +413,25 @@ export const contract = {
 
     delete: oc
       .input(z.object({ provider: z.enum(['anthropic', 'openai', 'openrouter', 'azure']) }))
+      .output(z.object({ ok: z.boolean() })),
+  },
+
+  platformConfigs: {
+    list: oc.output(z.array(PlatformConfigSchema)),
+
+    upsert: oc
+      .input(
+        z.object({
+          platform: z.string().min(1),
+          secrets:  z.record(z.string()),
+          config:   z.record(z.string()).optional(),
+          enabled:  z.boolean().optional(),
+        }),
+      )
+      .output(z.object({ ok: z.boolean() })),
+
+    delete: oc
+      .input(z.object({ platform: z.string().min(1) }))
       .output(z.object({ ok: z.boolean() })),
   },
 

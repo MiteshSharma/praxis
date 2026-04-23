@@ -1,11 +1,10 @@
 import OpenAI, { AzureOpenAI } from 'openai';
 import type { PromptBody } from '../dto/agent.dto.js';
+import { ExecService } from '../services/exec.service.js';
 import { registerProvider } from './registry.js';
 import type { AgentProvider } from './types.js';
-import { ToolExecutor } from './tools/executor.js';
-import { FILE_TOOLS, MEMORY_TOOLS, PLAN_TOOLS, READ_TOOLS, type ToolDefinition } from './tools/definitions.js';
-
-const SAFE_TOOLS = new Set(['read_file', 'glob', 'grep', 'query_memory']);
+import { toolRegistry } from './tools/index.js';
+import type { ToolContext, Phase } from './tools/index.js';
 
 /**
  * Azure AI Foundry provider — supports two endpoint types:
@@ -38,24 +37,19 @@ export class AzureProvider implements AgentProvider {
 
     const deployment = body.model ?? 'gpt-5.1-codex-mini';
 
-    const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
-    const hasMcp = !!(body.mcpToken && body.mcpEndpoint);
+    const phase: Phase =
+      body.sessionPhase === 'plan' || body.sessionPhase === 'revise' ? body.sessionPhase : 'execute';
 
-    const executor = new ToolExecutor({
+    const ctx: ToolContext = {
       workingDir: body.workingDir,
       mcpEndpoint: body.mcpEndpoint,
       mcpToken: body.mcpToken,
-    });
+      exec: new ExecService(),
+    };
 
-    // Plan phase gets read-only tools so the agent cannot skip to execution
-    // by editing files directly — it must call submit_plan instead.
-    const defs: ToolDefinition[] = [
-      ...(isPlanPhase ? READ_TOOLS : FILE_TOOLS),
-      ...(isPlanPhase ? PLAN_TOOLS : []),
-      ...(hasMcp ? MEMORY_TOOLS : []),
-    ];
+    const availableTools = toolRegistry.getForPhase(phase, ctx);
 
-    const tools: OpenAI.Chat.ChatCompletionTool[] = defs.map((def) => ({
+    const tools: OpenAI.Chat.ChatCompletionTool[] = toolRegistry.toFunctionSchema(availableTools).map((def) => ({
       type: 'function',
       function: {
         name: def.name,
@@ -64,16 +58,16 @@ export class AzureProvider implements AgentProvider {
       },
     }));
 
+    const safeToolNames = new Set(
+      availableTools.filter((t) => t.tags.includes('read-only')).map((t) => t.name),
+    );
+
     // Detect endpoint type and build the appropriate client.
-    // Foundry project endpoints use the standard OpenAI client with a custom baseURL.
-    // Classic Azure OpenAI endpoints use the AzureOpenAI client.
     let client: OpenAI;
     if (endpoint.includes('services.ai.azure.com')) {
-      // Azure AI Foundry project endpoint — OpenAI-compatible, no api-version needed
       const baseURL = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
       client = new OpenAI({ apiKey, baseURL });
     } else {
-      // Classic Azure OpenAI endpoint
       const apiVersion = body.env?.AZURE_OPENAI_API_VERSION ?? '2025-01-01-preview';
       client = new AzureOpenAI({ apiKey, endpoint, apiVersion, deployment });
     }
@@ -135,13 +129,12 @@ export class AzureProvider implements AgentProvider {
           break;
         }
 
-        const safeCalls = fnCalls.filter((tc) => SAFE_TOOLS.has(tc.function.name));
-        const unsafeCalls = fnCalls.filter((tc) => !SAFE_TOOLS.has(tc.function.name));
+        const safeCalls = fnCalls.filter((tc) => safeToolNames.has(tc.function.name));
+        const unsafeCalls = fnCalls.filter((tc) => !safeToolNames.has(tc.function.name));
 
         const executeAndEmit = async (tc: OpenAI.Chat.ChatCompletionMessageFunctionToolCall): Promise<OpenAI.Chat.ChatCompletionToolMessageParam> => {
           const args = parseJson(tc.function.arguments) as Record<string, unknown>;
-          const result = await executor.execute(tc.function.name, args);
-          const content = typeof result === 'string' ? result : JSON.stringify(result);
+          const content = await toolRegistry.execute(tc.function.name, args, ctx);
           await emit({
             type: 'user',
             message: { content: [{ type: 'tool_result', tool_use_id: tc.id, content }] },

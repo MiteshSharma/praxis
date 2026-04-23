@@ -1,6 +1,6 @@
 # Praxis
 
-> **Praxis is the only coding agent platform where no code reaches a pull request without a human approving the plan — with full audit trail, per-repo institutional memory, and customizable workflows for your engineering standards.**
+> **Praxis is the coding agent platform where no code reaches a pull request without a human approving the plan — with full audit trail, per-repo institutional memory, and customizable workflows for your engineering standards.**
 
 ---
 
@@ -68,17 +68,43 @@ Every status transition is streamed live to the UI via SSE.
 
 ## Features
 
-- **Plan-first workflow** — agent always proposes a structured plan (title, summary, steps, affected paths, risks, open questions) before touching any code.
-- **Human-in-the-loop review** — hot hold (10 min) waits for approve / revise / reject before executing. Cold resume if the hold expires.
-- **Repo memory** — per-repo `MEMORY.md` stored in MinIO. Injected into the plan prompt so agents accumulate knowledge across jobs on the same repo.
-- **Multi-step workflows** — configurable plan / execute / check step sequences. Recovery execute steps run automatically after a failed check.
+### Core workflow
+- **Plan-first, always** — agent proposes a structured plan (title, summary, steps, affected paths, risks, open questions) before touching any code. No exceptions.
+- **Human-in-the-loop review** — configurable hold (default 24 h, 1–168 h range) waits for approve / revise / reject. Up to 5 revision cycles before auto-rejection. Cold resume if the hold expires.
+- **Deterministic check steps** — wire your own shell commands (tests, lint, type-check) as check steps. A failed check triggers an automatic recovery execute with the failure output injected as context.
 - **Live timeline** — SSE stream shows every agent turn, tool call, status transition, and artifact in real time.
-- **Phase progress bar** — visual indicator across Planning → Plan review → Executing → Publishing PR → Learning → Done.
-- **Cost tracking** — input tokens, output tokens, and estimated USD cost stored per job and displayed in the header.
-- **Multi-provider sandbox** — provider-agnostic architecture; Claude (Anthropic) and OpenAI/Codex are both active. Set model name in conversation settings to switch providers.
-- **Per-conversation model selection** — override the default model per conversation; `claude-*` routes to Claude, `gpt-*`/`o-series`/`codex-*` routes to OpenAI.
+- **Phase progress bar** — visual indicator across Planning → Plan review → Executing → Checking → Publishing PR → Learning → Done.
+
+### Fleet — multi-repo orchestration
+- **Fan-out fleet** — submit one task against N repos simultaneously. Each repo runs its own plan → review → execute pipeline in parallel (configurable `maxParallel`, default 10).
+- **Scout → implement pipeline** — fleet jobs can be typed as `scout` (read-only investigation) or `implement` (full plan/execute). Scout findings are injected as upstream context into dependent implement jobs.
+- **DAG view** — React Flow graph shows each repo as a node, colour-coded by status (running, completed, failed, no-op). Live updates via SSE.
+- **No-op tracking** — repos where the agent makes no changes are marked `noop` (not failures) so fleet progress is never blocked.
+
+### Scout jobs
+- **Read-only exploration** — submit a scout job to have the agent investigate a repo and produce structured findings (frameworks, patterns, existing implementations, missing pieces) without touching any files or opening a PR.
+- **Upstream context injection** — reference scout job IDs when creating an implement job; findings are automatically injected into the execute system prompt.
+
+### Memory & learning
+- **Per-repo persistent memory** — after every job a learning pass updates a structured `MEMORY.md` in MinIO. The next job on the same repo starts with accumulated conventions, pitfalls, and architectural decisions.
+- **Repo-level agent rules** — if the repo contains `AGENTS.md`, `.praxis/rules.md`, or `.cursorrules`, the file is automatically prepended to the plan and execute system prompts. No configuration needed.
+- **Inspectable and editable** — memory files are human-readable Markdown. Edit or delete them from the Memory page.
+
+### Workflows & agents
+- **Composable workflow DSL** — define workflows as ordered sequences of `plan`, `execute`, `check`, and `scout` steps. Each step can override the model, agent, skill set, and tool permissions.
+- **Custom agents and skills** — create agents with custom system prompts and tool lists. Attach reusable skills (with `dependsOn` for sub-agent composition). Versioned and swappable per conversation.
+- **Job follow-up** — create a dependent child job from any completed job; the parent plan is injected as context so the agent continues where the previous job left off.
+
+### Providers & integrations
+- **Multi-provider sandbox** — provider-agnostic `AgentProvider` registry; Claude, OpenAI/Codex, Azure AI Foundry, and OpenRouter are all active. Set the model name in conversation settings to switch.
+- **Per-conversation model selection** — `claude-*` → Claude, `gpt-*`/`o-series`/`codex-*` → OpenAI, `azure/*` → Azure AI Foundry, `openrouter/*` → OpenRouter.
+- **Slack messaging channel** — connect a Slack bot to receive tasks, get plan-ready notifications in-thread, and approve/reject plans directly from Slack. Intent classification routes messages automatically.
 - **MCP plugins** — per-conversation MCP servers (stdio or HTTP) wired into agent sessions.
+
+### Visibility & operations
+- **Cost tracking** — input tokens, output tokens, and estimated USD recorded per job. Cost dashboard shows daily breakdowns and per-repo aggregates.
 - **Restart** — any failed job can be restarted with one click; a new job is created from the same inputs.
+- **API-first** — every feature is available via the oRPC contract. Auto-generated API docs at `/docs`.
 
 ---
 
@@ -185,6 +211,10 @@ Backend reads `.env.local` (then `.env`) at startup via Node 24's built-in `proc
 | `STORAGE_SECRET_KEY` | `minioadmin` | MinIO secret key |
 | `STORAGE_REGION` | `us-east-1` | Storage region |
 | `OPENAI_API_KEY` | — | Optional — used for `gpt-*`, `o1`/`o3`/`o4-*`, `codex-*` models |
+| `AZURE_OPENAI_API_KEY` | — | Optional — Azure AI Foundry or Azure OpenAI API key |
+| `AZURE_OPENAI_ENDPOINT` | — | Optional — Azure endpoint URL (classic: `*.openai.azure.com`, Foundry: `*.services.ai.azure.com/models`) |
+| `AZURE_OPENAI_API_VERSION` | `2025-01-01-preview` | Optional — API version for classic Azure OpenAI only |
+| `OPENROUTER_API_KEY` | — | Optional — used for `openrouter/*` models |
 | `MEMORY_BACKEND` | `s3` | `s3` (MinIO/S3), `builtin` (Postgres FTS), `qmd`, or `honcho` |
 | `OTEL_TRACES` | `off` | `off`, `console`, or `otlp` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Required when `OTEL_TRACES=otlp` |
@@ -201,6 +231,7 @@ make dev-backend         # backend only (MODE=all)
 make dev-sandbox-worker  # sandbox-worker only
 make dev-web             # Vite dev server only
 
+make test                # run unit tests (vitest)
 make typecheck           # tsc --noEmit across the workspace
 make lint                # Biome check
 make format              # Biome format --write
@@ -252,16 +283,19 @@ praxis/
     │   └── src/
     │       ├── control-plane.ts   mounts RPC, SSE, health, MCP routes
     │       ├── worker.ts          pg-boss consumer
-    │       ├── routes/            rpc.ts, sse.ts, health.ts
-    │       └── services/          jobs, plans, workflows, agents,
-    │                              conversations, plugins, memories
+    │       ├── routes/            rpc.ts, sse.ts, health.ts, slack.ts
+    │       ├── services/          jobs, plans, workflows, agents,
+    │       │                      conversations, plugins, memories, platform-configs
+    │       ├── adapters/          platform adapters (Slack), intent classifier, handler dispatch
+    │       └── channels/          PraxisChannel implementations (slack.channel.ts)
     │
     ├── sandbox-worker/            Hono server running inside the sandbox
     │   └── src/
     │       ├── routes/            /prompt, /exec, /publish, /abort, /health
     │       ├── services/          agent, exec, publish
-    │       └── providers/         AgentProvider interface + ProviderRegistry + Claude, OpenAI, Demo
-    │           └── tools/         ToolDefinition schemas + ToolExecutor (for non-Claude providers)
+    │       └── providers/         AgentProvider interface + ProviderRegistry
+    │           │                  Claude, OpenAI, Azure, OpenRouter, Demo
+    │           └── tools/         Tool interface + ToolRegistry + built-in tool implementations
     │
     └── web/                       Vite + React + AntD + TanStack Query
         └── src/
@@ -309,13 +343,16 @@ The sandbox-worker uses a self-registering provider registry — each AI provide
 providers/
   types.ts           AgentProvider interface + normalized SSE format spec
   registry.ts        ProviderRegistry — ordered (matcher, factory) pairs; first match wins
-  index.ts           barrel: imports claude, openai, demo in priority order
+  index.ts           barrel: imports providers in priority order
   claude.ts          Anthropic Claude — handles claude-* models
   openai.ts          OpenAI / Codex — handles gpt-*, o1/o3/o4-*, codex-* models
+  azure.ts           Azure AI Foundry / Azure OpenAI — handles azure/* models
+  openrouter.ts      OpenRouter — handles openrouter/* models
   demo.ts            Deterministic demo agent (no API key needed) — catch-all
   tools/
-    definitions.ts   Tool schemas in OpenAI function-calling format
-    executor.ts      Executes read_file, write_file, edit_file, bash, glob, grep, submit_plan
+    definitions.ts   Tool interface, ToolContext, ToolTag; all tool constants with inline execute handlers
+    registry.ts      ToolRegistry — register, getForPhase (phase-aware filtering), execute, toFunctionSchema
+    index.ts         barrel — registers all built-in tools, exports toolRegistry singleton
 ```
 
 To add a new provider: create `providers/<name>.ts`, implement `AgentProvider.run()`, call `registerProvider(matcherFn, factory)` at module level, add the import to `providers/index.ts`. The orchestrator, step-runner, and UI need no changes.

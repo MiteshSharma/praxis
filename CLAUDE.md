@@ -183,6 +183,7 @@ services/
       rpc.ts                             ALL oRPC handlers wired here
       sse.ts                             GET /sse/jobs/:id — streams timeline events
       health.ts                          /health, /ready
+      slack.ts                           POST /channels/slack/events — acks Slack, enqueues to pg-boss
     services/
       jobs.service.ts
       plans.service.ts                   approve / revise / reject
@@ -192,18 +193,28 @@ services/
       plugins.service.ts
       memories.service.ts                listRepos, get, update, delete repo memory files
       notifier.service.ts
+      platform-configs.service.ts        upsert/list/delete platform secrets (Slack botToken, signingSecret)
     repositories/
-      jobs.repository.ts
+      jobs.repository.ts                 findLatestBySessionId added for Slack status queries
       plans.repository.ts
       workflows.repository.ts
       agents.repository.ts
       conversations.repository.ts
       plugins.repository.ts
+      platform-configs.repository.ts     persists platform_configs rows
     queues/
       index.ts
       job-execute.ts                     consumer — runs JobOrchestrator
       notify-dispatch.ts                 consumer — fans out SSE events
       recover-stuck.ts                   cron — detects hung jobs
+      slack-process.ts                   consumer — classifies intent, dispatches to handler
+    adapters/
+      types.ts                           IncomingMessage + PlatformAdapter interfaces
+      slack.ts                           SlackAdapter — HMAC verify, parseWebhook, send, formatText
+      intent-classifier.ts               single-turn Anthropic call → submit_job | status_query | approval | unknown
+      handlers.ts                        handleIncoming, handleSessionSetup, handleSubmitJob, handleApproval, findThreadForJob
+    channels/
+      slack.channel.ts                   PraxisChannel impl — onPlanReady, onJobCompleted, onJobFailed
     control-plane/mcp/
       submit-plan.ts                     POST /mcp/submit_plan + POST /mcp/query_memory
     middleware/
@@ -233,13 +244,16 @@ services/
     providers/
       types.ts                           AgentProvider interface + normalized SSE format
       registry.ts                        ProviderRegistry — ordered (matcher, factory) pairs
-      index.ts                           barrel: imports claude, openai, demo in priority order
+      index.ts                           barrel: imports providers in priority order
       claude.ts                          ClaudeProvider — handles claude-* models; self-registers
       openai.ts                          OpenAIProvider — handles gpt-*, o-series, codex-*; self-registers
+      azure.ts                           AzureProvider — handles azure/* models (classic + AI Foundry); self-registers
+      openrouter.ts                      OpenRouterProvider — handles openrouter/* models; self-registers
       demo.ts                            DemoProvider — deterministic catch-all; self-registers last
       tools/
-        definitions.ts                   tool schemas in OpenAI function-calling format
-        executor.ts                      executes read_file, write_file, edit_file, bash, glob, grep, submit_plan, query_memory
+        definitions.ts                   Tool interface, ToolContext, ToolTag; all tool constants with inline execute handlers
+        registry.ts                      ToolRegistry — register, getForPhase (phase-aware + isAvailable filter), execute, toFunctionSchema
+        index.ts                         barrel — registers all built-in tools, exports toolRegistry singleton
     middleware/
       error-handler.ts
       validate.ts
@@ -441,7 +455,7 @@ const jobsMyAction = os.jobs.myAction.handler(({ input }) =>
    Tool name → auto-whitelisted as `mcp__praxis-control-plane__<name>`.
 2. Add the HTTP handler in `services/backend/src/control-plane/mcp/` and register it in `registerMcpRoutes`.
 
-Note: internal MCP tools are Claude-specific (the Claude SDK has a native `tool()` helper). For OpenAI or other providers, tool calls go through `providers/tools/executor.ts` instead.
+Note: internal MCP tools are Claude-specific (the Claude SDK has a native `tool()` helper). For OpenAI and other providers, tool calls go through `toolRegistry.execute()` in `providers/tools/index.ts` instead — the handler logic lives on each `Tool` object in `definitions.ts`.
 
 ---
 
@@ -479,6 +493,9 @@ await emitNotification(boss, jobId, seq, { kind: 'chunk', raw: data });
 | `REDIS_URL` | Redis (pg-boss + plan-event pub/sub) |
 | `ANTHROPIC_API_KEY` | Claude API key (forwarded to sandbox-worker) |
 | `OPENAI_API_KEY` | OpenAI API key — used for `gpt-*`, `o1`/`o3`/`o4-*`, `codex-*` models |
+| `AZURE_OPENAI_API_KEY` | Azure AI Foundry or Azure OpenAI API key |
+| `AZURE_OPENAI_ENDPOINT` | Azure endpoint URL — classic: `*.openai.azure.com`, Foundry: `*.services.ai.azure.com/models` |
+| `OPENROUTER_API_KEY` | OpenRouter API key — used for `openrouter/*` models |
 | `GITHUB_TOKEN` | Clone repos + open PRs |
 | `MCP_SHARED_SECRET` | Signs MCP JWTs — must be ≥ 32 chars |
 | `CONTROL_PLANE_MCP_URL` | URL sandbox calls for MCP, e.g. `http://localhost:3000/mcp` |
@@ -499,7 +516,7 @@ await emitNotification(boss, jobId, seq, { kind: 'chunk', raw: data });
 - **Branch created at clone time** (`praxis/job-<8-char-id>`) by `JobOrchestrator.cloneRepo`. The execute agent writes to this branch; `/publish` just commits + pushes it — never runs `git checkout -b`.
 - **SSE error propagation**: if `agent.service.ts` throws, the sandbox-worker emits `{ type: 'error', error: '...' }` into the stream. `callSandboxPrompt` in step-runner detects this and re-throws, which `failJob` catches and transitions to `failed`.
 - **Repo memory**: storage backend is selected by `MEMORY_BACKEND` env var (`s3` by default). Memory is injected into the plan-session system prompt; the `query_memory` MCP tool also makes it available during execute phase. Hard limit 32 KB / 20 entries per section. Learning pass runs after all steps as a single-turn agent call; failures are logged at warn and do NOT fail the job.
-- **Provider selection by model prefix**: `claude-*` → `ClaudeProvider`, `gpt-*`/`o1*`/`o3*`/`o4*`/`codex-*` → `OpenAIProvider`, anything else → `DemoProvider`. Resolved at runtime by `ProviderRegistry` in `providers/index.ts`.
+- **Provider selection by model prefix**: `claude-*` → `ClaudeProvider`, `gpt-*`/`o1*`/`o3*`/`o4*`/`codex-*` → `OpenAIProvider` (or `AzureProvider` if Azure keys present), `azure/*` → `AzureProvider`, `openrouter/*` → `OpenRouterProvider`, anything else → `DemoProvider`. Resolved at runtime by `ProviderRegistry` in `providers/index.ts`. Azure takes priority over OpenAI for `gpt-*`/`o-series` when `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` are both set.
 - **Storage not configured**: when `MEMORY_BACKEND=s3` (default) and STORAGE_* env vars are absent, `@shared/storage` throws `StorageNotConfiguredError`. `loadMemoryFile` returns `null`, `runLearningPass` logs warn and skips. Jobs still complete normally. Use `MEMORY_BACKEND=builtin` to avoid this dependency entirely.
 - **Adding a shared utility**: place in `shared/<existing-package>/src/`, re-export from its `index.ts`. Only create a new package for genuinely independent concerns.
 - **Tests**: `vitest` is installed but no `vitest.config.ts` exists yet. Create one at repo root and place test files as `*.test.ts` beside source files.

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import type { PromptBody } from '../dto/agent.dto';
+import { ExecService } from '../services/exec.service.js';
 import { registerProvider } from './registry.js';
 import type { AgentProvider } from './types';
+import { toolRegistry } from './tools/index.js';
 
 /**
  * Claude provider — uses @anthropic-ai/claude-agent-sdk.
@@ -38,19 +40,23 @@ export class ClaudeProvider implements AgentProvider {
 
     // Plan/revise phase: restrict built-in tools to read-only set so that
     // Edit, Write, Bash are not available in the model's context at all.
-    // The model must call submit_plan (MCP) instead of editing files directly.
     const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
     if (isPlanPhase) {
       options.tools = ['Read', 'Glob', 'Grep'];
     }
 
-    // Wire up in-process MCP tools (submit_plan for planning phases, query_memory always)
+    // Wire up in-process MCP tools (submit_plan for plan phases, query_memory always)
     if (body.mcpToken && body.mcpEndpoint) {
-      const mcpEndpoint = body.mcpEndpoint;
-      const mcpToken = body.mcpToken;
+      const ctx = {
+        workingDir: body.workingDir,
+        mcpEndpoint: body.mcpEndpoint,
+        mcpToken: body.mcpToken,
+        exec: new ExecService(),
+      };
+
       const INTERNAL_MCP_SERVER = 'praxis-control-plane';
 
-      const submitPlanTool = isPlanPhase ? tool(
+      const submitPlanSdkTool = isPlanPhase ? tool(
         'submit_plan',
         'Submit a structured implementation plan for user review. Call this once you have analysed the codebase and are ready to propose a plan.',
         {
@@ -84,67 +90,28 @@ export class ClaudeProvider implements AgentProvider {
             .describe('Questions for the user before execution begins'),
         },
         async (args) => {
-          const res = await fetch(`${mcpEndpoint}/submit_plan`, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              authorization: `Bearer ${mcpToken}`,
-            },
-            body: JSON.stringify({
-              ...args,
-              steps: args.steps.map((s) => ({ ...s, status: s.status ?? 'pending' })),
-            }),
-          });
-
-          if (!res.ok) {
-            const text = await res.text().catch(() => '');
-            return {
-              content: [{ type: 'text' as const, text: `submit_plan failed (${res.status}): ${text}` }],
-              isError: true,
-            };
-          }
-
-          const data = (await res.json()) as { planId: string; version: number };
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Plan submitted successfully. planId=${data.planId} version=${data.version}. The user will review the plan and either approve, revise, or reject it.`,
-              },
-            ],
+          const normalizedArgs = {
+            ...args,
+            steps: args.steps.map((s) => ({ ...s, status: s.status ?? 'pending' })),
           };
+          const result = await toolRegistry.execute('submit_plan', normalizedArgs as Record<string, unknown>, ctx);
+          const isError = result.startsWith('submit_plan failed') || result.startsWith('Error:');
+          return { content: [{ type: 'text' as const, text: result }], ...(isError && { isError: true }) };
         },
       ) : null;
 
-      const queryMemoryTool = tool(
+      const queryMemorySdkTool = tool(
         'query_memory',
-        'Query the repository\'s memory for past design decisions, architectural patterns, and conventions. Use this when you need context about how similar problems were solved before or to stay consistent with existing patterns.',
+        "Query the repository's memory for past design decisions, architectural patterns, and conventions. Use this when you need context about how similar problems were solved before or to stay consistent with existing patterns.",
         { query: z.string().describe('Natural language question about the codebase design or conventions') },
         async (args) => {
-          const res = await fetch(`${mcpEndpoint}/query_memory`, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              authorization: `Bearer ${mcpToken}`,
-            },
-            body: JSON.stringify({ query: args.query }),
-          });
-
-          if (!res.ok) {
-            return { content: [{ type: 'text' as const, text: `query_memory failed (${res.status})` }], isError: true };
-          }
-
-          const data = (await res.json()) as { content: string | null; source: string | null; truncated: boolean };
-          if (!data.content) {
-            return { content: [{ type: 'text' as const, text: 'No memory found for this repository.' }] };
-          }
-
-          const suffix = data.truncated ? `\n\n*(results filtered to most relevant chunks — source: ${data.source})*` : '';
-          return { content: [{ type: 'text' as const, text: `${data.content}${suffix}` }] };
+          const result = await toolRegistry.execute('query_memory', args as Record<string, unknown>, ctx);
+          const isError = result.startsWith('query_memory failed') || result.startsWith('Error:');
+          return { content: [{ type: 'text' as const, text: result }], ...(isError && { isError: true }) };
         },
       );
 
-      const internalTools = [queryMemoryTool, ...(submitPlanTool ? [submitPlanTool] : [])];
+      const internalTools = [queryMemorySdkTool, ...(submitPlanSdkTool ? [submitPlanSdkTool] : [])];
       options.mcpServers = {
         [INTERNAL_MCP_SERVER]: createSdkMcpServer({
           name: INTERNAL_MCP_SERVER,

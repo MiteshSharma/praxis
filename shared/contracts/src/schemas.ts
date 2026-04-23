@@ -248,7 +248,7 @@ export type ReviewCommentDto = z.infer<typeof ReviewCommentSchema>;
 export const SessionChannelSchema = z.object({
   id: z.string().uuid(),
   sessionId: z.string().uuid(),
-  type: z.enum(['webhook']),
+  type: z.enum(['webhook', 'slack']),
   name: z.string(),
   config: z.record(z.unknown()),
   enabled: z.boolean(),
@@ -294,5 +294,16 @@ export const PluginSchema = z.object({
   createdAt: z.string(),
 });
 export type PluginDto = z.infer<typeof PluginSchema>;
+
+// ── Platform configs ──────────────────────────────────────────────────────────
+
+export const PlatformConfigSchema = z.object({
+  platform:      z.string(),
+  enabled:       z.boolean(),
+  configured:    z.boolean(),
+  maskedSecrets: z.record(z.string()).nullable(),
+  config:        z.record(z.string()),
+});
+export type PlatformConfigDto = z.infer<typeof PlatformConfigSchema>;
 
 export * from './fleet-schemas';

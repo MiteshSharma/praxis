@@ -1,17 +1,14 @@
 import OpenAI from 'openai';
 import type { PromptBody } from '../dto/agent.dto.js';
+import { ExecService } from '../services/exec.service.js';
 import { registerProvider } from './registry.js';
 import type { AgentProvider } from './types.js';
-import { ToolExecutor } from './tools/executor.js';
-import { FILE_TOOLS, MEMORY_TOOLS, PLAN_TOOLS, READ_TOOLS, type ToolDefinition } from './tools/definitions.js';
-
-// Read-only tools that can be executed in parallel without side effects.
-const SAFE_TOOLS = new Set(['read_file', 'glob', 'grep', 'query_memory']);
+import { toolRegistry } from './tools/index.js';
+import type { ToolContext, Phase } from './tools/index.js';
 
 /**
  * OpenAI provider — GPT-4o, o-series, and Codex models.
  * Uses the openai SDK directly with a manual tool-calling loop.
- * Tools are passed as OpenAI function-calling format (JSON Schema) — no Zod bridge needed.
  */
 export class OpenAIProvider implements AgentProvider {
   async run(
@@ -24,22 +21,19 @@ export class OpenAIProvider implements AgentProvider {
       throw new Error('OPENAI_API_KEY is required for the OpenAI provider');
     }
 
-    const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
-    const hasMcp = !!(body.mcpToken && body.mcpEndpoint);
+    const phase: Phase =
+      body.sessionPhase === 'plan' || body.sessionPhase === 'revise' ? body.sessionPhase : 'execute';
 
-    const executor = new ToolExecutor({
+    const ctx: ToolContext = {
       workingDir: body.workingDir,
       mcpEndpoint: body.mcpEndpoint,
       mcpToken: body.mcpToken,
-    });
+      exec: new ExecService(),
+    };
 
-    const defs: ToolDefinition[] = [
-      ...(isPlanPhase ? READ_TOOLS : FILE_TOOLS),
-      ...(isPlanPhase ? PLAN_TOOLS : []),
-      ...(hasMcp ? MEMORY_TOOLS : []),
-    ];
+    const availableTools = toolRegistry.getForPhase(phase, ctx);
 
-    const tools: OpenAI.Chat.ChatCompletionTool[] = defs.map((def) => ({
+    const tools: OpenAI.Chat.ChatCompletionTool[] = toolRegistry.toFunctionSchema(availableTools).map((def) => ({
       type: 'function',
       function: {
         name: def.name,
@@ -64,6 +58,11 @@ export class OpenAIProvider implements AgentProvider {
     let outputTokens = 0;
     let finalText = '';
 
+    // Read-only tools can run in parallel; write tools run sequentially.
+    const safeToolNames = new Set(
+      availableTools.filter((t) => t.tags.includes('read-only')).map((t) => t.name),
+    );
+
     try {
       while (turns < maxTurns) {
         if (signal.aborted) break;
@@ -84,12 +83,10 @@ export class OpenAIProvider implements AgentProvider {
         const msg = choice.message;
         messages.push(msg as OpenAI.Chat.ChatCompletionMessageParam);
 
-        // Only process function-type tool calls (filter out custom tool calls)
         const fnCalls = (msg.tool_calls ?? []).filter(
           (tc): tc is OpenAI.Chat.ChatCompletionMessageFunctionToolCall => tc.type === 'function',
         );
 
-        // Emit normalized assistant message
         await emit({
           type: 'assistant',
           message: {
@@ -110,14 +107,12 @@ export class OpenAIProvider implements AgentProvider {
           break;
         }
 
-        // Execute safe (read-only) tool calls in parallel, unsafe ones sequentially.
-        const safeCalls = fnCalls.filter((tc) => SAFE_TOOLS.has(tc.function.name));
-        const unsafeCalls = fnCalls.filter((tc) => !SAFE_TOOLS.has(tc.function.name));
+        const safeCalls = fnCalls.filter((tc) => safeToolNames.has(tc.function.name));
+        const unsafeCalls = fnCalls.filter((tc) => !safeToolNames.has(tc.function.name));
 
         const executeAndEmit = async (tc: OpenAI.Chat.ChatCompletionMessageFunctionToolCall): Promise<OpenAI.Chat.ChatCompletionToolMessageParam> => {
           const args = parseJson(tc.function.arguments) as Record<string, unknown>;
-          const result = await executor.execute(tc.function.name, args);
-          const content = typeof result === 'string' ? result : JSON.stringify(result);
+          const content = await toolRegistry.execute(tc.function.name, args, ctx);
           await emit({
             type: 'user',
             message: { content: [{ type: 'tool_result', tool_use_id: tc.id, content }] },

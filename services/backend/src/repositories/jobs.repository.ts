@@ -90,6 +90,16 @@ export class JobsRepository {
       .where(eq(jobs.id, jobId));
   }
 
+  async findLatestBySessionId(sessionId: string): Promise<JobDto | null> {
+    const [row] = await this.db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.conversationId, sessionId))
+      .orderBy(desc(jobs.createdAt))
+      .limit(1);
+    return row ? toJobDto(row) : null;
+  }
+
   async delete(jobId: string): Promise<void> {
     await this.db.delete(jobs).where(eq(jobs.id, jobId));
   }

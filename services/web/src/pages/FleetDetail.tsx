@@ -1,4 +1,4 @@
-import type { FleetGraphDto, FleetJobDto } from '@shared/contracts';
+import type { FleetDto, FleetGraphDto, FleetJobDto } from '@shared/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button, Card, Descriptions, Popconfirm, Space, Tag, Typography } from 'antd';
 import dagre from 'dagre';
@@ -8,7 +8,9 @@ import {
   Background,
   Controls,
   type Edge,
+  Handle,
   type Node,
+  Position,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -26,24 +28,56 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: '#d9d9d9',
 };
 
+const FLEET_STATUS_COLOR: Record<string, string> = {
+  running: '#1677ff',
+  scouting: '#722ed1',
+  planning: '#fa8c16',
+  implementing: '#1677ff',
+  completed: '#52c41a',
+  failed: '#ff4d4f',
+  cancelled: '#8c8c8c',
+  draft: '#8c8c8c',
+  paused: '#fa8c16',
+};
+
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 80;
+const FLEET_NODE_WIDTH = 260;
+const FLEET_NODE_HEIGHT = 72;
+const FLEET_ROOT_ID = '__fleet__';
 
-function layoutGraph(graphData: FleetGraphDto): { nodes: Node[]; edges: Edge[] } {
+function layoutGraph(graphData: FleetGraphDto, fleetId: string): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'LR', nodesep: 40, ranksep: 80 });
+  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 70 });
   g.setDefaultEdgeLabel(() => ({}));
+
+  // Fleet root node
+  g.setNode(FLEET_ROOT_ID, { width: FLEET_NODE_WIDTH, height: FLEET_NODE_HEIGHT });
 
   for (const node of graphData.nodes) {
     g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
   }
+
+  // Fleet → every job node
+  for (const node of graphData.nodes) {
+    g.setEdge(FLEET_ROOT_ID, node.id);
+  }
+  // Existing dep edges between jobs
   for (const edge of graphData.edges) {
     g.setEdge(edge.from, edge.to);
   }
 
   dagre.layout(g);
 
-  const nodes: Node[] = graphData.nodes.map((n) => {
+  const fleetPos = g.node(FLEET_ROOT_ID);
+  const fleetRootNode: Node = {
+    id: FLEET_ROOT_ID,
+    type: 'fleetRoot',
+    position: { x: fleetPos.x - FLEET_NODE_WIDTH / 2, y: fleetPos.y - FLEET_NODE_HEIGHT / 2 },
+    data: { fleetId },
+  };
+
+  const jobNodes: Node[] = graphData.nodes.map((n) => {
     const pos = g.node(n.id);
     return {
       id: n.id,
@@ -51,26 +85,36 @@ function layoutGraph(graphData: FleetGraphDto): { nodes: Node[]; edges: Edge[] }
       data: n,
       style: {
         background: STATUS_COLOR[n.status] ?? '#d9d9d9',
-        border: n.noChanges ? '2px dashed #8c8c8c' : '1px solid #d9d9d9',
+        border: n.noChanges ? '2px dashed #8c8c8c' : '1px solid rgba(0,0,0,0.12)',
         borderRadius: 8,
         padding: '8px 12px',
         width: NODE_WIDTH,
         minHeight: NODE_HEIGHT,
         opacity: n.status === 'cancelled' ? 0.5 : 1,
+        cursor: 'pointer',
       },
-      type: 'default',
+      type: 'jobNode',
     };
   });
 
-  const edges: Edge[] = graphData.edges.map((e) => ({
+  // Fleet → job edges (structural)
+  const fleetEdges: Edge[] = graphData.nodes.map((n) => ({
+    id: `${FLEET_ROOT_ID}-${n.id}`,
+    source: FLEET_ROOT_ID,
+    target: n.id,
+    style: { stroke: '#d9d9d9', strokeWidth: 1.5 },
+  }));
+
+  // Job → job dep edges
+  const depEdges: Edge[] = graphData.edges.map((e) => ({
     id: e.id,
     source: e.from,
     target: e.to,
     animated: !e.satisfied,
-    style: { stroke: e.satisfied ? '#52c41a' : '#8c8c8c' },
+    style: { stroke: e.satisfied ? '#52c41a' : '#8c8c8c', strokeWidth: 1.5 },
   }));
 
-  return { nodes, edges };
+  return { nodes: [fleetRootNode, ...jobNodes], edges: [...fleetEdges, ...depEdges] };
 }
 
 // Maps fine-grained Praxis job status to a short human label shown on the node
@@ -92,17 +136,65 @@ const JOB_STATUS_LABEL: Record<string, string> = {
   cancelled: 'cancelled',
 };
 
-function NodeLabel({ data }: { data: FleetGraphDto['nodes'][0] }) {
+// Custom fleet root node — shows fleet title + live progress bar
+function FleetRootNode({ data }: { data: { fleetId: string } }) {
+  const fleetQuery = useQuery({
+    queryKey: ['fleet', data.fleetId],
+    queryFn: () => rpc.fleets.get({ fleetId: data.fleetId }),
+    enabled: !!data.fleetId,
+  });
+
+  const fleet = fleetQuery.data;
+  const color = fleet ? (FLEET_STATUS_COLOR[fleet.status] ?? '#1677ff') : '#1677ff';
+  const done = fleet ? fleet.completedJobs + fleet.noopJobs : 0;
+  const total = fleet?.totalJobs ?? 0;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const isActive = fleet && ['running', 'scouting', 'implementing', 'planning'].includes(fleet.status);
+
+  return (
+    <div
+      style={{
+        width: FLEET_NODE_WIDTH,
+        minHeight: FLEET_NODE_HEIGHT,
+        background: color,
+        borderRadius: 10,
+        padding: '10px 14px',
+        color: '#fff',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+        position: 'relative',
+      }}
+    >
+      <Handle type="source" position={Position.Bottom} style={{ background: color, border: 'none' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        {isActive && <span className="fleet-node-pulse" style={{ color: '#fff' }} />}
+        <span style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {fleet?.title ?? '…'}
+        </span>
+        <span style={{ fontSize: 10, opacity: 0.85, whiteSpace: 'nowrap' }}>{fleet?.status ?? ''}</span>
+      </div>
+      {total > 0 && (
+        <div>
+          <div style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 4, height: 4, overflow: 'hidden' }}>
+            <div style={{ background: '#fff', width: `${pct}%`, height: '100%', borderRadius: 4, transition: 'width 0.4s' }} />
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.85, marginTop: 3 }}>{done}/{total} done</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JobNode({ data }: { data: FleetGraphDto['nodes'][0] }) {
   const isLight = data.status === 'running' || data.status === 'queued';
   const textColor = isLight ? '#fff' : '#000';
   const isActive = data.status === 'running' || data.status === 'queued';
 
-  // Prefer fine-grained Praxis job status when available, else fall back to fleet job status
   const liveLabel = data.jobStatus ? (JOB_STATUS_LABEL[data.jobStatus] ?? data.jobStatus) : null;
   const statusLabel = (data.status === 'running' && liveLabel) ? liveLabel : data.status;
 
   return (
     <div style={{ fontSize: 12, color: textColor }}>
+      <Handle type="target" position={Position.Top} style={{ background: 'transparent', border: 'none' }} />
       <div style={{ fontWeight: 600, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {data.sessionTitle ?? data.sessionId.slice(0, 8)}
       </div>
@@ -117,6 +209,7 @@ function NodeLabel({ data }: { data: FleetGraphDto['nodes'][0] }) {
           {data.currentStep}
         </div>
       )}
+      <Handle type="source" position={Position.Bottom} style={{ background: 'transparent', border: 'none' }} />
     </div>
   );
 }
@@ -131,7 +224,6 @@ function JobDetailPanel({ job, onClose }: { job: FleetJobDto; onClose: () => voi
       extra={<Button size="small" onClick={onClose}>✕</Button>}
       style={{ height: '100%', overflow: 'auto' }}
     >
-      {/* Live activity banner when running */}
       {job.status === 'running' && liveLabel && (
         <div style={{
           background: '#e6f4ff',
@@ -196,7 +288,7 @@ function JobDetailPanel({ job, onClose }: { job: FleetJobDto; onClose: () => voi
   );
 }
 
-function FleetSummary({ fleet }: { fleet: { totalJobs: number; completedJobs: number; noopJobs: number; failedJobs: number; runningJobs: number } }) {
+function FleetSummary({ fleet }: { fleet: FleetDto }) {
   return (
     <div style={{ padding: 16 }}>
       <Typography.Title level={5} style={{ margin: '0 0 12px' }}>Fleet Summary</Typography.Title>
@@ -232,7 +324,7 @@ export function FleetDetail() {
     queryKey: ['fleet-graph', fleetId],
     queryFn: () => rpc.fleets.getGraph({ fleetId: fleetId! }),
     enabled: !!fleetId,
-    refetchInterval: (data) => {
+    refetchInterval: () => {
       const fleetStatus = fleetQuery.data?.status;
       return fleetStatus && ['running', 'scouting', 'implementing', 'planning'].includes(fleetStatus) ? 5000 : false;
     },
@@ -244,19 +336,21 @@ export function FleetDetail() {
   });
 
   const { nodes: layoutNodes, edges: layoutEdges } = useMemo(() => {
-    if (!graphQuery.data) return { nodes: [], edges: [] };
-    return layoutGraph(graphQuery.data);
-  }, [graphQuery.data]);
+    if (!graphQuery.data || !fleetId) return { nodes: [], edges: [] };
+    return layoutGraph(graphQuery.data, fleetId);
+  }, [graphQuery.data, fleetId]);
 
   const nodeTypes = useMemo(
-    () => ({ default: ({ data }: { data: FleetGraphDto['nodes'][0] }) => <NodeLabel data={data} /> }),
+    () => ({
+      fleetRoot: FleetRootNode,
+      jobNode: ({ data }: { data: FleetGraphDto['nodes'][0] }) => <JobNode data={data} />,
+    }),
     [],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutEdges);
 
-  // Sync React Flow state whenever graph data reloads (polling or initial fetch)
   useEffect(() => {
     setNodes(layoutNodes);
     setEdges(layoutEdges);
@@ -264,6 +358,7 @@ export function FleetDetail() {
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      if (node.id === FLEET_ROOT_ID) return;
       setSelectedJobId(node.id === selectedJobId ? null : node.id);
     },
     [selectedJobId],
@@ -315,6 +410,7 @@ export function FleetDetail() {
             onNodeClick={onNodeClick}
             nodeTypes={nodeTypes}
             fitView
+            fitViewOptions={{ padding: 0.15 }}
           >
             <Background />
             <Controls />

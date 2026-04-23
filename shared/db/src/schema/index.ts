@@ -15,3 +15,5 @@ export * from './secrets';
 export * from './provider-configs';
 export * from './settings';
 export * from './fleet';
+export * from './platform-sessions';
+export * from './platform-configs';

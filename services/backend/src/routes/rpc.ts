@@ -14,6 +14,7 @@ import type { CostsService } from '../services/costs.service';
 import type { ProviderConfigsService } from '../services/provider-configs.service';
 import type { SettingsService } from '../services/settings.service';
 import type { FleetsService } from '../services/fleets.service';
+import type { PlatformConfigsService } from '../services/platform-configs.service';
 
 interface RpcDeps {
   jobsService: JobsService;
@@ -26,6 +27,7 @@ interface RpcDeps {
   channelsService: ChannelsService;
   costsService: CostsService;
   providerConfigsService: ProviderConfigsService;
+  platformConfigsService: PlatformConfigsService;
   settingsService: SettingsService;
   fleetsService: FleetsService;
 }
@@ -329,6 +331,23 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
         return { ok: true };
       }),
       spawnJob: os.fleets.spawnJob.handler(({ input }) => deps.fleetsService.spawnJob(input)),
+    },
+
+    platformConfigs: {
+      list: os.platformConfigs.list.handler(() => deps.platformConfigsService.list()),
+      upsert: os.platformConfigs.upsert.handler(async ({ input }) => {
+        await deps.platformConfigsService.upsert(
+          input.platform,
+          input.secrets,
+          input.config ?? {},
+          input.enabled ?? true,
+        );
+        return { ok: true };
+      }),
+      delete: os.platformConfigs.delete.handler(async ({ input }) => {
+        await deps.platformConfigsService.delete(input.platform);
+        return { ok: true };
+      }),
     },
   };
 

@@ -1,9 +1,10 @@
 import OpenAI from 'openai';
 import type { PromptBody } from '../dto/agent.dto.js';
+import { ExecService } from '../services/exec.service.js';
 import { registerProvider } from './registry.js';
 import type { AgentProvider } from './types.js';
-import { ToolExecutor } from './tools/executor.js';
-import { FILE_TOOLS, MEMORY_TOOLS, PLAN_TOOLS, type ToolDefinition } from './tools/definitions.js';
+import { toolRegistry } from './tools/index.js';
+import type { ToolContext, Phase } from './tools/index.js';
 
 /**
  * OpenRouter provider — routes any model via openrouter.ai's OpenAI-compatible API.
@@ -21,22 +22,19 @@ export class OpenRouterProvider implements AgentProvider {
       throw new Error('OPENROUTER_API_KEY is required for the OpenRouter provider');
     }
 
-    const isPlanPhase = body.sessionPhase === 'plan' || body.sessionPhase === 'revise';
-    const hasMcp = !!(body.mcpToken && body.mcpEndpoint);
+    const phase: Phase =
+      body.sessionPhase === 'plan' || body.sessionPhase === 'revise' ? body.sessionPhase : 'execute';
 
-    const executor = new ToolExecutor({
+    const ctx: ToolContext = {
       workingDir: body.workingDir,
       mcpEndpoint: body.mcpEndpoint,
       mcpToken: body.mcpToken,
-    });
+      exec: new ExecService(),
+    };
 
-    const defs: ToolDefinition[] = [
-      ...FILE_TOOLS,
-      ...(isPlanPhase ? PLAN_TOOLS : []),
-      ...(hasMcp ? MEMORY_TOOLS : []),
-    ];
+    const availableTools = toolRegistry.getForPhase(phase, ctx);
 
-    const tools: OpenAI.Chat.ChatCompletionTool[] = defs.map((def) => ({
+    const tools: OpenAI.Chat.ChatCompletionTool[] = toolRegistry.toFunctionSchema(availableTools).map((def) => ({
       type: 'function',
       function: {
         name: def.name,
@@ -117,19 +115,15 @@ export class OpenRouterProvider implements AgentProvider {
           break;
         }
 
-        const toolResults: OpenAI.Chat.ChatCompletionToolMessageParam[] = [];
         for (const tc of fnCalls) {
           const args = parseJson(tc.function.arguments) as Record<string, unknown>;
-          const result = await executor.execute(tc.function.name, args);
-          const content = typeof result === 'string' ? result : JSON.stringify(result);
-          toolResults.push({ role: 'tool', tool_call_id: tc.id, content });
+          const content = await toolRegistry.execute(tc.function.name, args, ctx);
+          messages.push({ role: 'tool', tool_call_id: tc.id, content });
           await emit({
             type: 'user',
             message: { content: [{ type: 'tool_result', tool_use_id: tc.id, content }] },
           });
         }
-
-        messages.push(...toolResults);
       }
 
       await emit({

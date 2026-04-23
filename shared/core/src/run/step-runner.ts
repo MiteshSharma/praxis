@@ -15,6 +15,7 @@ import { dispatchToConversation } from '../channels/dispatch';
 import { buildExecuteSystemPrompt } from '../prompts/execute-session';
 import { buildMemorySection, buildPlanSessionSystemPrompt } from '../prompts/plan-session';
 import { buildRevisionSystemPrompt } from '../prompts/revision-session';
+import { loadRepoContext } from '../prompts/repo-context';
 import { buildScoutSystemPrompt } from '../prompts/scout-session';
 import { SCOUT_AGENT } from '../defaults/scout-agent';
 import { expandToolSets, type ToolSetName } from '../defaults/tool-sets';
@@ -334,7 +335,9 @@ export class StepRunner {
     }
 
     const resolved = await this.resolveStepAgent(_step, job.model ?? undefined);
-    const basePrompt = buildPlanSessionSystemPrompt(parentContext, workspace);
+    const repoContext = await loadRepoContext(workspace);
+    const repoContextSection = repoContext ? `## Repo-level agent rules\n\n${repoContext}\n\n` : '';
+    const basePrompt = `${repoContextSection}${buildPlanSessionSystemPrompt(parentContext, workspace)}`;
     const memorySection = this.deps.memoryMarkdown
       ? buildMemorySection(this.deps.memoryMarkdown)
       : '';
@@ -442,17 +445,19 @@ export class StepRunner {
     const plan = await this.deps.taskTracker.getLatestPlanForJob(job.id);
 
     const cfg = step.config as { condition?: string; recoveryContext?: string };
+    const repoContext = await loadRepoContext(workspace);
+    const repoContextSection = repoContext ? `## Repo-level agent rules\n\n${repoContext}\n\n` : '';
     let systemPrompt: string;
 
     if (cfg.condition === 'previous_check_failed' && cfg.recoveryContext) {
       // Recovery execute: inject failure context into system prompt
       const base = plan ? buildExecuteSystemPrompt(plan, workspace) : '';
-      systemPrompt = `${base}\n\n## Recovery context\n\nThe previous check step failed. Here is the failure output:\n\n${cfg.recoveryContext}\n\nPlease fix the issues and ensure the check passes.`;
+      systemPrompt = `${repoContextSection}${base}\n\n## Recovery context\n\nThe previous check step failed. Here is the failure output:\n\n${cfg.recoveryContext}\n\nPlease fix the issues and ensure the check passes.`;
     } else if (plan) {
-      systemPrompt = buildExecuteSystemPrompt(plan, workspace);
+      systemPrompt = `${repoContextSection}${buildExecuteSystemPrompt(plan, workspace)}`;
     } else {
       // No plan — fall back to generic implementation prompt
-      systemPrompt = DEFAULT_AGENT.systemPrompt;
+      systemPrompt = `${repoContextSection}${DEFAULT_AGENT.systemPrompt}`;
     }
 
     // Inject upstream context from scout/verify jobs declared in contextJobIds
@@ -653,11 +658,13 @@ export class StepRunner {
         })
       : {};
 
-    const systemPrompt = buildRevisionSystemPrompt({
+    const repoContext = await loadRepoContext(workspace);
+    const repoContextSection = repoContext ? `## Repo-level agent rules\n\n${repoContext}\n\n` : '';
+    const systemPrompt = `${repoContextSection}${buildRevisionSystemPrompt({
       previousPlan,
       answers: feedback.answers,
       additionalFeedback: feedback.additionalFeedback,
-    }, workspace);
+    }, workspace)}`;
 
     const mcpToken = await this.mintToken(job.id);
     if (!mcpToken || !this.deps.mcpEndpoint) {

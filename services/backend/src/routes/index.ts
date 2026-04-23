@@ -16,17 +16,23 @@ import { PluginsService } from '../services/plugins.service';
 import { WorkflowsService } from '../services/workflows.service';
 import { CostsService } from '../services/costs.service';
 import { ProviderConfigsService } from '../services/provider-configs.service';
+import { PlatformConfigsService } from '../services/platform-configs.service';
+import { PlatformConfigsRepository } from '../repositories/platform-configs.repository';
 import { ProviderConfigsRepository } from '../repositories/provider-configs.repository';
 import { MemoriesRepository } from '../repositories/memories.repository';
+import { JobsRepository } from '../repositories/jobs.repository';
 import { SettingsRepository } from '../repositories/settings.repository';
 import { SettingsService } from '../services/settings.service';
 import { FleetsService } from '../services/fleets.service';
+import { registerSlackChannel } from '../channels/slack.channel';
+import { registerSlackProcess } from '../queues/slack-process';
 import { auditRoutes } from './audit';
 import { healthRoutes } from './health';
 import { planReviewRoutes } from './plan-review';
 import { publicMcpRoutes } from './public-mcp';
 import { rpcRoutes } from './rpc';
 import { sseRoutes } from './sse';
+import { slackRoutes } from './slack';
 
 export interface RoutesDeps {
   db: Database;
@@ -53,8 +59,14 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   const costsService = new CostsService(deps.db);
   const secretBackend = secretBackendRegistry.create(env.SECRET_BACKEND, { db: deps.db });
   const providerConfigsService = new ProviderConfigsService(new ProviderConfigsRepository(deps.db), secretBackend);
-  const settingsService = new SettingsService(new SettingsRepository(deps.db));
+  const platformConfigsService = new PlatformConfigsService(new PlatformConfigsRepository(deps.db), secretBackend);
+  const settingsRepo = new SettingsRepository(deps.db);
+  const settingsService = new SettingsService(settingsRepo);
   const fleetsService = new FleetsService(deps.db, deps.boss, deps.log);
+  const jobsRepo = new JobsRepository(deps.db);
+
+  // Register Slack channel into the PraxisChannel registry (for dispatchToConversation)
+  registerSlackChannel(deps.db, secretBackend);
 
   healthRoutes(app);
   sseRoutes(app);
@@ -64,6 +76,20 @@ export async function registerRoutes(app: Hono, deps: RoutesDeps): Promise<void>
   if (env.MCP_SHARED_SECRET) {
     planReviewRoutes(app, { plansService, mcpSecret: env.MCP_SHARED_SECRET });
   }
-  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, pluginsService, memoriesService, channelsService, costsService, providerConfigsService, settingsService, fleetsService });
+  slackRoutes(app, { boss: deps.boss, platformConfigsService });
+  rpcRoutes(app, { jobsService, plansService, workflowsService, agentsService, sessionsService, pluginsService, memoriesService, channelsService, costsService, providerConfigsService, platformConfigsService, settingsService, fleetsService });
+
+  // Start Slack async event processor
+  await registerSlackProcess(deps.boss, {
+    db: deps.db,
+    jobsService,
+    plansService,
+    sessionsService,
+    platformConfigsService,
+    settingsRepo,
+    jobsRepo,
+    log: deps.log,
+  });
+
   await registerOpenApi(app);
 }

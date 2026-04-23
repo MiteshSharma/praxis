@@ -23,6 +23,7 @@ import { runReportPass } from './report';
 import { SCOUT_WORKFLOW } from '../defaults/scout-workflow';
 import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
 import { parseSSE } from './sse';
+import { dispatchToConversation } from '../channels/dispatch';
 
 export type ResumeMode = 'execute' | 'revise';
 
@@ -519,12 +520,27 @@ export class JobOrchestrator {
   }
 
   private async emitCompleted(jobId: string): Promise<void> {
-    const { db } = this.deps;
+    const { db, log } = this.deps;
     const job = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
     if (!job) return;
     const seq = await appendTimeline(db, jobId, 'completed', {});
     await this.emit(jobId, seq, { kind: 'completed', summary: undefined });
-    this.deps.log.info({ jobId }, 'job completed');
+    log.info({ jobId }, 'job completed');
+
+    // Dispatch to conversation channels (e.g. Slack)
+    if (job.conversationId) {
+      const [prArtifact] = await db
+        .select()
+        .from(artifacts)
+        .where(and(eq(artifacts.jobId, jobId), eq(artifacts.kind, 'pr')))
+        .limit(1);
+      const prUrl = prArtifact?.url ?? '';
+      await dispatchToConversation(db, job.conversationId, {
+        type: 'job.completed',
+        job: { id: job.id, title: job.title, githubUrl: job.githubUrl },
+        prUrl,
+      }, log).catch((err) => log.warn({ err, jobId }, 'channel dispatch (completed) failed'));
+    }
   }
 
   private async publish(
@@ -945,6 +961,14 @@ export class JobOrchestrator {
             error: errorMessage,
             errorCategory,
           });
+          // Dispatch to conversation channels (e.g. Slack)
+          if (current?.conversationId) {
+            await dispatchToConversation(this.deps.db, current.conversationId, {
+              type: 'job.failed',
+              job: { id: jobId, title: current.title, githubUrl: current.githubUrl },
+              error: errorMessage,
+            }, log).catch((err) => log.warn({ err, jobId }, 'channel dispatch (failed) failed'));
+          }
         }
       } catch {
         log.error({ jobId, currentStatus }, 'could not transition to failed');

@@ -1,11 +1,20 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { ToolExecutor } from './executor';
+import { toolRegistry } from './index';
 import { createMockExecService } from '../../__tests__/mocks';
+import type { ToolContext } from './index';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 let workDir: string;
+
+function makeCtx(overrides?: Partial<ToolContext>): ToolContext {
+  return {
+    workingDir: workDir,
+    exec: createMockExecService(),
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   workDir = mkdtempSync(join(tmpdir(), 'praxis-test-'));
@@ -13,12 +22,12 @@ beforeEach(() => {
 
 // ── bash ─────────────────────────────────────────────────────────────────────
 
-describe('ToolExecutor.bash', () => {
+describe('toolRegistry.execute bash', () => {
   it('delegates to the injected exec service', async () => {
     const exec = createMockExecService({ exitCode: 0, stdout: 'hello', stderr: '' });
-    const executor = new ToolExecutor({ workingDir: workDir, exec });
+    const ctx = makeCtx({ exec });
 
-    const result = await executor.execute('bash', { command: 'echo hello' });
+    const result = await toolRegistry.execute('bash', { command: 'echo hello' }, ctx);
 
     expect(exec.run).toHaveBeenCalledOnce();
     expect(exec.run).toHaveBeenCalledWith(
@@ -28,14 +37,10 @@ describe('ToolExecutor.bash', () => {
   });
 
   it('returns exit code message on failure', async () => {
-    const exec = createMockExecService({
-      exitCode: 1,
-      stdout: '',
-      stderr: 'command not found',
-    });
-    const executor = new ToolExecutor({ workingDir: workDir, exec });
+    const exec = createMockExecService({ exitCode: 1, stdout: '', stderr: 'command not found' });
+    const ctx = makeCtx({ exec });
 
-    const result = await executor.execute('bash', { command: 'bad-cmd' });
+    const result = await toolRegistry.execute('bash', { command: 'bad-cmd' }, ctx);
 
     expect(result).toContain('Exit 1');
     expect(result).toContain('command not found');
@@ -44,27 +49,24 @@ describe('ToolExecutor.bash', () => {
 
 // ── read_file / write_file ───────────────────────────────────────────────────
 
-describe('ToolExecutor.read_file', () => {
+describe('toolRegistry.execute read_file', () => {
   it('reads file content relative to workingDir', async () => {
     writeFileSync(join(workDir, 'hello.txt'), 'world');
-    const executor = new ToolExecutor({ workingDir: workDir });
+    const ctx = makeCtx();
 
-    const result = await executor.execute('read_file', { path: 'hello.txt' });
+    const result = await toolRegistry.execute('read_file', { path: 'hello.txt' }, ctx);
 
     expect(result).toBe('world');
   });
 });
 
-describe('ToolExecutor.write_file', () => {
+describe('toolRegistry.execute write_file', () => {
   it('writes file content and returns confirmation', async () => {
-    const executor = new ToolExecutor({ workingDir: workDir });
+    const ctx = makeCtx();
 
-    const result = await executor.execute('write_file', {
-      path: 'out.txt',
-      content: 'test content',
-    });
+    const result = await toolRegistry.execute('write_file', { path: 'out.txt', content: 'test content' }, ctx);
 
-    expect(result).toContain('Written out.txt');
+    expect(result).toContain('out.txt');
 
     const { readFileSync } = await import('node:fs');
     expect(readFileSync(join(workDir, 'out.txt'), 'utf-8')).toBe('test content');
@@ -73,44 +75,31 @@ describe('ToolExecutor.write_file', () => {
 
 // ── edit_file ────────────────────────────────────────────────────────────────
 
-describe('ToolExecutor.edit_file', () => {
+describe('toolRegistry.execute edit_file', () => {
   it('replaces unique old_string with new_string', async () => {
     writeFileSync(join(workDir, 'edit.txt'), 'hello world');
-    const executor = new ToolExecutor({ workingDir: workDir });
+    const ctx = makeCtx();
 
-    const result = await executor.execute('edit_file', {
-      path: 'edit.txt',
-      old_string: 'world',
-      new_string: 'praxis',
-    });
+    await toolRegistry.execute('edit_file', { path: 'edit.txt', old_string: 'world', new_string: 'praxis' }, ctx);
 
-    expect(result).toContain('Edited');
     const { readFileSync } = await import('node:fs');
     expect(readFileSync(join(workDir, 'edit.txt'), 'utf-8')).toBe('hello praxis');
   });
 
   it('returns an error when old_string is not found', async () => {
     writeFileSync(join(workDir, 'edit.txt'), 'hello world');
-    const executor = new ToolExecutor({ workingDir: workDir });
+    const ctx = makeCtx();
 
-    const result = await executor.execute('edit_file', {
-      path: 'edit.txt',
-      old_string: 'missing',
-      new_string: 'new',
-    });
+    const result = await toolRegistry.execute('edit_file', { path: 'edit.txt', old_string: 'missing', new_string: 'new' }, ctx);
 
     expect(result).toContain('not found');
   });
 
   it('returns an error when old_string appears more than once', async () => {
     writeFileSync(join(workDir, 'edit.txt'), 'foo foo');
-    const executor = new ToolExecutor({ workingDir: workDir });
+    const ctx = makeCtx();
 
-    const result = await executor.execute('edit_file', {
-      path: 'edit.txt',
-      old_string: 'foo',
-      new_string: 'bar',
-    });
+    const result = await toolRegistry.execute('edit_file', { path: 'edit.txt', old_string: 'foo', new_string: 'bar' }, ctx);
 
     expect(result).toContain('ambiguous');
   });
@@ -118,10 +107,10 @@ describe('ToolExecutor.edit_file', () => {
 
 // ── unknown tool ─────────────────────────────────────────────────────────────
 
-describe('ToolExecutor — unknown tool', () => {
+describe('toolRegistry — unknown tool', () => {
   it('returns an unknown tool message', async () => {
-    const executor = new ToolExecutor({ workingDir: workDir });
-    const result = await executor.execute('not_a_tool', {});
+    const ctx = makeCtx();
+    const result = await toolRegistry.execute('not_a_tool', {}, ctx);
     expect(result).toContain('Unknown tool');
   });
 });

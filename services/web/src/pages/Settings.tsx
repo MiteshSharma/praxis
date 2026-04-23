@@ -1,4 +1,4 @@
-import type { ProviderConfigDto, SettingDto } from '@shared/contracts';
+import type { PlatformConfigDto, ProviderConfigDto, SettingDto } from '@shared/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { rpc } from '../rpc';
@@ -384,6 +384,158 @@ function formatKey(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// ── Messaging (platform configs) ──────────────────────────────────────────────
+
+const SLACK_FIELDS: Array<{ key: string; label: string; placeholder: string; isSecret: boolean }> = [
+  { key: 'botToken',       label: 'Bot token',       placeholder: 'xoxb-…',   isSecret: true },
+  { key: 'signingSecret',  label: 'Signing secret',  placeholder: '…',         isSecret: true },
+];
+
+function SlackModal({
+  current,
+  onClose,
+}: {
+  current: PlatformConfigDto | undefined;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [enabled, setEnabled] = useState(current?.enabled ?? true);
+  const [error, setError] = useState('');
+
+  const upsert = useMutation({
+    mutationFn: () =>
+      rpc.platformConfigs.upsert({
+        platform: 'slack',
+        secrets,
+        enabled,
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['platformConfigs'] }); onClose(); },
+    onError: (e) => setError(e instanceof Error ? e.message : 'Failed to save'),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => rpc.platformConfigs.delete({ platform: 'slack' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['platformConfigs'] }); onClose(); },
+  });
+
+  const hasSecrets = SLACK_FIELDS.some((f) => secrets[f.key]?.trim());
+  const canSave = current?.configured ? (hasSecrets || true) : hasSecrets;
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, padding: 24, width: 460, maxWidth: '90vw' }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Configure Slack</div>
+        <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 18 }}>
+          Create a Slack app, add the <code>chat:write</code> and <code>channels:history</code> scopes,
+          and subscribe to <code>message.channels</code> events.
+        </div>
+
+        {SLACK_FIELDS.map((f) => (
+          <div key={f.key} style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+              {f.label}
+              {current?.configured && current.maskedSecrets?.[f.key] && (
+                <span style={{ fontWeight: 400, color: 'var(--c-text-3)' }}>
+                  {' '}— current: <code>{current.maskedSecrets[f.key]}</code>
+                </span>
+              )}
+            </label>
+            <input
+              type="password"
+              value={secrets[f.key] ?? ''}
+              onChange={(e) => setSecrets((p) => ({ ...p, [f.key]: e.target.value }))}
+              placeholder={current?.configured ? 'Leave blank to keep existing' : f.placeholder}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--c-border)', fontSize: 13, background: 'var(--c-bg)', color: 'var(--c-text)', boxSizing: 'border-box' }}
+            />
+          </div>
+        ))}
+
+        <div style={{ marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            type="checkbox"
+            id="slack-enabled"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            style={{ width: 15, height: 15 }}
+          />
+          <label htmlFor="slack-enabled" style={{ fontSize: 13, cursor: 'pointer' }}>Enable Slack integration</label>
+        </div>
+
+        {error && <p style={{ color: 'var(--c-error)', fontSize: 12, marginBottom: 12 }}>{error}</p>}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+          <div>
+            {current?.configured && (
+              <button type="button" className="btn btn-sm btn-ghost" style={{ color: 'var(--c-error)' }} onClick={() => remove.mutate()} disabled={remove.isPending}>
+                {remove.isPending ? 'Removing…' : 'Remove'}
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Cancel</button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{ background: 'var(--c-primary)', color: '#fff', border: 'none' }}
+              disabled={upsert.isPending || !canSave}
+              onClick={() => upsert.mutate()}
+            >
+              {upsert.isPending ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessagingSection() {
+  const { data: platforms = [], isLoading } = useQuery({
+    queryKey: ['platformConfigs'],
+    queryFn: () => rpc.platformConfigs.list(),
+  });
+  const [showSlack, setShowSlack] = useState(false);
+  const slack = platforms.find((p) => p.platform === 'slack');
+
+  return (
+    <section style={{ marginBottom: 36 }}>
+      <SectionHeader
+        title="Messaging"
+        description="Connect a messaging platform so Praxis can accept tasks, notify on plan-ready, and report job outcomes."
+      />
+      {isLoading ? <p className="muted small">Loading…</p> : (
+        <div style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Slack</span>
+              <ProviderBadge configured={slack?.configured ?? false} />
+              {slack?.enabled && slack?.configured && (
+                <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: '#e8f5e9', color: '#2e7d32' }}>enabled</span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
+              Receive tasks from Slack messages and send plan / completion notifications back.
+            </div>
+            {slack?.configured && (
+              <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 4, fontFamily: 'monospace' }}>
+                Webhook URL: <code>/channels/slack/events</code>
+              </div>
+            )}
+          </div>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowSlack(true)}>
+            {slack?.configured ? 'Update' : 'Configure'}
+          </button>
+        </div>
+      )}
+      {showSlack && <SlackModal current={slack} onClose={() => setShowSlack(false)} />}
+    </section>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function SettingsPage() {
@@ -397,6 +549,7 @@ export function SettingsPage() {
       </div>
 
       <ProvidersSection />
+      <MessagingSection />
       <AuxiliaryModelsSection />
     </div>
   );
