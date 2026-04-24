@@ -179,38 +179,53 @@ function ProvidersSection() {
     queryFn: () => rpc.providers.list(),
   });
   const [configuring, setConfiguring] = useState<Provider | null>(null);
+  const [isOpen, setIsOpen] = useState(true);
   const configuringProvider = PROVIDERS.find((p) => p.id === configuring);
   const currentConfig = (id: Provider) => providers.find((d) => d.provider === id);
 
   return (
     <section style={{ marginBottom: 36 }}>
-      <SectionHeader
-        title="Providers"
-        description="API keys for AI providers. Keys are stored securely and used for all jobs. Environment variables are used as fallback if no key is configured here."
-      />
-      {isLoading ? <p className="muted small">Loading…</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {PROVIDERS.map((provider) => {
-            const config = currentConfig(provider.id);
-            return (
-              <div key={provider.id} style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{provider.name}</span>
-                    <ProviderBadge configured={config?.configured ?? false} />
-                    {config?.configured && config.maskedKey && (
-                      <span style={{ fontSize: 11, color: 'var(--c-text-3)', fontFamily: 'monospace' }}>{config.maskedKey}</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{provider.description}</div>
-                </div>
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfiguring(provider.id)}>
-                  {config?.configured ? 'Update' : 'Configure'}
-                </button>
-              </div>
-            );
-          })}
+      <div
+        onClick={() => setIsOpen((v) => !v)}
+        style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', cursor: 'pointer', marginBottom: 14 }}
+      >
+        <div>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 600 }}>Providers</h3>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--c-text-3)', lineHeight: 1.6 }}>
+            API keys for AI providers. Keys are stored securely and used for all jobs. Environment variables are used as fallback if no key is configured here.
+          </p>
         </div>
+        <span style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2, userSelect: 'none' }}>
+          {isOpen ? '▼' : '▶'}
+        </span>
+      </div>
+      {isOpen && (
+        <>
+          {isLoading ? <p className="muted small">Loading…</p> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {PROVIDERS.map((provider) => {
+                const config = currentConfig(provider.id);
+                return (
+                  <div key={provider.id} style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{provider.name}</span>
+                        <ProviderBadge configured={config?.configured ?? false} />
+                        {config?.configured && config.maskedKey && (
+                          <span style={{ fontSize: 11, color: 'var(--c-text-3)', fontFamily: 'monospace' }}>{config.maskedKey}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{provider.description}</div>
+                    </div>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfiguring(provider.id)}>
+                      {config?.configured ? 'Update' : 'Configure'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
       {configuring && configuringProvider && (
         <ProviderModal provider={configuringProvider} current={currentConfig(configuring)} onClose={() => setConfiguring(null)} />
