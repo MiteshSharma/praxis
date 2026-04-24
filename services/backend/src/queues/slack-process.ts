@@ -34,7 +34,10 @@ export async function registerSlackProcess(
         try {
           await handleIncoming(msg, deps);
         } catch (err) {
-          deps.log.error({ err, chatId: msg.chatId }, 'slack process: handler error; pg-boss will retry');
+          deps.log.error(
+            { err, chatId: msg.chatId },
+            'slack process: handler error; pg-boss will retry',
+          );
           throw err;
         }
       }

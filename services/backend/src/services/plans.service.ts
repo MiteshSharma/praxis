@@ -19,7 +19,12 @@ export class PlansService {
     private readonly boss: PgBoss,
     private readonly log: Logger,
     redisUrl: string,
-    overrides?: { repo?: PlansRepository; jobsRepo?: JobsRepository; tracker?: DbTaskTracker; redis?: Redis },
+    overrides?: {
+      repo?: PlansRepository;
+      jobsRepo?: JobsRepository;
+      tracker?: DbTaskTracker;
+      redis?: Redis;
+    },
   ) {
     this.repo = overrides?.repo ?? new PlansRepository(db);
     this.jobsRepo = overrides?.jobsRepo ?? new JobsRepository(db);
@@ -41,23 +46,27 @@ export class PlansService {
     const job = await this.jobsRepo.findById(jobId);
     if (!job) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (job.status !== 'plan_review') {
-      throw new ORPCError('BAD_REQUEST', { message: `job is not in plan_review (current: ${job.status})` });
+      throw new ORPCError('BAD_REQUEST', {
+        message: `job is not in plan_review (current: ${job.status})`,
+      });
     }
 
     const plan = await this.repo.findLatestForJob(jobId);
     if (!plan) throw new ORPCError('NOT_FOUND', { message: 'no plan found for job' });
 
     await this.tracker.approvePlan(plan.id);
-    await this.appendTimeline(jobId, 'plan-approved', { planId: plan.id, version: plan.version, actor: 'user' });
+    await this.appendTimeline(jobId, 'plan-approved', {
+      planId: plan.id,
+      version: plan.version,
+      actor: 'user',
+    });
 
-    // Hot path: publish wake signal if sandbox is still held
-    const isHot = job.planReviewHoldUntil && job.planReviewHoldUntil > new Date();
-    if (isHot) {
-      await this.redis.publish(`run:${jobId}:plan-event`, JSON.stringify({ kind: 'approve' }));
-    } else {
-      // Cold path: enqueue fresh job
-      await this.boss.send(JOB_EXECUTE_QUEUE, { jobId, resumeMode: 'execute' });
-    }
+    // Always send both signals:
+    // - Hot path: wakes the step-runner if it's still subscribed (worker alive since planning)
+    // - Cold path: pg-boss ensures execution even if the hot subscriber is gone (worker restart, hot-reload)
+    // runColdResume guards against double-execution if the hot path already transitioned the job.
+    await this.redis.publish(`run:${jobId}:plan-event`, JSON.stringify({ kind: 'approve' }));
+    await this.boss.send(JOB_EXECUTE_QUEUE, { jobId, resumeMode: 'execute' });
   }
 
   async revisePlan(
@@ -68,7 +77,9 @@ export class PlansService {
     const job = await this.jobsRepo.findById(jobId);
     if (!job) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (job.status !== 'plan_review') {
-      throw new ORPCError('BAD_REQUEST', { message: `job is not in plan_review (current: ${job.status})` });
+      throw new ORPCError('BAD_REQUEST', {
+        message: `job is not in plan_review (current: ${job.status})`,
+      });
     }
 
     const revisionCount = job.planRevisionCount ?? 0;
@@ -104,14 +115,20 @@ export class PlansService {
     const job = await this.jobsRepo.findById(jobId);
     if (!job) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (job.status !== 'plan_review') {
-      throw new ORPCError('BAD_REQUEST', { message: `job is not in plan_review (current: ${job.status})` });
+      throw new ORPCError('BAD_REQUEST', {
+        message: `job is not in plan_review (current: ${job.status})`,
+      });
     }
 
     const plan = await this.repo.findLatestForJob(jobId);
     if (!plan) throw new ORPCError('NOT_FOUND', { message: 'no plan found for job' });
 
     await this.tracker.rejectPlan(plan.id, reason);
-    await this.appendTimeline(jobId, 'plan-rejected', { planId: plan.id, reason: reason ?? null, actor: 'user' });
+    await this.appendTimeline(jobId, 'plan-rejected', {
+      planId: plan.id,
+      reason: reason ?? null,
+      actor: 'user',
+    });
 
     const isHot = job.planReviewHoldUntil && job.planReviewHoldUntil > new Date();
     if (isHot) {

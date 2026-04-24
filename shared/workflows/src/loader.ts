@@ -60,18 +60,18 @@ async function resolveGithubUrl(
 
   const [org, repo, ...fileParts] = parts;
   const filePath = fileParts.join('/');
-  const resolvedSha = sha ?? commitSha ?? (await resolveDefaultBranchSha(org!, repo!, token));
+  const resolvedSha =
+    sha ?? commitSha ?? (await resolveDefaultBranchSha(org ?? '', repo ?? '', token));
   const rawUrl = `https://raw.githubusercontent.com/${org}/${repo}/${resolvedSha}/${filePath}`;
 
   return { rawUrl, resolvedSha };
 }
 
-async function resolveDefaultBranchSha(
-  org: string,
-  repo: string,
-  token?: string,
-): Promise<string> {
-  const headers: Record<string, string> = { 'user-agent': 'praxis/1.0', accept: 'application/vnd.github+json' };
+async function resolveDefaultBranchSha(org: string, repo: string, token?: string): Promise<string> {
+  const headers: Record<string, string> = {
+    'user-agent': 'praxis/1.0',
+    accept: 'application/vnd.github+json',
+  };
   if (token) headers.authorization = `token ${token}`;
   const res = await fetch(`https://api.github.com/repos/${org}/${repo}/commits/HEAD`, { headers });
   if (!res.ok) throw new Error(`GitHub API failed: ${res.status}`);

@@ -31,8 +31,8 @@ export const jobs = pgTable(
     workflowVersionId: uuid('workflow_version_id'),
     disableLearning: boolean('disable_learning').notNull().default(false),
     model: text('model'),
-    noChanges:     boolean('no_changes').notNull().default(false),
-    output:        jsonb('output').$type<Record<string, unknown>>(),
+    noChanges: boolean('no_changes').notNull().default(false),
+    output: jsonb('output').$type<Record<string, unknown>>(),
     contextJobIds: jsonb('context_job_ids').$type<string[]>(),
     messageId: uuid('message_id'), // message that created this job — enables all jobs from one message
 

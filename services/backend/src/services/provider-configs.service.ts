@@ -43,7 +43,11 @@ export class ProviderConfigsService {
     );
   }
 
-  async upsert(provider: SupportedProvider, apiKey: string, config: Record<string, string> = {}): Promise<void> {
+  async upsert(
+    provider: SupportedProvider,
+    apiKey: string,
+    config: Record<string, string> = {},
+  ): Promise<void> {
     await this.secretBackend.set(secretKey(provider), apiKey);
     await this.repo.upsert(provider, config);
   }

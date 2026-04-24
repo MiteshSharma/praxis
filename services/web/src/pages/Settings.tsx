@@ -41,32 +41,59 @@ const PROVIDERS: Array<{
       'openrouter/moonshot/kimi-k2',
     ],
     extraFields: [
-      { key: 'site_url',  label: 'Site URL',  placeholder: 'https://yourapp.com', required: false },
-      { key: 'site_name', label: 'Site name', placeholder: 'My App',              required: false },
+      { key: 'site_url', label: 'Site URL', placeholder: 'https://yourapp.com', required: false },
+      { key: 'site_name', label: 'Site name', placeholder: 'My App', required: false },
     ],
   },
   {
     id: 'azure',
     name: 'Azure AI Foundry',
-    description: 'Azure OpenAI deployments. Model name must be your deployment name (not the underlying model), prefixed with azure/.',
-    docsHint: 'Endpoint and key are in Azure portal → Azure OpenAI → Keys and Endpoint. The model name after azure/ must match your deployment name exactly.',
+    description:
+      'Azure OpenAI deployments. Model name must be your deployment name (not the underlying model), prefixed with azure/.',
+    docsHint:
+      'Endpoint and key are in Azure portal → Azure OpenAI → Keys and Endpoint. The model name after azure/ must match your deployment name exactly.',
     modelExamples: ['azure/<your-deployment-name>'],
     extraFields: [
-      { key: 'endpoint',    label: 'Endpoint',    placeholder: 'https://<resource>.openai.azure.com/ or https://<project>.services.ai.azure.com/models', required: true },
-      { key: 'api_version', label: 'API version', placeholder: '2025-01-01-preview (leave blank for default)',                                            required: false },
+      {
+        key: 'endpoint',
+        label: 'Endpoint',
+        placeholder:
+          'https://<resource>.openai.azure.com/ or https://<project>.services.ai.azure.com/models',
+        required: true,
+      },
+      {
+        key: 'api_version',
+        label: 'API version',
+        placeholder: '2025-01-01-preview (leave blank for default)',
+        required: false,
+      },
     ],
   },
 ];
 
 function ProviderBadge({ configured }: { configured: boolean }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-      background: configured ? 'var(--c-success-bg, #e6f9f0)' : 'var(--c-surface-2, #f5f5f5)',
-      color: configured ? 'var(--c-success)' : 'var(--c-text-3)',
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: configured ? 'var(--c-success)' : 'var(--c-border)' }} />
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        fontSize: 11,
+        fontWeight: 600,
+        padding: '2px 8px',
+        borderRadius: 20,
+        background: configured ? 'var(--c-success-bg, #e6f9f0)' : 'var(--c-surface-2, #f5f5f5)',
+        color: configured ? 'var(--c-success)' : 'var(--c-text-3)',
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: configured ? 'var(--c-success)' : 'var(--c-border)',
+        }}
+      />
       {configured ? 'Configured' : 'Not configured'}
     </span>
   );
@@ -87,76 +114,165 @@ function ProviderModal({
   const [error, setError] = useState('');
 
   const upsert = useMutation({
-    mutationFn: () => rpc.providers.upsert({ provider: provider.id, apiKey: apiKey.trim(), config: extras }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['providers'] }); onClose(); },
+    mutationFn: () =>
+      rpc.providers.upsert({ provider: provider.id, apiKey: apiKey.trim(), config: extras }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['providers'] });
+      onClose();
+    },
     onError: (e) => setError(e instanceof Error ? e.message : 'Failed to save'),
   });
 
   const remove = useMutation({
     mutationFn: () => rpc.providers.delete({ provider: provider.id }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['providers'] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['providers'] });
+      onClose();
+    },
   });
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
     >
-      <div style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, padding: 24, width: 460, maxWidth: '90vw' }}>
-        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Configure {provider.name}</div>
-        <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 18 }}>{provider.docsHint}</div>
+      <div
+        style={{
+          background: 'var(--c-surface)',
+          border: '1px solid var(--c-border)',
+          borderRadius: 12,
+          padding: 24,
+          width: 460,
+          maxWidth: '90vw',
+        }}
+      >
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>
+          Configure {provider.name}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 18 }}>
+          {provider.docsHint}
+        </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-            API Key{current?.configured && <span style={{ fontWeight: 400, color: 'var(--c-text-3)' }}> — leave blank to keep {current.maskedKey}</span>}
+          <label
+            htmlFor="provider-api-key"
+            style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}
+          >
+            API Key
+            {current?.configured && (
+              <span style={{ fontWeight: 400, color: 'var(--c-text-3)' }}>
+                {' '}
+                — leave blank to keep {current.maskedKey}
+              </span>
+            )}
           </label>
           <input
+            id="provider-api-key"
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={current?.configured ? 'Enter new key to replace' : 'sk-…'}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--c-border)', fontSize: 13, background: 'var(--c-bg)', color: 'var(--c-text)', boxSizing: 'border-box' }}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--c-border)',
+              fontSize: 13,
+              background: 'var(--c-bg)',
+              color: 'var(--c-text)',
+              boxSizing: 'border-box',
+            }}
           />
         </div>
 
         {provider.extraFields?.map((f) => (
           <div key={f.key} style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-              {f.label}{!f.required && <span style={{ fontWeight: 400, color: 'var(--c-text-3)' }}> (optional)</span>}
+            <label
+              htmlFor={`provider-extra-${f.key}`}
+              style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}
+            >
+              {f.label}
+              {!f.required && (
+                <span style={{ fontWeight: 400, color: 'var(--c-text-3)' }}> (optional)</span>
+              )}
             </label>
             <input
+              id={`provider-extra-${f.key}`}
               type="text"
               value={extras[f.key] ?? ''}
               onChange={(e) => setExtras((p) => ({ ...p, [f.key]: e.target.value }))}
               placeholder={f.placeholder}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--c-border)', fontSize: 13, background: 'var(--c-bg)', color: 'var(--c-text)', boxSizing: 'border-box' }}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: 6,
+                border: '1px solid var(--c-border)',
+                fontSize: 13,
+                background: 'var(--c-bg)',
+                color: 'var(--c-text)',
+                boxSizing: 'border-box',
+              }}
             />
           </div>
         ))}
 
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--c-text-3)', marginBottom: 5 }}>Model examples</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--c-text-3)', marginBottom: 5 }}>
+            Model examples
+          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {provider.modelExamples.map((m) => (
-              <code key={m} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: 'var(--c-surface-2, #f5f5f5)', color: 'var(--c-text)' }}>
+              <code
+                key={m}
+                style={{
+                  fontSize: 11,
+                  padding: '2px 7px',
+                  borderRadius: 4,
+                  background: 'var(--c-surface-2, #f5f5f5)',
+                  color: 'var(--c-text)',
+                }}
+              >
                 {m}
               </code>
             ))}
           </div>
         </div>
 
-        {error && <p style={{ color: 'var(--c-error)', fontSize: 12, marginBottom: 12 }}>{error}</p>}
+        {error && (
+          <p style={{ color: 'var(--c-error)', fontSize: 12, marginBottom: 12 }}>{error}</p>
+        )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
           <div>
             {current?.configured && (
-              <button type="button" className="btn btn-sm btn-ghost" style={{ color: 'var(--c-error)' }} onClick={() => remove.mutate()} disabled={remove.isPending}>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                style={{ color: 'var(--c-error)' }}
+                onClick={() => remove.mutate()}
+                disabled={remove.isPending}
+              >
                 {remove.isPending ? 'Removing…' : 'Remove'}
               </button>
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
             <button
               type="button"
               className="btn btn-sm"
@@ -188,23 +304,46 @@ function ProvidersSection() {
         title="Providers"
         description="API keys for AI providers. Keys are stored securely and used for all jobs. Environment variables are used as fallback if no key is configured here."
       />
-      {isLoading ? <p className="muted small">Loading…</p> : (
+      {isLoading ? (
+        <p className="muted small">Loading…</p>
+      ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {PROVIDERS.map((provider) => {
             const config = currentConfig(provider.id);
             return (
-              <div key={provider.id} style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div
+                key={provider.id}
+                style={{
+                  background: 'var(--c-surface)',
+                  border: '1px solid var(--c-border)',
+                  borderRadius: 10,
+                  padding: '14px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                }}
+              >
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
                     <span style={{ fontWeight: 600, fontSize: 14 }}>{provider.name}</span>
                     <ProviderBadge configured={config?.configured ?? false} />
                     {config?.configured && config.maskedKey && (
-                      <span style={{ fontSize: 11, color: 'var(--c-text-3)', fontFamily: 'monospace' }}>{config.maskedKey}</span>
+                      <span
+                        style={{ fontSize: 11, color: 'var(--c-text-3)', fontFamily: 'monospace' }}
+                      >
+                        {config.maskedKey}
+                      </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{provider.description}</div>
+                  <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
+                    {provider.description}
+                  </div>
                 </div>
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfiguring(provider.id)}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => setConfiguring(provider.id)}
+                >
                   {config?.configured ? 'Update' : 'Configure'}
                 </button>
               </div>
@@ -213,7 +352,11 @@ function ProvidersSection() {
         </div>
       )}
       {configuring && configuringProvider && (
-        <ProviderModal provider={configuringProvider} current={currentConfig(configuring)} onClose={() => setConfiguring(null)} />
+        <ProviderModal
+          provider={configuringProvider}
+          current={currentConfig(configuring)}
+          onClose={() => setConfiguring(null)}
+        />
       )}
     </section>
   );
@@ -223,14 +366,17 @@ function ProvidersSection() {
 
 const MODEL_EXAMPLES = [
   { label: 'Anthropic Haiku (recommended — fast & cheap)', value: 'claude-haiku-4-5-20251001' },
-  { label: 'Anthropic Sonnet',     value: 'claude-sonnet-4-6' },
-  { label: 'OpenAI GPT-4o Mini',   value: 'gpt-4o-mini' },
+  { label: 'Anthropic Sonnet', value: 'claude-sonnet-4-6' },
+  { label: 'OpenAI GPT-4o Mini', value: 'gpt-4o-mini' },
   { label: 'OpenRouter — Gemini Flash', value: 'openrouter/google/gemini-2.0-flash-001' },
   { label: 'OpenRouter — Kimi K2', value: 'openrouter/moonshot/kimi-k2' },
   { label: 'Azure — (use your deployment name)', value: 'azure/' },
 ];
 
-function SettingRow({ setting, onSave }: { setting: SettingDto; onSave: (key: string, value: string) => Promise<void> }) {
+function SettingRow({
+  setting,
+  onSave,
+}: { setting: SettingDto; onSave: (key: string, value: string) => Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(setting.value);
   const [saving, setSaving] = useState(false);
@@ -259,18 +405,42 @@ function SettingRow({ setting, onSave }: { setting: SettingDto; onSave: (key: st
   }
 
   return (
-    <div style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '16px 20px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+    <div
+      style={{
+        background: 'var(--c-surface)',
+        border: '1px solid var(--c-border)',
+        borderRadius: 10,
+        padding: '16px 20px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 16,
+        }}
+      >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{formatKey(setting.key)}</span>
             {isDefault && (
-              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: 'var(--c-surface-2, #f5f5f5)', color: 'var(--c-text-3)' }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: '1px 7px',
+                  borderRadius: 10,
+                  background: 'var(--c-surface-2, #f5f5f5)',
+                  color: 'var(--c-text-3)',
+                }}
+              >
                 default
               </span>
             )}
           </div>
-          <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--c-text-3)', lineHeight: 1.5 }}>
+          <p
+            style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--c-text-3)', lineHeight: 1.5 }}
+          >
             {setting.description}
           </p>
 
@@ -281,8 +451,18 @@ function SettingRow({ setting, onSave }: { setting: SettingDto; onSave: (key: st
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 placeholder={setting.defaultValue}
-                autoFocus
-                style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--c-primary)', fontSize: 13, background: 'var(--c-bg)', color: 'var(--c-text)', boxSizing: 'border-box', fontFamily: 'monospace', marginBottom: 8 }}
+                style={{
+                  width: '100%',
+                  padding: '7px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--c-primary)',
+                  fontSize: 13,
+                  background: 'var(--c-bg)',
+                  color: 'var(--c-text)',
+                  boxSizing: 'border-box',
+                  fontFamily: 'monospace',
+                  marginBottom: 8,
+                }}
               />
               <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginBottom: 8 }}>
                 Examples:{' '}
@@ -291,16 +471,28 @@ function SettingRow({ setting, onSave }: { setting: SettingDto; onSave: (key: st
                     key={ex.value}
                     type="button"
                     onClick={() => setValue(ex.value)}
-                    style={{ background: 'none', border: 'none', padding: '1px 4px', cursor: 'pointer', fontSize: 11, color: 'var(--c-primary)', textDecoration: 'underline' }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '1px 4px',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      color: 'var(--c-primary)',
+                      textDecoration: 'underline',
+                    }}
                     title={ex.label}
                   >
                     {ex.value}
                   </button>
                 ))}
               </div>
-              {error && <p style={{ color: 'var(--c-error)', fontSize: 12, margin: '0 0 8px' }}>{error}</p>}
+              {error && (
+                <p style={{ color: 'var(--c-error)', fontSize: 12, margin: '0 0 8px' }}>{error}</p>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" className="btn btn-sm btn-ghost" onClick={handleCancel}>Cancel</button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={handleCancel}>
+                  Cancel
+                </button>
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -323,14 +515,29 @@ function SettingRow({ setting, onSave }: { setting: SettingDto; onSave: (key: st
               </div>
             </div>
           ) : (
-            <code style={{ fontSize: 12, padding: '3px 8px', borderRadius: 5, background: 'var(--c-surface-2, #f5f5f5)', color: 'var(--c-text)' }}>
+            <code
+              style={{
+                fontSize: 12,
+                padding: '3px 8px',
+                borderRadius: 5,
+                background: 'var(--c-surface-2, #f5f5f5)',
+                color: 'var(--c-text)',
+              }}
+            >
               {setting.value}
             </code>
           )}
         </div>
 
         {!editing && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setValue(setting.value); setEditing(true); }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => {
+              setValue(setting.value);
+              setEditing(true);
+            }}
+          >
             Edit
           </button>
         )}
@@ -348,7 +555,8 @@ function AuxiliaryModelsSection() {
   });
 
   const update = useMutation({
-    mutationFn: ({ key, value }: { key: string; value: string }) => rpc.settings.update({ key, value }),
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      rpc.settings.update({ key, value }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
   });
 
@@ -358,10 +566,18 @@ function AuxiliaryModelsSection() {
         title="Auxiliary models"
         description="Models used for learning and report passes after each job. These run single-turn with no tools — a fast, cheap model (Haiku, Flash, GPT-4o Mini) gives equivalent quality at a fraction of the cost. Must match a configured provider above."
       />
-      {isLoading ? <p className="muted small">Loading…</p> : (
+      {isLoading ? (
+        <p className="muted small">Loading…</p>
+      ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {data.map((s) => (
-            <SettingRow key={s.key} setting={s} onSave={(key, value) => update.mutateAsync({ key, value })} />
+            <SettingRow
+              key={s.key}
+              setting={s}
+              onSave={async (key, value) => {
+                await update.mutateAsync({ key, value });
+              }}
+            />
           ))}
         </div>
       )}
@@ -375,7 +591,9 @@ function SectionHeader({ title, description }: { title: string; description: str
   return (
     <div style={{ marginBottom: 14 }}>
       <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 600 }}>{title}</h3>
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--c-text-3)', lineHeight: 1.6 }}>{description}</p>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--c-text-3)', lineHeight: 1.6 }}>
+        {description}
+      </p>
     </div>
   );
 }
@@ -386,10 +604,11 @@ function formatKey(key: string): string {
 
 // ── Messaging (platform configs) ──────────────────────────────────────────────
 
-const SLACK_FIELDS: Array<{ key: string; label: string; placeholder: string; isSecret: boolean }> = [
-  { key: 'botToken',       label: 'Bot token',       placeholder: 'xoxb-…',   isSecret: true },
-  { key: 'signingSecret',  label: 'Signing secret',  placeholder: '…',         isSecret: true },
-];
+const SLACK_FIELDS: Array<{ key: string; label: string; placeholder: string; isSecret: boolean }> =
+  [
+    { key: 'botToken', label: 'Bot token', placeholder: 'xoxb-…', isSecret: true },
+    { key: 'signingSecret', label: 'Signing secret', placeholder: '…', isSecret: true },
+  ];
 
 function SlackModal({
   current,
@@ -410,46 +629,88 @@ function SlackModal({
         secrets,
         enabled,
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['platformConfigs'] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['platformConfigs'] });
+      onClose();
+    },
     onError: (e) => setError(e instanceof Error ? e.message : 'Failed to save'),
   });
 
   const remove = useMutation({
     mutationFn: () => rpc.platformConfigs.delete({ platform: 'slack' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['platformConfigs'] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['platformConfigs'] });
+      onClose();
+    },
   });
 
   const hasSecrets = SLACK_FIELDS.some((f) => secrets[f.key]?.trim());
-  const canSave = current?.configured ? (hasSecrets || true) : hasSecrets;
+  const canSave = current?.configured ? hasSecrets || true : hasSecrets;
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
     >
-      <div style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, padding: 24, width: 460, maxWidth: '90vw' }}>
+      <div
+        style={{
+          background: 'var(--c-surface)',
+          border: '1px solid var(--c-border)',
+          borderRadius: 12,
+          padding: 24,
+          width: 460,
+          maxWidth: '90vw',
+        }}
+      >
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Configure Slack</div>
         <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 18 }}>
-          Create a Slack app, add the <code>chat:write</code> and <code>channels:history</code> scopes,
-          and subscribe to <code>message.channels</code> events.
+          Create a Slack app, add the <code>chat:write</code> and <code>channels:history</code>{' '}
+          scopes, and subscribe to <code>message.channels</code> events.
         </div>
 
         {SLACK_FIELDS.map((f) => (
           <div key={f.key} style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+            <label
+              htmlFor={`slack-field-${f.key}`}
+              style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }}
+            >
               {f.label}
               {current?.configured && current.maskedSecrets?.[f.key] && (
                 <span style={{ fontWeight: 400, color: 'var(--c-text-3)' }}>
-                  {' '}— current: <code>{current.maskedSecrets[f.key]}</code>
+                  {' '}
+                  — current: <code>{current.maskedSecrets[f.key]}</code>
                 </span>
               )}
             </label>
             <input
+              id={`slack-field-${f.key}`}
               type="password"
               value={secrets[f.key] ?? ''}
               onChange={(e) => setSecrets((p) => ({ ...p, [f.key]: e.target.value }))}
               placeholder={current?.configured ? 'Leave blank to keep existing' : f.placeholder}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--c-border)', fontSize: 13, background: 'var(--c-bg)', color: 'var(--c-text)', boxSizing: 'border-box' }}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: 6,
+                border: '1px solid var(--c-border)',
+                fontSize: 13,
+                background: 'var(--c-bg)',
+                color: 'var(--c-text)',
+                boxSizing: 'border-box',
+              }}
             />
           </div>
         ))}
@@ -462,21 +723,33 @@ function SlackModal({
             onChange={(e) => setEnabled(e.target.checked)}
             style={{ width: 15, height: 15 }}
           />
-          <label htmlFor="slack-enabled" style={{ fontSize: 13, cursor: 'pointer' }}>Enable Slack integration</label>
+          <label htmlFor="slack-enabled" style={{ fontSize: 13, cursor: 'pointer' }}>
+            Enable Slack integration
+          </label>
         </div>
 
-        {error && <p style={{ color: 'var(--c-error)', fontSize: 12, marginBottom: 12 }}>{error}</p>}
+        {error && (
+          <p style={{ color: 'var(--c-error)', fontSize: 12, marginBottom: 12 }}>{error}</p>
+        )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
           <div>
             {current?.configured && (
-              <button type="button" className="btn btn-sm btn-ghost" style={{ color: 'var(--c-error)' }} onClick={() => remove.mutate()} disabled={remove.isPending}>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                style={{ color: 'var(--c-error)' }}
+                onClick={() => remove.mutate()}
+                disabled={remove.isPending}
+              >
                 {remove.isPending ? 'Removing…' : 'Remove'}
               </button>
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
             <button
               type="button"
               className="btn btn-sm"
@@ -507,21 +780,50 @@ function MessagingSection() {
         title="Messaging"
         description="Connect a messaging platform so Praxis can accept tasks, notify on plan-ready, and report job outcomes."
       />
-      {isLoading ? <p className="muted small">Loading…</p> : (
-        <div style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 16 }}>
+      {isLoading ? (
+        <p className="muted small">Loading…</p>
+      ) : (
+        <div
+          style={{
+            background: 'var(--c-surface)',
+            border: '1px solid var(--c-border)',
+            borderRadius: 10,
+            padding: '14px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+          }}
+        >
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
               <span style={{ fontWeight: 600, fontSize: 14 }}>Slack</span>
               <ProviderBadge configured={slack?.configured ?? false} />
               {slack?.enabled && slack?.configured && (
-                <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: '#e8f5e9', color: '#2e7d32' }}>enabled</span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '1px 7px',
+                    borderRadius: 10,
+                    background: '#e8f5e9',
+                    color: '#2e7d32',
+                  }}
+                >
+                  enabled
+                </span>
               )}
             </div>
             <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
               Receive tasks from Slack messages and send plan / completion notifications back.
             </div>
             {slack?.configured && (
-              <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 4, fontFamily: 'monospace' }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--c-text-3)',
+                  marginTop: 4,
+                  fontFamily: 'monospace',
+                }}
+              >
                 Webhook URL: <code>/channels/slack/events</code>
               </div>
             )}

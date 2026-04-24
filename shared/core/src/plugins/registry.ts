@@ -16,6 +16,10 @@ export class PluginRegistry<T, C = unknown> {
     return instance;
   }
 
-  has(type: string): boolean { return this.factories.has(type); }
-  types(): string[] { return [...this.factories.keys()]; }
+  has(type: string): boolean {
+    return this.factories.has(type);
+  }
+  types(): string[] {
+    return [...this.factories.keys()];
+  }
 }

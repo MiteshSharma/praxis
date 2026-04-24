@@ -43,50 +43,55 @@ export function FileChangesSidebar({ fileChanges }: Props) {
               {dir}/
             </div>
           )}
-          {[...changes].sort((a, b) => a.path.localeCompare(b.path)).map((change) => {
-            const filename = change.path.split('/').pop() ?? change.path;
-            return (
-              <div
-                key={change.path}
-                title={change.path}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '2px 0 2px 10px',
-                  gap: 6,
-                  borderLeft: '2px solid',
-                  borderColor: change.status === 'added' ? 'var(--c-success)' : 'var(--c-warning)',
-                  marginBottom: 2,
-                }}
-              >
-                <span
+          {[...changes]
+            .sort((a, b) => a.path.localeCompare(b.path))
+            .map((change) => {
+              const filename = change.path.split('/').pop() ?? change.path;
+              return (
+                <div
+                  key={change.path}
+                  title={change.path}
                   style={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    color: 'var(--c-text-1)',
-                    fontSize: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '2px 0 2px 10px',
+                    gap: 6,
+                    borderLeft: '2px solid',
+                    borderColor:
+                      change.status === 'added' ? 'var(--c-success)' : 'var(--c-warning)',
+                    marginBottom: 2,
                   }}
                 >
-                  {filename}
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                  {change.touchCount > 1 && (
-                    <span style={{ fontSize: 10, color: 'var(--c-text-3)' }}>×{change.touchCount}</span>
-                  )}
-                  <Tag
-                    color={change.status === 'added' ? 'green' : 'orange'}
-                    style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px' }}
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: 'var(--c-text-1)',
+                      fontSize: 12,
+                    }}
                   >
-                    {change.status === 'added' ? '+' : 'M'}
-                  </Tag>
-                </span>
-              </div>
-            );
-          })}
+                    {filename}
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    {change.touchCount > 1 && (
+                      <span style={{ fontSize: 10, color: 'var(--c-text-3)' }}>
+                        ×{change.touchCount}
+                      </span>
+                    )}
+                    <Tag
+                      color={change.status === 'added' ? 'green' : 'orange'}
+                      style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px' }}
+                    >
+                      {change.status === 'added' ? '+' : 'M'}
+                    </Tag>
+                  </span>
+                </div>
+              );
+            })}
         </div>
       ))}
     </div>

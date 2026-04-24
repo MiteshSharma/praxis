@@ -1,10 +1,10 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { toolRegistry } from './index';
-import { createMockExecService } from '../../__tests__/mocks';
-import type { ToolContext } from './index';
-import { tmpdir } from 'node:os';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { createMockExecService } from '../../__tests__/mocks';
+import { toolRegistry } from './index';
+import type { ToolContext } from './index';
 
 let workDir: string;
 
@@ -64,7 +64,11 @@ describe('toolRegistry.execute write_file', () => {
   it('writes file content and returns confirmation', async () => {
     const ctx = makeCtx();
 
-    const result = await toolRegistry.execute('write_file', { path: 'out.txt', content: 'test content' }, ctx);
+    const result = await toolRegistry.execute(
+      'write_file',
+      { path: 'out.txt', content: 'test content' },
+      ctx,
+    );
 
     expect(result).toContain('out.txt');
 
@@ -80,7 +84,11 @@ describe('toolRegistry.execute edit_file', () => {
     writeFileSync(join(workDir, 'edit.txt'), 'hello world');
     const ctx = makeCtx();
 
-    await toolRegistry.execute('edit_file', { path: 'edit.txt', old_string: 'world', new_string: 'praxis' }, ctx);
+    await toolRegistry.execute(
+      'edit_file',
+      { path: 'edit.txt', old_string: 'world', new_string: 'praxis' },
+      ctx,
+    );
 
     const { readFileSync } = await import('node:fs');
     expect(readFileSync(join(workDir, 'edit.txt'), 'utf-8')).toBe('hello praxis');
@@ -90,7 +98,11 @@ describe('toolRegistry.execute edit_file', () => {
     writeFileSync(join(workDir, 'edit.txt'), 'hello world');
     const ctx = makeCtx();
 
-    const result = await toolRegistry.execute('edit_file', { path: 'edit.txt', old_string: 'missing', new_string: 'new' }, ctx);
+    const result = await toolRegistry.execute(
+      'edit_file',
+      { path: 'edit.txt', old_string: 'missing', new_string: 'new' },
+      ctx,
+    );
 
     expect(result).toContain('not found');
   });
@@ -99,7 +111,11 @@ describe('toolRegistry.execute edit_file', () => {
     writeFileSync(join(workDir, 'edit.txt'), 'foo foo');
     const ctx = makeCtx();
 
-    const result = await toolRegistry.execute('edit_file', { path: 'edit.txt', old_string: 'foo', new_string: 'bar' }, ctx);
+    const result = await toolRegistry.execute(
+      'edit_file',
+      { path: 'edit.txt', old_string: 'foo', new_string: 'bar' },
+      ctx,
+    );
 
     expect(result).toContain('ambiguous');
   });

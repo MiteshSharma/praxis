@@ -7,7 +7,14 @@ export interface NormalizedTask {
   title: string;
   description?: string | null;
   metadata: Record<string, unknown>;
-  triggerKind: 'user_prompt' | 'event' | 'schedule' | 'follow_up' | 'restart' | 'pr_followup' | 'scout';
+  triggerKind:
+    | 'user_prompt'
+    | 'event'
+    | 'schedule'
+    | 'follow_up'
+    | 'restart'
+    | 'pr_followup'
+    | 'scout';
   githubUrl: string;
   githubBranch?: string;
   workflowId?: string;

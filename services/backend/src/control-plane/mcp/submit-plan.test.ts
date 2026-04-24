@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Hono } from 'hono';
 import { mintMcpToken } from '@shared/core';
+import { Hono } from 'hono';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerMcpRoutes } from './submit-plan';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ async function buildApp(overrides: {
 
 async function post(app: Hono, path: string, body: unknown, token?: string) {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (token) headers['authorization'] = `Bearer ${token}`;
+  if (token) headers.authorization = `Bearer ${token}`;
   return app.request(path, {
     method: 'POST',
     headers,
@@ -87,7 +87,7 @@ describe('POST /mcp/submit_plan', () => {
     const app = await buildApp({ mcpSecret: undefined });
     const res = await post(app, '/mcp/submit_plan', VALID_PLAN_BODY);
     expect(res.status).toBe(503);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe('mcp_not_configured');
   });
 
@@ -95,7 +95,7 @@ describe('POST /mcp/submit_plan', () => {
     const app = await buildApp({ mcpSecret: SECRET });
     const res = await app.request('/mcp/submit_plan', { method: 'POST' });
     expect(res.status).toBe(401);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe('missing_token');
   });
 
@@ -103,7 +103,7 @@ describe('POST /mcp/submit_plan', () => {
     const app = await buildApp({ mcpSecret: SECRET });
     const res = await post(app, '/mcp/submit_plan', VALID_PLAN_BODY, 'invalid.jwt.token');
     expect(res.status).toBe(401);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe('invalid_token');
   });
 
@@ -112,7 +112,7 @@ describe('POST /mcp/submit_plan', () => {
     const token = await mintMcpToken('job-1', SECRET);
     const res = await post(app, '/mcp/submit_plan', { title: '' }, token);
     expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe('VALIDATION_ERROR');
   });
 
@@ -121,7 +121,7 @@ describe('POST /mcp/submit_plan', () => {
     const token = await mintMcpToken('job-1', SECRET);
     const res = await post(app, '/mcp/submit_plan', VALID_PLAN_BODY, token);
     expect(res.status).toBe(200);
-    const body = await res.json() as { planId: string; version: number };
+    const body = (await res.json()) as { planId: string; version: number };
     expect(body.planId).toBe('plan-1');
     expect(body.version).toBe(1);
   });
@@ -167,7 +167,7 @@ describe('POST /mcp/query_memory', () => {
     const token = await mintMcpToken('job-1', SECRET);
     const res = await post(app, '/mcp/query_memory', { query: 'test' }, token);
     expect(res.status).toBe(200);
-    const body = await res.json() as { content: null };
+    const body = (await res.json()) as { content: null };
     expect(body.content).toBeNull();
   });
 
@@ -205,7 +205,7 @@ describe('POST /mcp/query_memory', () => {
     const token = await mintMcpToken('job-1', SECRET);
     const res = await post(app, '/mcp/query_memory', { query: 'test' }, token);
     expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe('invalid_repo_url');
   });
 
@@ -222,7 +222,7 @@ describe('POST /mcp/query_memory', () => {
     const token = await mintMcpToken('job-1', SECRET);
     const res = await post(app, '/mcp/query_memory', { query: 'dependency injection' }, token);
     expect(res.status).toBe(200);
-    const body = await res.json() as { content: string; source: string; truncated: boolean };
+    const body = (await res.json()) as { content: string; source: string; truncated: boolean };
     expect(body.content).toContain('Use DI');
     expect(body.source).toBe('full');
     expect(body.truncated).toBe(false);
@@ -235,7 +235,7 @@ describe('POST /mcp/query_memory', () => {
     const token = await mintMcpToken('job-1', SECRET);
     const res = await post(app, '/mcp/query_memory', { query: 'anything' }, token);
     expect(res.status).toBe(200);
-    const body = await res.json() as { content: null };
+    const body = (await res.json()) as { content: null };
     expect(body.content).toBeNull();
   });
 });

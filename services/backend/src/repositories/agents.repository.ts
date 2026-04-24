@@ -74,10 +74,7 @@ export class AgentsRepository {
     contentUri: string,
     definition: Record<string, unknown>,
   ): Promise<AgentDto> {
-    const [agent] = await this.db
-      .insert(agents)
-      .values({ kind, name, description })
-      .returning();
+    const [agent] = await this.db.insert(agents).values({ kind, name, description }).returning();
 
     if (!agent) throw new Error('agent insert failed');
 

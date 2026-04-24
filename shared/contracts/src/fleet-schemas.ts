@@ -45,9 +45,9 @@ export const FleetJobSchema = z.object({
   sessionId: z.string().uuid(),
   sessionTitle: z.string(),
   sessionMessageId: z.string().uuid().nullable(),
-  jobId: z.string().uuid().nullable(),       // Praxis job ID — null until message creates the job
-  jobStatus: z.string().nullable(),           // fine-grained Praxis job status (e.g. 'executing')
-  currentStep: z.string().nullable(),         // e.g. 'execute (2/3)'
+  jobId: z.string().uuid().nullable(), // Praxis job ID — null until message creates the job
+  jobStatus: z.string().nullable(), // fine-grained Praxis job status (e.g. 'executing')
+  currentStep: z.string().nullable(), // e.g. 'execute (2/3)'
   jobType: FleetJobTypeSchema,
   task: z.string(),
   wave: z.number().int(),

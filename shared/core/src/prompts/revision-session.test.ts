@@ -1,11 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildRevisionSystemPrompt } from './revision-session';
 
-function makePlan(overrides: {
-  version?: number;
-  bodyMarkdown?: string;
-  openQuestions?: Array<{ id: string; question: string }>;
-} = {}): Parameters<typeof buildRevisionSystemPrompt>[0]['previousPlan'] {
+function makePlan(
+  overrides: {
+    version?: number;
+    bodyMarkdown?: string;
+    openQuestions?: Array<{ id: string; question: string; answer?: string | null }>;
+  } = {},
+): Parameters<typeof buildRevisionSystemPrompt>[0]['previousPlan'] {
   return {
     id: 'plan-1',
     jobId: 'job-1',
@@ -14,8 +16,14 @@ function makePlan(overrides: {
     contentUri: 'plans/job-1/v2',
     data: {
       title: 'Refactor auth',
+      summary: '',
       bodyMarkdown: overrides.bodyMarkdown ?? '## Steps\n1. Move auth to its own file',
-      openQuestions: overrides.openQuestions ?? [],
+      steps: [],
+      affectedPaths: [],
+      openQuestions: (overrides.openQuestions ?? []).map((q) => ({
+        ...q,
+        answer: q.answer ?? null,
+      })),
     },
     status: 'rejected',
     feedbackFromUser: null,
@@ -99,7 +107,7 @@ describe('buildRevisionSystemPrompt', () => {
 
   it('falls back gracefully when bodyMarkdown is missing', () => {
     const plan = makePlan();
-    (plan.data as Record<string, unknown>).bodyMarkdown = undefined;
+    (plan.data as unknown as Record<string, unknown>).bodyMarkdown = undefined;
     const prompt = buildRevisionSystemPrompt({ previousPlan: plan });
     expect(prompt).toContain('plan body unavailable');
   });

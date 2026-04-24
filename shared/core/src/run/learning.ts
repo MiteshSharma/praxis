@@ -8,8 +8,8 @@ import {
   S3MemoryBackend,
   normalizeRepoKey,
 } from '@shared/memory';
-import { StorageNotConfiguredError } from '@shared/storage';
 import type { SandboxInfo } from '@shared/sandbox';
+import { StorageNotConfiguredError } from '@shared/storage';
 import type { Logger } from '@shared/telemetry';
 import { eq } from 'drizzle-orm';
 import { LEARNING_AGENT } from '../defaults/learning-agent';
@@ -36,7 +36,14 @@ export async function runLearningPass(
   jobId: string,
   sandboxInfo: SandboxInfo,
   workspace: string,
-  deps: { db: Database; log: Logger; memoryBackend?: MemoryBackend; storagePut?: StoragePutFn; fetchFn?: typeof fetch; auxiliaryModel?: string },
+  deps: {
+    db: Database;
+    log: Logger;
+    memoryBackend?: MemoryBackend;
+    storagePut?: StoragePutFn;
+    fetchFn?: typeof fetch;
+    auxiliaryModel?: string;
+  },
 ): Promise<LearningCost> {
   const { db, log } = deps;
   const memoryBackend = deps.memoryBackend ?? new S3MemoryBackend(db);
@@ -53,7 +60,10 @@ export async function runLearningPass(
   try {
     repoKey = normalizeRepoKey(job.githubUrl);
   } catch (err) {
-    log.warn({ jobId, githubUrl: job.githubUrl, err }, 'learning pass: cannot normalize repo key, skipping');
+    log.warn(
+      { jobId, githubUrl: job.githubUrl, err },
+      'learning pass: cannot normalize repo key, skipping',
+    );
     return zeroCost;
   }
 
@@ -133,7 +143,10 @@ Please return the updated memory file in full. Use job id "${job.id.substring(0,
       return cost;
     }
     // Any other storage error (e.g. NoSuchBucket) — warn and skip, never fail the job
-    log.warn({ jobId, repoKey, err }, 'learning pass: storage error saving memory; keeping previous');
+    log.warn(
+      { jobId, repoKey, err },
+      'learning pass: storage error saving memory; keeping previous',
+    );
   }
 
   return cost;
@@ -222,4 +235,3 @@ async function saveRejectedArtifact(
     log.warn({ jobId }, 'learning pass: could not save rejected artifact');
   }
 }
-

@@ -91,7 +91,9 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
         title={
           <Space>
             <span>Plan v{plan.version}</span>
-            <Tag color={PLAN_STATUS_COLOR[plan.status] ?? 'default'}>{plan.status.toUpperCase()}</Tag>
+            <Tag color={PLAN_STATUS_COLOR[plan.status] ?? 'default'}>
+              {plan.status.toUpperCase()}
+            </Tag>
           </Space>
         }
       >
@@ -108,8 +110,8 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
           )}
           {(plan.data.risks ?? []).length > 0 && (
             <Descriptions.Item label="Risks">
-              {(plan.data.risks ?? []).map((r, i) => (
-                <Tag color="orange" key={i} style={{ marginBottom: 2 }}>
+              {(plan.data.risks ?? []).map((r) => (
+                <Tag color="orange" key={r} style={{ marginBottom: 2 }}>
                   {r}
                 </Tag>
               ))}
@@ -117,15 +119,20 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
           )}
         </Descriptions>
 
-        <Collapse ghost items={[{
-          key: 'body',
-          label: 'Full plan details',
-          children: (
-            <div style={{ maxHeight: 480, overflow: 'auto' }}>
-              <Markdown>{plan.data.bodyMarkdown}</Markdown>
-            </div>
-          ),
-        }]} />
+        <Collapse
+          ghost
+          items={[
+            {
+              key: 'body',
+              label: 'Full plan details',
+              children: (
+                <div style={{ maxHeight: 480, overflow: 'auto' }}>
+                  <Markdown>{plan.data.bodyMarkdown}</Markdown>
+                </div>
+              ),
+            },
+          ]}
+        />
 
         {openQuestions.length > 0 && (
           <>
@@ -188,9 +195,15 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
           </div>
         )}
 
-        {approve.error && <Alert type="error" message={String(approve.error)} style={{ marginBottom: 8 }} />}
-        {revise.error && <Alert type="error" message={String(revise.error)} style={{ marginBottom: 8 }} />}
-        {reject.error && <Alert type="error" message={String(reject.error)} style={{ marginBottom: 8 }} />}
+        {approve.error && (
+          <Alert type="error" message={String(approve.error)} style={{ marginBottom: 8 }} />
+        )}
+        {revise.error && (
+          <Alert type="error" message={String(revise.error)} style={{ marginBottom: 8 }} />
+        )}
+        {reject.error && (
+          <Alert type="error" message={String(reject.error)} style={{ marginBottom: 8 }} />
+        )}
 
         <Space style={{ marginTop: 8 }}>
           <Button
@@ -227,11 +240,7 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
             </Button>
           )}
 
-          <Button
-            danger
-            onClick={() => reject.mutate(undefined)}
-            loading={reject.isPending}
-          >
+          <Button danger onClick={() => reject.mutate(undefined)} loading={reject.isPending}>
             Reject
           </Button>
         </Space>
@@ -240,28 +249,35 @@ export function PlanReviewCard({ jobId }: PlanReviewCardProps) {
       {history.length > 0 && (
         <Collapse
           ghost
-          items={[{
-            key: 'history',
-            label: `Previous versions (${history.length})`,
-            children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
-                {history.map((p) => (
-                  <Card key={p.id} size="small" title={`v${p.version} — ${p.status}`}>
-                    {p.feedbackFromUser && (
-                      <Typography.Text type="secondary">
-                        Feedback: {p.feedbackFromUser}
-                      </Typography.Text>
-                    )}
-                    <Collapse ghost items={[{
-                      key: 'body',
-                      label: 'View plan',
-                      children: <Markdown>{p.data.bodyMarkdown}</Markdown>,
-                    }]} />
-                  </Card>
-                ))}
-              </Space>
-            ),
-          }]}
+          items={[
+            {
+              key: 'history',
+              label: `Previous versions (${history.length})`,
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {history.map((p) => (
+                    <Card key={p.id} size="small" title={`v${p.version} — ${p.status}`}>
+                      {p.feedbackFromUser && (
+                        <Typography.Text type="secondary">
+                          Feedback: {p.feedbackFromUser}
+                        </Typography.Text>
+                      )}
+                      <Collapse
+                        ghost
+                        items={[
+                          {
+                            key: 'body',
+                            label: 'View plan',
+                            children: <Markdown>{p.data.bodyMarkdown}</Markdown>,
+                          },
+                        ]}
+                      />
+                    </Card>
+                  ))}
+                </Space>
+              ),
+            },
+          ]}
         />
       )}
     </Space>

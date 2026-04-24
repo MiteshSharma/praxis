@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { gatherJobContext } from './job-context';
 
 // ── DB mock helpers ───────────────────────────────────────────────────────────
@@ -20,13 +20,15 @@ function makePlan(bodyMarkdown?: string) {
   };
 }
 
-function makeStep(overrides: Partial<{
-  name: string;
-  kind: string;
-  status: string;
-  output: Record<string, unknown> | null;
-  stepIndex: number;
-}> = {}) {
+function makeStep(
+  overrides: Partial<{
+    name: string;
+    kind: string;
+    status: string;
+    output: Record<string, unknown> | null;
+    stepIndex: number;
+  }> = {},
+) {
   return {
     name: overrides.name ?? 'execute',
     kind: overrides.kind ?? 'execute',
@@ -36,18 +38,22 @@ function makeStep(overrides: Partial<{
   };
 }
 
-function makeDb(options: {
-  job?: ReturnType<typeof makeJob> | null;
-  plan?: ReturnType<typeof makePlan> | null;
-  steps?: ReturnType<typeof makeStep>[];
-} = {}) {
+function makeDb(
+  options: {
+    job?: ReturnType<typeof makeJob> | null;
+    plan?: ReturnType<typeof makePlan> | null;
+    steps?: ReturnType<typeof makeStep>[];
+  } = {},
+) {
   return {
     query: {
       jobs: {
         findFirst: vi.fn().mockResolvedValue(options.job !== undefined ? options.job : makeJob()),
       },
       plans: {
-        findFirst: vi.fn().mockResolvedValue(options.plan !== undefined ? options.plan : makePlan()),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue(options.plan !== undefined ? options.plan : makePlan()),
       },
       jobSteps: {
         findMany: vi.fn().mockResolvedValue(options.steps ?? []),
@@ -144,7 +150,7 @@ describe('gatherJobContext', () => {
 
   it('shows (no body) when plan data has no bodyMarkdown', async () => {
     const db = makeDb({
-      plan: { id: 'plan-1', jobId: 'job-1', version: 1, data: {} },
+      plan: { id: 'plan-1', jobId: 'job-1', version: 1, data: {} as never },
     });
     const ctx = await gatherJobContext('job-1', db as never);
     expect(ctx).toContain('(no body)');

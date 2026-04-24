@@ -3,17 +3,17 @@ import { Spin, Tag, Tooltip } from 'antd';
 import { rpc } from '../rpc';
 
 const STEP_STATE: Record<string, { icon: string; color: string; dotClass: string }> = {
-  passed:  { icon: '✓', color: 'var(--c-success)', dotClass: 'done' },
-  failed:  { icon: '✕', color: 'var(--c-error)',   dotClass: 'error' },
-  running: { icon: '→', color: 'var(--c-primary)',  dotClass: 'active' },
-  pending: { icon: '○', color: 'var(--c-text-3)',   dotClass: 'wait' },
-  skipped: { icon: '⊘', color: 'var(--c-text-3)',   dotClass: 'wait' },
+  passed: { icon: '✓', color: 'var(--c-success)', dotClass: 'done' },
+  failed: { icon: '✕', color: 'var(--c-error)', dotClass: 'error' },
+  running: { icon: '→', color: 'var(--c-primary)', dotClass: 'active' },
+  pending: { icon: '○', color: 'var(--c-text-3)', dotClass: 'wait' },
+  skipped: { icon: '⊘', color: 'var(--c-text-3)', dotClass: 'wait' },
 };
 
 const KIND_COLORS: Record<string, string> = {
-  plan:    'geekblue',
+  plan: 'geekblue',
   execute: 'cyan',
-  check:   'purple',
+  check: 'purple',
 };
 
 function formatDuration(ms: number): string {
@@ -92,9 +92,7 @@ export function StepProgress({ jobId, refetchInterval = 3000 }: StepProgressProp
             </Tag>
 
             {(step.config as { model?: string })?.model && (
-              <Tag style={{ fontSize: 11 }}>
-                {(step.config as { model?: string }).model}
-              </Tag>
+              <Tag style={{ fontSize: 11 }}>{(step.config as { model?: string }).model}</Tag>
             )}
 
             {durationMs != null && (
@@ -104,12 +102,30 @@ export function StepProgress({ jobId, refetchInterval = 3000 }: StepProgressProp
             )}
 
             {(() => {
-              const out = step.output as { costUsd?: number; inputTokens?: number; outputTokens?: number } | null;
+              const out = step.output as {
+                costUsd?: number;
+                inputTokens?: number;
+                outputTokens?: number;
+              } | null;
               if (!out?.costUsd && !out?.inputTokens) return null;
               return (
-                <Tooltip title={out.inputTokens ? `${out.inputTokens.toLocaleString()} in · ${(out.outputTokens ?? 0).toLocaleString()} out` : undefined}>
-                  <span className="muted small" style={{ whiteSpace: 'nowrap', cursor: out.inputTokens ? 'default' : undefined }}>
-                    {out.costUsd ? `$${out.costUsd.toFixed(4)}` : `${((out.inputTokens ?? 0) + (out.outputTokens ?? 0)).toLocaleString()} tok`}
+                <Tooltip
+                  title={
+                    out.inputTokens
+                      ? `${out.inputTokens.toLocaleString()} in · ${(out.outputTokens ?? 0).toLocaleString()} out`
+                      : undefined
+                  }
+                >
+                  <span
+                    className="muted small"
+                    style={{
+                      whiteSpace: 'nowrap',
+                      cursor: out.inputTokens ? 'default' : undefined,
+                    }}
+                  >
+                    {out.costUsd
+                      ? `$${out.costUsd.toFixed(4)}`
+                      : `${((out.inputTokens ?? 0) + (out.outputTokens ?? 0)).toLocaleString()} tok`}
                   </span>
                 </Tooltip>
               );

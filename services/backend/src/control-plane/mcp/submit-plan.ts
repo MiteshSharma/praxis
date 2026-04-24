@@ -73,7 +73,11 @@ export function registerMcpRoutes(
     const result = SubmitPlanBodySchema.safeParse(raw);
     if (!result.success) {
       return c.json(
-        { error: 'VALIDATION_ERROR', message: 'invalid plan body', details: result.error.flatten().fieldErrors },
+        {
+          error: 'VALIDATION_ERROR',
+          message: 'invalid plan body',
+          details: result.error.flatten().fieldErrors,
+        },
         400,
       );
     }

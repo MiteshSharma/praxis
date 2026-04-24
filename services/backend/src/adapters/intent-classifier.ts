@@ -46,7 +46,7 @@ export async function classifyIntent(
     });
 
     if (!response.ok) return { kind: 'unknown' };
-    const data = await response.json() as { content?: Array<{ type: string; text: string }> };
+    const data = (await response.json()) as { content?: Array<{ type: string; text: string }> };
     const block = data.content?.[0];
     if (block?.type !== 'text') return { kind: 'unknown' };
 
@@ -60,7 +60,11 @@ export async function classifyIntent(
       return { kind: 'status_query' };
     }
     if (kind === 'approval' && typeof parsed.approved === 'boolean') {
-      return { kind: 'approval', approved: parsed.approved, feedback: parsed.feedback ?? undefined };
+      return {
+        kind: 'approval',
+        approved: parsed.approved,
+        feedback: parsed.feedback ?? undefined,
+      };
     }
     return { kind: 'unknown' };
   } catch {

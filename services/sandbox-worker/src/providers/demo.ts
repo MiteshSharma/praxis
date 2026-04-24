@@ -43,4 +43,3 @@ registerProvider(
   () => true,
   () => new DemoProvider(),
 );
-

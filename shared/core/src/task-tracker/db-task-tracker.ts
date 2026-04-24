@@ -91,10 +91,7 @@ export class DbTaskTracker implements TaskTracker {
   }
 
   async updatePlanStatus(planId: string, status: PlanStatus): Promise<void> {
-    await this.db
-      .update(plans)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(plans.id, planId));
+    await this.db.update(plans).set({ status, updatedAt: new Date() }).where(eq(plans.id, planId));
   }
 
   async listPlansForJob(jobId: string): Promise<Plan[]> {

@@ -5,12 +5,14 @@ import { eq } from 'drizzle-orm';
 export class PlatformConfigsRepository {
   constructor(private readonly db: Database) {}
 
-  async list(): Promise<Array<{ platform: string; enabled: boolean; config: Record<string, string> }>> {
+  async list(): Promise<
+    Array<{ platform: string; enabled: boolean; config: Record<string, string> }>
+  > {
     const rows = await this.db.select().from(platformConfigs);
     return rows.map((r) => ({
       platform: r.platform,
-      enabled:  r.enabled,
-      config:   (r.config ?? {}) as Record<string, string>,
+      enabled: r.enabled,
+      config: (r.config ?? {}) as Record<string, string>,
     }));
   }
 

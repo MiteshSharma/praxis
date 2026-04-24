@@ -1,6 +1,6 @@
 import type { MessageDto, PluginDto, SessionDto } from '@shared/contracts';
 import type { Database } from '@shared/db';
-import { artifacts, conversations, messages, plugins } from '@shared/db';
+import { artifacts, conversations, messages, type plugins } from '@shared/db';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
 export function toSessionDto(row: typeof conversations.$inferSelect): SessionDto {
@@ -16,7 +16,9 @@ export function toSessionDto(row: typeof conversations.$inferSelect): SessionDto
   };
 }
 
-export function toMessageDto(row: typeof messages.$inferSelect & { prArtifactUrl?: string | null }): MessageDto {
+export function toMessageDto(
+  row: typeof messages.$inferSelect & { prArtifactUrl?: string | null },
+): MessageDto {
   return {
     id: row.id,
     sessionId: row.conversationId,
@@ -128,10 +130,7 @@ export class SessionsRepository {
         prArtifactUrl: artifacts.url,
       })
       .from(messages)
-      .leftJoin(
-        artifacts,
-        sql`${artifacts.jobId} = ${messages.jobId} AND ${artifacts.kind} = 'pr'`,
-      )
+      .leftJoin(artifacts, sql`${artifacts.jobId} = ${messages.jobId} AND ${artifacts.kind} = 'pr'`)
       .where(whereClause)
       .orderBy(desc(messages.createdAt))
       .limit(limit + 1);

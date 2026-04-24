@@ -26,12 +26,28 @@ export type JobStatus = z.infer<typeof JobStatusSchema>;
 export const JOB_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   queued: ['provisioning', 'cancelled'],
   provisioning: ['preparing', 'failed', 'cancelled'],
-  preparing: ['building', 'executing', 'checking', 'qa_running', 'publishing', 'failed', 'cancelled'],
+  preparing: [
+    'building',
+    'executing',
+    'checking',
+    'qa_running',
+    'publishing',
+    'failed',
+    'cancelled',
+  ],
   building: ['plan_ready', 'failed', 'cancelled'],
   plan_ready: ['plan_review', 'cancelled'],
   plan_review: ['plan_revising', 'preparing', 'executing', 'plan_rejected', 'failed', 'cancelled'],
   plan_revising: ['plan_ready', 'preparing', 'failed', 'cancelled'],
-  executing: ['checking', 'executing', 'preparing', 'learning', 'publishing', 'failed', 'cancelled'],
+  executing: [
+    'checking',
+    'executing',
+    'preparing',
+    'learning',
+    'publishing',
+    'failed',
+    'cancelled',
+  ],
   checking: ['checking', 'executing', 'learning', 'publishing', 'failed', 'cancelled'],
   qa_running: ['preparing', 'executing', 'failed', 'cancelled'],
   learning: ['completed', 'failed', 'cancelled'],
@@ -94,6 +110,7 @@ export const NotifyEventSchema = z.discriminatedUnion('kind', [
     phase: z.string(),
     systemPrompt: z.string(),
   }),
+  z.object({ kind: z.literal('no-changes') }),
 ]);
 export type NotifyEvent = z.infer<typeof NotifyEventSchema>;
 

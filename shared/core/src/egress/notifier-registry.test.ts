@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { NotifierRegistry } from './notifier-registry';
 
 function makeNotifier() {
@@ -9,9 +9,7 @@ describe('NotifierRegistry', () => {
   describe('resolveForJob', () => {
     it('returns the notifier for the job source', () => {
       const webNotifier = makeNotifier();
-      const registry = new NotifierRegistry(
-        new Map([['web', webNotifier]]) as never,
-      );
+      const registry = new NotifierRegistry(new Map([['web', webNotifier]]) as never);
       const result = registry.resolveForJob({ source: 'web' } as never);
       expect(result).toBe(webNotifier);
     });
@@ -34,9 +32,7 @@ describe('NotifierRegistry', () => {
   describe('resolve', () => {
     it('returns the notifier when source is registered', () => {
       const webNotifier = makeNotifier();
-      const registry = new NotifierRegistry(
-        new Map([['web', webNotifier]]) as never,
-      );
+      const registry = new NotifierRegistry(new Map([['web', webNotifier]]) as never);
       expect(registry.resolve('web' as never)).toBe(webNotifier);
     });
 

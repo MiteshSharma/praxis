@@ -141,7 +141,9 @@ export class AgentsService {
     const agent = await this.repo.findById(agentId);
     if (!agent) throw new ORPCError('NOT_FOUND', { message: 'agent not found' });
     if (agent.kind !== 'agent') {
-      throw new ORPCError('BAD_REQUEST', { message: 'only agents (not skills) can have skills attached' });
+      throw new ORPCError('BAD_REQUEST', {
+        message: 'only agents (not skills) can have skills attached',
+      });
     }
     return this.repo.findSkillsForAgent(agentId);
   }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mintMcpToken, verifyMcpToken } from './auth';
 
 const SECRET = 'test-secret-that-is-at-least-32-chars-long';
@@ -34,7 +34,7 @@ describe('verifyMcpToken', () => {
     const token = await mintMcpToken('job-1', SECRET);
     const parts = token.split('.');
     // Corrupt the signature
-    parts[2] = parts[2]!.slice(0, -4) + 'XXXX';
+    parts[2] = `${parts[2]?.slice(0, -4)}XXXX`;
     const tampered = parts.join('.');
     await expect(verifyMcpToken(tampered, SECRET)).rejects.toThrow();
   });

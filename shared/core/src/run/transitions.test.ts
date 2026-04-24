@@ -1,12 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { appendTimeline, transitionJob } from './transitions';
 
 // ── DB mock helpers ───────────────────────────────────────────────────────────
 
-function makeTx(options: {
-  updateReturning?: unknown[];
-  selectSeq?: number;
-} = {}) {
+function makeTx(
+  options: {
+    updateReturning?: unknown[];
+    selectSeq?: number;
+  } = {},
+) {
   return {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
@@ -29,7 +31,9 @@ function makeTx(options: {
 function makeDb(txOptions?: Parameters<typeof makeTx>[0]) {
   const tx = makeTx(txOptions);
   const db = {
-    transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     _tx: tx,
   };
   return db;
@@ -118,6 +122,8 @@ describe('transitionJob', () => {
 
     const tx = db._tx;
     const setCall = tx.update.mock.results[0].value.set;
-    expect(setCall).toHaveBeenCalledWith(expect.objectContaining({ startedAt, status: 'provisioning' }));
+    expect(setCall).toHaveBeenCalledWith(
+      expect.objectContaining({ startedAt, status: 'provisioning' }),
+    );
   });
 });

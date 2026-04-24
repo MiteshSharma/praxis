@@ -1,9 +1,25 @@
-import { ORPCError } from '@orpc/server';
-import type { ArtifactDto, JobDto, JobStatus, JobStepDto, PrReviewComment, ReviewCommentDto, TimelineEventDto } from '@shared/contracts';
-import { JOB_EXECUTE_QUEUE, TaskIngestService, appendTimeline, splitWebInput } from '@shared/core';
-import { type Database, artifacts, jobTimeline, jobs, messages, plans, sandboxes } from '@shared/db';
-import type { Logger } from '@shared/telemetry';
 import { Octokit } from '@octokit/rest';
+import { ORPCError } from '@orpc/server';
+import type {
+  ArtifactDto,
+  JobDto,
+  JobStatus,
+  JobStepDto,
+  PrReviewComment,
+  ReviewCommentDto,
+  TimelineEventDto,
+} from '@shared/contracts';
+import { JOB_EXECUTE_QUEUE, TaskIngestService, appendTimeline, splitWebInput } from '@shared/core';
+import {
+  type Database,
+  artifacts,
+  jobTimeline,
+  jobs,
+  messages,
+  plans,
+  sandboxes,
+} from '@shared/db';
+import type { Logger } from '@shared/telemetry';
 import { and, asc, desc, eq, gt } from 'drizzle-orm';
 import type PgBoss from 'pg-boss';
 import { JobsRepository, toJobDto } from '../repositories/jobs.repository';
@@ -96,7 +112,8 @@ export class JobsService {
     await this.db.update(jobs).set({ messageId: userMsg.id }).where(eq(jobs.id, jobId));
 
     const row = await this.repo.findById(jobId);
-    if (!row) throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'job not found after creation' });
+    if (!row)
+      throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'job not found after creation' });
     return toJobDto(row);
   }
 
@@ -138,7 +155,11 @@ export class JobsService {
       })
       .where(eq(jobs.id, jobId));
 
-    await appendTimeline(this.db, jobId, 'status-changed', { from: row.status, to: 'cancelled', actor: 'user' });
+    await appendTimeline(this.db, jobId, 'status-changed', {
+      from: row.status,
+      to: 'cancelled',
+      actor: 'user',
+    });
 
     // Signal the sandbox to stop immediately if one is active for this job.
     const [sandbox] = await this.db
@@ -166,17 +187,24 @@ export class JobsService {
     const row = await this.repo.findById(jobId);
     if (!row) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (row.status !== 'failed') {
-      throw new ORPCError('BAD_REQUEST', { message: 'only failed jobs can be resumed from a plan checkpoint' });
+      throw new ORPCError('BAD_REQUEST', {
+        message: 'only failed jobs can be resumed from a plan checkpoint',
+      });
     }
 
     const plan = await this.db.query.plans.findFirst({
       where: and(eq(plans.jobId, jobId), eq(plans.status, 'approved')),
     });
     if (!plan) {
-      throw new ORPCError('BAD_REQUEST', { message: 'no approved plan found — use Restart to run from scratch' });
+      throw new ORPCError('BAD_REQUEST', {
+        message: 'no approved plan found — use Restart to run from scratch',
+      });
     }
 
-    await this.db.update(jobs).set({ status: 'queued', updatedAt: new Date() }).where(eq(jobs.id, jobId));
+    await this.db
+      .update(jobs)
+      .set({ status: 'queued', updatedAt: new Date() })
+      .where(eq(jobs.id, jobId));
     await this.boss.send(JOB_EXECUTE_QUEUE, { jobId });
     return { jobId };
   }
@@ -189,7 +217,11 @@ export class JobsService {
     const rows = await this.db
       .select()
       .from(jobTimeline)
-      .where(cursor !== undefined ? and(eq(jobTimeline.jobId, jobId), gt(jobTimeline.seq, cursor)) : eq(jobTimeline.jobId, jobId))
+      .where(
+        cursor !== undefined
+          ? and(eq(jobTimeline.jobId, jobId), gt(jobTimeline.seq, cursor))
+          : eq(jobTimeline.jobId, jobId),
+      )
       .orderBy(asc(jobTimeline.seq))
       .limit(limit + 1);
 
@@ -210,13 +242,15 @@ export class JobsService {
 
   async getReviewComments(jobId: string): Promise<ReviewCommentDto[]> {
     const githubToken = process.env.GITHUB_TOKEN ?? '';
-    if (!githubToken) throw new ORPCError('BAD_REQUEST', { message: 'GITHUB_TOKEN not configured' });
+    if (!githubToken)
+      throw new ORPCError('BAD_REQUEST', { message: 'GITHUB_TOKEN not configured' });
 
     const artifact = await this.db.query.artifacts.findFirst({
       where: and(eq(artifacts.jobId, jobId), eq(artifacts.kind, 'pr')),
       orderBy: desc(artifacts.createdAt),
     });
-    if (!artifact?.url) throw new ORPCError('NOT_FOUND', { message: 'no PR artifact found for this job' });
+    if (!artifact?.url)
+      throw new ORPCError('NOT_FOUND', { message: 'no PR artifact found for this job' });
 
     const meta = artifact.metadata as { prNumber?: number; repoUrl?: string };
     if (!meta.prNumber || !meta.repoUrl) {
@@ -264,17 +298,21 @@ export class JobsService {
     const original = await this.repo.findById(jobId);
     if (!original) throw new ORPCError('NOT_FOUND', { message: 'job not found' });
     if (original.status !== 'completed') {
-      throw new ORPCError('BAD_REQUEST', { message: 'can only create follow-ups on completed jobs' });
+      throw new ORPCError('BAD_REQUEST', {
+        message: 'can only create follow-ups on completed jobs',
+      });
     }
 
     const prArtifact = await this.db.query.artifacts.findFirst({
       where: and(eq(artifacts.jobId, jobId), eq(artifacts.kind, 'pr')),
       orderBy: desc(artifacts.createdAt),
     });
-    if (!prArtifact) throw new ORPCError('BAD_REQUEST', { message: 'no PR artifact found — job has no open PR' });
+    if (!prArtifact)
+      throw new ORPCError('BAD_REQUEST', { message: 'no PR artifact found — job has no open PR' });
 
     const meta = prArtifact.metadata as { branchName?: string; prNumber?: number };
-    if (!meta.branchName) throw new ORPCError('BAD_REQUEST', { message: 'PR artifact missing branchName' });
+    if (!meta.branchName)
+      throw new ORPCError('BAD_REQUEST', { message: 'PR artifact missing branchName' });
 
     return this._createFollowupJob(jobId, meta.branchName, task, []);
   }
@@ -301,7 +339,8 @@ export class JobsService {
     reviewNote?: string | null,
   ): Promise<{ jobId: string }> {
     const original = await this.repo.findByPrBranch(prBranch);
-    if (!original) throw new ORPCError('NOT_FOUND', { message: `no job found for PR branch: ${prBranch}` });
+    if (!original)
+      throw new ORPCError('NOT_FOUND', { message: `no job found for PR branch: ${prBranch}` });
     if (original.status !== 'completed') {
       throw new ORPCError('BAD_REQUEST', { message: 'job is not yet completed' });
     }
@@ -375,10 +414,7 @@ export class JobsService {
     // Re-point any conversation messages that referenced the old job to the new one,
     // so the conversation thread shows the latest run instead of the failed one.
     if (original.conversationId) {
-      await this.db
-        .update(messages)
-        .set({ jobId: id })
-        .where(eq(messages.jobId, original.id));
+      await this.db.update(messages).set({ jobId: id }).where(eq(messages.jobId, original.id));
     }
 
     return { jobId: id };

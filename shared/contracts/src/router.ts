@@ -1,14 +1,12 @@
 import { oc } from '@orpc/contract';
 import { z } from 'zod';
+import { JobStatusSchema } from './events';
+import { FleetGraphSchema, FleetJobSchema, FleetSchema } from './fleet-schemas';
 import {
   AgentSchema,
   ArtifactSchema,
   CostSummarySchema,
   DailyCostSchema,
-  RepoCostSchema,
-  ReviewCommentSchema,
-  SessionChannelSchema,
-  SessionSchema,
   JobSchema,
   JobStepSchema,
   MessageSchema,
@@ -16,14 +14,16 @@ import {
   PlatformConfigSchema,
   PluginSchema,
   ProviderConfigSchema,
+  RepoCostSchema,
   RepoMemoryListItemSchema,
   RepoMemorySchema,
+  ReviewCommentSchema,
+  SessionChannelSchema,
+  SessionSchema,
   SettingSchema,
   TimelineEventSchema,
   WorkflowSchema,
 } from './schemas';
-import { JobStatusSchema } from './events';
-import { FleetSchema, FleetJobSchema, FleetGraphSchema } from './fleet-schemas';
 
 /**
  * The contract. Handlers are implemented in services/backend via oRPC's
@@ -62,9 +62,7 @@ export const contract = {
       )
       .output(z.array(JobSchema)),
 
-    cancel: oc
-      .input(z.object({ jobId: z.string().uuid() }))
-      .output(z.object({ ok: z.boolean() })),
+    cancel: oc.input(z.object({ jobId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
 
     listArtifacts: oc.input(z.object({ jobId: z.string().uuid() })).output(z.array(ArtifactSchema)),
 
@@ -123,6 +121,13 @@ export const contract = {
           // form source
           name: z.string().optional(),
           description: z.string().optional(),
+          scout: z
+            .object({
+              model: z.string().optional(),
+              agentId: z.string().uuid().optional(),
+              skillId: z.string().uuid().optional(),
+            })
+            .optional(),
           steps: z
             .array(
               z.object({
@@ -152,6 +157,13 @@ export const contract = {
           workflowId: z.string().uuid(),
           name: z.string().min(1),
           description: z.string().optional(),
+          scout: z
+            .object({
+              model: z.string().optional(),
+              agentId: z.string().uuid().optional(),
+              skillId: z.string().uuid().optional(),
+            })
+            .optional(),
           steps: z.array(
             z.object({
               kind: z.enum(['plan', 'execute', 'check']),
@@ -220,7 +232,9 @@ export const contract = {
       )
       .output(AgentSchema),
 
-    delete: oc.input(z.object({ agentId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc
+      .input(z.object({ agentId: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
 
     listSkills: oc.input(z.object({ agentId: z.string().uuid() })).output(z.array(AgentSchema)),
 
@@ -270,7 +284,9 @@ export const contract = {
       )
       .output(SessionSchema),
 
-    delete: oc.input(z.object({ sessionId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc
+      .input(z.object({ sessionId: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
 
     send: oc
       .input(
@@ -320,7 +336,9 @@ export const contract = {
       .input(z.object({ channelId: z.string().uuid(), enabled: z.boolean() }))
       .output(SessionChannelSchema),
 
-    delete: oc.input(z.object({ channelId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc
+      .input(z.object({ channelId: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
   },
 
   steps: {
@@ -395,7 +413,9 @@ export const contract = {
       .input(z.object({ pluginId: z.string().uuid(), enabled: z.boolean() }))
       .output(PluginSchema),
 
-    delete: oc.input(z.object({ pluginId: z.string().uuid() })).output(z.object({ ok: z.boolean() })),
+    delete: oc
+      .input(z.object({ pluginId: z.string().uuid() }))
+      .output(z.object({ ok: z.boolean() })),
   },
 
   providers: {
@@ -423,9 +443,9 @@ export const contract = {
       .input(
         z.object({
           platform: z.string().min(1),
-          secrets:  z.record(z.string()),
-          config:   z.record(z.string()).optional(),
-          enabled:  z.boolean().optional(),
+          secrets: z.record(z.string()),
+          config: z.record(z.string()).optional(),
+          enabled: z.boolean().optional(),
         }),
       )
       .output(z.object({ ok: z.boolean() })),
@@ -438,22 +458,32 @@ export const contract = {
   settings: {
     list: oc.output(z.array(SettingSchema)),
 
-    update: oc
-      .input(z.object({ key: z.string(), value: z.string() }))
-      .output(SettingSchema),
+    update: oc.input(z.object({ key: z.string(), value: z.string() })).output(SettingSchema),
   },
 
   costs: {
     summary: oc
-      .input(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() }).optional())
+      .input(
+        z
+          .object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() })
+          .optional(),
+      )
       .output(CostSummarySchema),
 
     daily: oc
-      .input(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() }).optional())
+      .input(
+        z
+          .object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() })
+          .optional(),
+      )
       .output(z.array(DailyCostSchema)),
 
     byRepo: oc
-      .input(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() }).optional())
+      .input(
+        z
+          .object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() })
+          .optional(),
+      )
       .output(z.array(RepoCostSchema)),
   },
 
@@ -466,9 +496,7 @@ export const contract = {
       .input(z.object({ fleetId: z.string().uuid() }))
       .output(FleetSchema.extend({ jobs: z.array(FleetJobSchema) })),
 
-    getGraph: oc
-      .input(z.object({ fleetId: z.string().uuid() }))
-      .output(FleetGraphSchema),
+    getGraph: oc.input(z.object({ fleetId: z.string().uuid() })).output(FleetGraphSchema),
 
     createFanOut: oc
       .input(

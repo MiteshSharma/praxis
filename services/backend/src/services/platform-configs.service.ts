@@ -16,13 +16,15 @@ export class PlatformConfigsService {
     private readonly secretBackend: SecretBackend,
   ) {}
 
-  async list(): Promise<Array<{
-    platform: string;
-    enabled: boolean;
-    configured: boolean;
-    maskedSecrets: Record<string, string> | null;
-    config: Record<string, string>;
-  }>> {
+  async list(): Promise<
+    Array<{
+      platform: string;
+      enabled: boolean;
+      configured: boolean;
+      maskedSecrets: Record<string, string> | null;
+      config: Record<string, string>;
+    }>
+  > {
     const rows = await this.repo.list();
     return Promise.all(
       rows.map(async (row) => {

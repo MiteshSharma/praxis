@@ -2,23 +2,28 @@ import { useState } from 'react';
 import { Link, Route, Routes, useLocation } from 'react-router-dom';
 import { AgentBrowse } from './pages/AgentBrowse';
 import { CostDashboard } from './pages/CostDashboard';
-import { SessionDetail } from './pages/SessionDetail';
-import { SessionList } from './pages/SessionList';
+import { FleetDetail } from './pages/FleetDetail';
+import { FleetList } from './pages/FleetList';
 import { JobView } from './pages/JobView';
 import { MemoryEditor } from './pages/MemoryEditor';
 import { MemoryList } from './pages/MemoryList';
-import { WorkflowBrowse } from './pages/WorkflowBrowse';
+import { SessionDetail } from './pages/SessionDetail';
+import { SessionList } from './pages/SessionList';
 import { SettingsPage } from './pages/Settings';
-import { FleetList } from './pages/FleetList';
-import { FleetDetail } from './pages/FleetDetail';
+import { WorkflowBrowse } from './pages/WorkflowBrowse';
 
 const NAV_ITEMS = [
   {
     key: '/sessions',
     label: 'Sessions',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M14 2H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3l2 2 2-2h5a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path
+          d="M14 2H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3l2 2 2-2h5a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
       </svg>
     ),
   },
@@ -26,11 +31,24 @@ const NAV_ITEMS = [
     key: '/workflows',
     label: 'Workflows',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="1" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
-        <rect x="10" y="1" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
-        <rect x="5.5" y="10" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
-        <path d="M3.5 6v2h9V6M8 8v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="1" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+        <rect x="10" y="1" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+        <rect
+          x="5.5"
+          y="10"
+          width="5"
+          height="5"
+          rx="1.5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M3.5 6v2h9V6M8 8v2"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
       </svg>
     ),
   },
@@ -38,9 +56,14 @@ const NAV_ITEMS = [
     key: '/agents',
     label: 'Agents',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.4"/>
-        <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.4" />
+        <path
+          d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
       </svg>
     ),
   },
@@ -48,9 +71,14 @@ const NAV_ITEMS = [
     key: '/memories',
     label: 'Memory',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M8 1a5 5 0 0 1 5 5c0 2-.8 3.7-2 4.8V13H5v-2.2A5 5 0 0 1 3 6a5 5 0 0 1 5-5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-        <path d="M5 13h6M6 15h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path
+          d="M8 1a5 5 0 0 1 5 5c0 2-.8 3.7-2 4.8V13H5v-2.2A5 5 0 0 1 3 6a5 5 0 0 1 5-5Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <path d="M5 13h6M6 15h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -58,10 +86,10 @@ const NAV_ITEMS = [
     key: '/fleets',
     label: 'Fleets',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="4" width="4" height="8" rx="1" stroke="currentColor" strokeWidth="1.4"/>
-        <rect x="6" y="2" width="4" height="10" rx="1" stroke="currentColor" strokeWidth="1.4"/>
-        <rect x="11" y="5" width="4" height="7" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="4" width="4" height="8" rx="1" stroke="currentColor" strokeWidth="1.4" />
+        <rect x="6" y="2" width="4" height="10" rx="1" stroke="currentColor" strokeWidth="1.4" />
+        <rect x="11" y="5" width="4" height="7" rx="1" stroke="currentColor" strokeWidth="1.4" />
       </svg>
     ),
   },
@@ -69,9 +97,14 @@ const NAV_ITEMS = [
     key: '/costs',
     label: 'Costs',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="6.3" stroke="currentColor" strokeWidth="1.4"/>
-        <path d="M8 4v1.5M8 10.5V12M6 6.5c0-.8.9-1.5 2-1.5s2 .7 2 1.5S9.1 8 8 8s-2 .7-2 1.5S7 11 8 11s2-.7 2-1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6.3" stroke="currentColor" strokeWidth="1.4" />
+        <path
+          d="M8 4v1.5M8 10.5V12M6 6.5c0-.8.9-1.5 2-1.5s2 .7 2 1.5S9.1 8 8 8s-2 .7-2 1.5S7 11 8 11s2-.7 2-1.5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
       </svg>
     ),
   },
@@ -79,9 +112,14 @@ const NAV_ITEMS = [
     key: '/settings',
     label: 'Settings',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4"/>
-        <path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.93 2.93l1.41 1.41M11.66 11.66l1.41 1.41M2.93 13.07l1.41-1.41M11.66 4.34l1.41-1.41" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
+        <path
+          d="M8 1v2M8 13v2M1 8h2M13 8h2M2.93 2.93l1.41 1.41M11.66 11.66l1.41 1.41M2.93 13.07l1.41-1.41M11.66 4.34l1.41-1.41"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
       </svg>
     ),
   },
@@ -91,22 +129,39 @@ export function App() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
 
-  const activeKey =
-    NAV_ITEMS.find(
-      (item) => location.pathname === item.key || location.pathname.startsWith(item.key + '/'),
-    )?.key;
+  const activeKey = NAV_ITEMS.find(
+    (item) => location.pathname === item.key || location.pathname.startsWith(`${item.key}/`),
+  )?.key;
 
   return (
     <div className="app-shell">
       {/* Sidebar */}
       <nav className={`sidebar${collapsed ? ' collapsed' : ''}`}>
-        <div className="sidebar-logo" onClick={() => setCollapsed((v) => !v)}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <rect x="2" y="2" width="20" height="20" rx="6" fill="#5B5BD6"/>
-            <path d="M8 12l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <button
+          type="button"
+          className="sidebar-logo"
+          onClick={() => setCollapsed((v) => !v)}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="2" width="20" height="20" rx="6" fill="#5B5BD6" />
+            <path
+              d="M8 12l3 3 5-5"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
           {!collapsed && <span className="sidebar-logo-text">Praxis</span>}
-        </div>
+        </button>
 
         <div className="sidebar-nav">
           {NAV_ITEMS.map((item) => (

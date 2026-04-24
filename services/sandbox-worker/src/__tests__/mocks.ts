@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
-import type { IExecService } from '../services/exec.interface';
 import type { ExecResult } from '../dto/exec.dto';
+import type { IExecService } from '../services/exec.interface';
 import type { OctokitLike } from '../services/publish.service';
 
 // ── IExecService ─────────────────────────────────────────────────────────────
@@ -22,12 +22,13 @@ export function createMockExecService(
 // ── OctokitLike ──────────────────────────────────────────────────────────────
 
 export function createMockOctokit(pr?: { number: number; html_url: string }): OctokitLike & {
-  pulls: { create: ReturnType<typeof vi.fn> };
+  pulls: { create: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> };
 } {
   const prData = pr ?? { number: 42, html_url: 'https://github.com/owner/repo/pull/42' };
   return {
     pulls: {
       create: vi.fn().mockResolvedValue({ data: prData }),
+      list: vi.fn().mockResolvedValue({ data: [] }),
     },
   };
 }

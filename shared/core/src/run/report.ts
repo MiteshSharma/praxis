@@ -56,7 +56,13 @@ export async function runReportPass(
   jobId: string,
   sandboxInfo: SandboxInfo,
   workspace: string,
-  deps: { db: Database; log: Logger; fetchFn?: typeof fetch; providerEnv?: Record<string, string>; auxiliaryModel?: string },
+  deps: {
+    db: Database;
+    log: Logger;
+    fetchFn?: typeof fetch;
+    providerEnv?: Record<string, string>;
+    auxiliaryModel?: string;
+  },
 ): Promise<ReportCost> {
   const { db, log } = deps;
   const zeroCost: ReportCost = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -180,7 +186,11 @@ async function callSandboxForText(
 
   for await (const chunk of parseSSE(response.body)) {
     let parsed: unknown = chunk;
-    try { parsed = JSON.parse(chunk); } catch { /* leave as string */ }
+    try {
+      parsed = JSON.parse(chunk);
+    } catch {
+      /* leave as string */
+    }
 
     if (parsed !== null && typeof parsed === 'object') {
       const msg = parsed as Record<string, unknown>;
@@ -206,15 +216,27 @@ async function callSandboxForText(
 
 function extractJson(text: string): Record<string, unknown> | null {
   const t = text.trim();
-  try { return JSON.parse(t) as Record<string, unknown>; } catch { /* fall through */ }
+  try {
+    return JSON.parse(t) as Record<string, unknown>;
+  } catch {
+    /* fall through */
+  }
   const fenceMatch = t.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch?.[1]) {
-    try { return JSON.parse(fenceMatch[1].trim()) as Record<string, unknown>; } catch { /* fall through */ }
+    try {
+      return JSON.parse(fenceMatch[1].trim()) as Record<string, unknown>;
+    } catch {
+      /* fall through */
+    }
   }
   const start = t.indexOf('{');
   const end = t.lastIndexOf('}');
   if (start !== -1 && end > start) {
-    try { return JSON.parse(t.slice(start, end + 1)) as Record<string, unknown>; } catch { /* fall through */ }
+    try {
+      return JSON.parse(t.slice(start, end + 1)) as Record<string, unknown>;
+    } catch {
+      /* fall through */
+    }
   }
   return null;
 }

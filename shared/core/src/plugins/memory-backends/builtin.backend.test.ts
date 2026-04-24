@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
 import { InvalidMemoryFormatError } from '@shared/memory';
+import { describe, expect, it, vi } from 'vitest';
 
 // Trigger self-registration and capture the registry — done once at module load.
 await import('./builtin.backend.js');
@@ -37,21 +37,27 @@ function makeTx() {
   };
 }
 
-function makeDb(overrides: {
-  repoMemoriesRow?: { content: string } | null;
-  ftsRows?: Array<{ chunk_index: number; content: string }>;
-} = {}) {
+function makeDb(
+  overrides: {
+    repoMemoriesRow?: { content: string } | null;
+    ftsRows?: Array<{ chunk_index: number; content: string }>;
+  } = {},
+) {
   const tx = makeTx();
   return {
     execute: vi.fn().mockResolvedValue(overrides.ftsRows ?? []),
     query: {
       repoMemories: {
-        findFirst: vi.fn().mockResolvedValue(
-          overrides.repoMemoriesRow !== undefined ? overrides.repoMemoriesRow : null,
-        ),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue(
+            overrides.repoMemoriesRow !== undefined ? overrides.repoMemoriesRow : null,
+          ),
       },
     },
-    transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     _tx: tx,
   };
 }
@@ -81,26 +87,26 @@ describe('BuiltinMemoryBackend.loadForJob', () => {
     const result = await backend.loadForJob('github.com/owner/repo', 'dependency injection');
 
     expect(result).not.toBeNull();
-    expect(result!.source).toBe('fts');
-    expect(result!.truncated).toBe(true);
+    expect(result?.source).toBe('fts');
+    expect(result?.truncated).toBe(true);
     // Chunks are sorted by chunk_index before joining
-    expect(result!.content).toMatch(/first chunk[\s\S]*second chunk/);
+    expect(result?.content).toMatch(/first chunk[\s\S]*second chunk/);
   });
 
   it('returns full content fallback when query is empty string', async () => {
     const db = makeDb({ ftsRows: [], repoMemoriesRow: { content: VALID_MEMORY } });
     const backend = createBackend(db);
     const result = await backend.loadForJob('github.com/owner/repo', '');
-    expect(result!.source).toBe('full');
-    expect(result!.truncated).toBe(false);
-    expect(result!.content).toBe(VALID_MEMORY);
+    expect(result?.source).toBe('full');
+    expect(result?.truncated).toBe(false);
+    expect(result?.content).toBe(VALID_MEMORY);
   });
 
   it('returns full content when query is whitespace only', async () => {
     const db = makeDb({ ftsRows: [], repoMemoriesRow: { content: VALID_MEMORY } });
     const backend = createBackend(db);
     const result = await backend.loadForJob('github.com/owner/repo', '   ');
-    expect(result!.source).toBe('full');
+    expect(result?.source).toBe('full');
   });
 
   it('returns null when repo_memories row has no content', async () => {
@@ -154,8 +160,9 @@ describe('chunkMarkdown (via save)', () => {
   it('large section is split at entry boundaries without throwing', async () => {
     // Validator caps entries per section at 20; use long entries to exceed 1600-char limit.
     const longEntryText = 'x'.repeat(120);
-    const entries = Array.from({ length: 16 }, (_, i) =>
-      `- [low] ${longEntryText} entry-${i}. (job:aabb${String(i).padStart(4, '0')})`,
+    const entries = Array.from(
+      { length: 16 },
+      (_, i) => `- [low] ${longEntryText} entry-${i}. (job:aabb${String(i).padStart(4, '0')})`,
     ).join('\n');
     const largeMemory = `# Repository Memory: github.com/large/repo
 

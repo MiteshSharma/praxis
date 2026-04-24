@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mintCallbackToken, verifyCallbackToken } from './auth';
 
 const SECRET = 'test-secret-that-is-at-least-32-chars-long';
@@ -39,7 +39,7 @@ describe('verifyCallbackToken', () => {
   it('throws on tampered signature', async () => {
     const token = await mintCallbackToken('job-1', SECRET, 24);
     const parts = token.split('.');
-    parts[2] = parts[2]!.slice(0, -4) + 'XXXX';
+    parts[2] = `${parts[2]?.slice(0, -4)}XXXX`;
     await expect(verifyCallbackToken(parts.join('.'), SECRET)).rejects.toThrow();
   });
 

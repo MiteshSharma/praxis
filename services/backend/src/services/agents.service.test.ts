@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Mock AgentsRepository ─────────────────────────────────────────────────────
 
@@ -63,15 +63,15 @@ describe('AgentsService', () => {
 
   describe('create — form source', () => {
     it('throws BAD_REQUEST when name is missing', async () => {
-      await expect(
-        service.create({ source: 'form', systemPrompt: 'Be helpful' }),
-      ).rejects.toThrow('name is required');
+      await expect(service.create({ source: 'form', systemPrompt: 'Be helpful' })).rejects.toThrow(
+        'name is required',
+      );
     });
 
     it('throws BAD_REQUEST when systemPrompt is missing', async () => {
-      await expect(
-        service.create({ source: 'form', name: 'MyAgent' }),
-      ).rejects.toThrow('systemPrompt is required');
+      await expect(service.create({ source: 'form', name: 'MyAgent' })).rejects.toThrow(
+        'systemPrompt is required',
+      );
     });
 
     it('creates agent with defaults when optional fields are absent', async () => {
@@ -81,9 +81,9 @@ describe('AgentsService', () => {
       await service.create({ source: 'form', name: 'MyAgent', systemPrompt: 'Be helpful' });
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        'agent',                  // kind default
+        'agent', // kind default
         'MyAgent',
-        '',                       // description default
+        '', // description default
         'form',
         expect.stringContaining('form:'),
         expect.objectContaining({
@@ -106,8 +106,12 @@ describe('AgentsService', () => {
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        'skill', expect.any(String), expect.any(String), expect.any(String),
-        expect.any(String), expect.any(Object),
+        'skill',
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        expect.any(Object),
       );
     });
 
@@ -130,9 +134,7 @@ describe('AgentsService', () => {
 
   describe('create — inline source', () => {
     it('throws BAD_REQUEST when inlineContent is missing', async () => {
-      await expect(service.create({ source: 'inline' })).rejects.toThrow(
-        'inlineContent required',
-      );
+      await expect(service.create({ source: 'inline' })).rejects.toThrow('inlineContent required');
     });
 
     it('throws BAD_REQUEST when loaded definition is not kind=agent', async () => {
@@ -162,8 +164,12 @@ describe('AgentsService', () => {
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        expect.any(String), 'InlineAgent', 'inline', 'inline',
-        expect.stringContaining('inline:'), expect.any(Object),
+        expect.any(String),
+        'InlineAgent',
+        'inline',
+        'inline',
+        expect.stringContaining('inline:'),
+        expect.any(Object),
       );
       expect(result).toBe(dto);
     });
@@ -203,7 +209,10 @@ describe('AgentsService', () => {
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        expect.any(String), 'GHAgent', 'from github', 'github',
+        expect.any(String),
+        'GHAgent',
+        'from github',
+        'github',
         'github:https://github.com/owner/repo/agent.yaml@deadbeef',
         expect.any(Object),
       );

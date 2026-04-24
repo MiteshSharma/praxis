@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { PublishService } from './publish.service';
+import { beforeEach, describe, expect, it, type vi } from 'vitest';
 import { createMockOctokit, createMockShell } from '../__tests__/mocks';
 import type { PublishInput } from '../dto/publish.dto';
+import { PublishService } from './publish.service';
 
 const BASE_INPUT: PublishInput = {
   sessionId: 'sess-1',
@@ -22,7 +22,10 @@ describe('PublishService.publish', () => {
 
   beforeEach(() => {
     octokit = createMockOctokit({ number: 7, html_url: 'https://github.com/owner/repo/pull/7' });
-    shell = createMockShell({ 'git status --porcelain': 'M src/index.ts', 'git rev-parse HEAD': 'abc1234\n' });
+    shell = createMockShell({
+      'git status --porcelain': 'M src/index.ts',
+      'git rev-parse HEAD': 'abc1234\n',
+    });
   });
 
   it('returns no_changes when working tree is clean', async () => {
@@ -36,7 +39,7 @@ describe('PublishService.publish', () => {
     const svc = new PublishService(() => octokit, shell as never);
     await svc.publish(BASE_INPUT);
 
-    const calls = (shell as ReturnType<typeof vi.fn>).mock.calls.map((c: [string, string]) => c[0]);
+    const calls = (shell as ReturnType<typeof vi.fn>).mock.calls.map((c: string[]) => c[0]);
     expect(calls[0]).toContain('git config user.name');
     expect(calls[1]).toContain('git config user.email');
     expect(calls[2]).toBe('git add -A');
@@ -50,7 +53,7 @@ describe('PublishService.publish', () => {
     const svc = new PublishService(() => octokit, shell as never);
     await svc.publish(BASE_INPUT);
 
-    const pushCall = (shell as ReturnType<typeof vi.fn>).mock.calls.find((c: [string, string]) =>
+    const pushCall = (shell as ReturnType<typeof vi.fn>).mock.calls.find((c: string[]) =>
       c[0].startsWith('git push'),
     );
     expect(pushCall?.[0]).toContain('x-access-token:ghp_token@github.com');
@@ -81,7 +84,7 @@ describe('PublishService.publish', () => {
     const svc = new PublishService(() => octokit, shell as never);
     await svc.publish({ ...BASE_INPUT, commitMessage: 'fix: add "quoted" word' });
 
-    const commitCall = (shell as ReturnType<typeof vi.fn>).mock.calls.find((c: [string, string]) =>
+    const commitCall = (shell as ReturnType<typeof vi.fn>).mock.calls.find((c: string[]) =>
       c[0].startsWith('git commit'),
     );
     expect(commitCall?.[0]).toContain('\\"quoted\\"');
@@ -91,7 +94,7 @@ describe('PublishService.publish', () => {
     const svc = new PublishService(() => octokit, shell as never);
     await svc.publish(BASE_INPUT);
 
-    const allCwds = (shell as ReturnType<typeof vi.fn>).mock.calls.map((c: [string, string]) => c[1]);
+    const allCwds = (shell as ReturnType<typeof vi.fn>).mock.calls.map((c: string[]) => c[1]);
     expect(allCwds.every((cwd: string) => cwd === '/tmp/workspace')).toBe(true);
   });
 

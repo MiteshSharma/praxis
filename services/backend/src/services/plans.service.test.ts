@@ -1,6 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createMockBoss,
+  createMockLog,
+  createMockPlansRepository,
+  createMockRedis,
+} from '../__tests__/mocks';
 import { PlansService } from './plans.service';
-import { createMockBoss, createMockRedis, createMockLog, createMockPlansRepository } from '../__tests__/mocks';
 
 // ── Minimal DB stub ──────────────────────────────────────────────────────────
 

@@ -21,7 +21,9 @@ export function buildPrBody(job: Job, plan: Plan | null): string {
     }
 
     if (plan.data.affectedPaths.length > 0) {
-      parts.push(`### Affected files\n\n${plan.data.affectedPaths.map((p) => `- \`${p}\``).join('\n')}`);
+      parts.push(
+        `### Affected files\n\n${plan.data.affectedPaths.map((p) => `- \`${p}\``).join('\n')}`,
+      );
     }
 
     if (plan.data.risks && plan.data.risks.length > 0) {
@@ -33,7 +35,9 @@ export function buildPrBody(job: Job, plan: Plan | null): string {
     }
   }
 
-  parts.push(`---\n_Created by [Praxis](https://github.com/MiteshSharma/praxis) · job \`${job.id.substring(0, 8)}\`_`);
+  parts.push(
+    `---\n_Created by [Praxis](https://github.com/MiteshSharma/praxis) · job \`${job.id.substring(0, 8)}\`_`,
+  );
 
   return parts.join('\n\n');
 }
@@ -57,7 +61,10 @@ export function substituteInputs(
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
     if (typeof v === 'string') {
-      result[k] = v.replace(/\$input\.(\w+)/g, (_, name: string) => inputs[name] ?? `$input.${name}`);
+      result[k] = v.replace(
+        /\$input\.(\w+)/g,
+        (_, name: string) => inputs[name] ?? `$input.${name}`,
+      );
     } else if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
       result[k] = substituteInputs(v as Record<string, unknown>, inputs);
     } else {

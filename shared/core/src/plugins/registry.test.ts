@@ -1,11 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PluginRegistry } from './registry';
 
 describe('PluginRegistry', () => {
   describe('create', () => {
     it('throws for unknown type', () => {
       const registry = new PluginRegistry<{ run: () => void }>();
-      expect(() => registry.create('unknown-type', {})).toThrow('unknown plugin type: "unknown-type"');
+      expect(() => registry.create('unknown-type', {})).toThrow(
+        'unknown plugin type: "unknown-type"',
+      );
     });
 
     it('throws when factory returns null', () => {

@@ -1,5 +1,5 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JobDto, MessageDto } from '@shared/contracts';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -13,27 +13,27 @@ import {
   Tabs,
   Typography,
 } from 'antd';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PluginsPanel } from '../components/PluginsPanel';
 import { rpc } from '../rpc';
 
 const JOB_STATUS_COLOR: Record<string, { bg: string; text: string; dot: string }> = {
-  queued:        { bg: '#F2F4F7', text: '#475467', dot: '#98A2B3' },
-  provisioning:  { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
-  preparing:     { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
-  building:      { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
-  plan_ready:    { bg: '#ECFDF3', text: '#17B26A', dot: '#17B26A' },
-  plan_review:   { bg: '#FFF6ED', text: '#B54708', dot: '#F79009' },
+  queued: { bg: '#F2F4F7', text: '#475467', dot: '#98A2B3' },
+  provisioning: { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
+  preparing: { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
+  building: { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
+  plan_ready: { bg: '#ECFDF3', text: '#17B26A', dot: '#17B26A' },
+  plan_review: { bg: '#FFF6ED', text: '#B54708', dot: '#F79009' },
   plan_revising: { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
   plan_rejected: { bg: '#FEF3F2', text: '#B42318', dot: '#F04438' },
-  executing:     { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
-  checking:      { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
-  publishing:    { bg: '#F9F5FF', text: '#6941C6', dot: '#7F56D9' },
-  learning:      { bg: '#F9F5FF', text: '#6941C6', dot: '#7F56D9' },
-  completed:     { bg: '#ECFDF3', text: '#17B26A', dot: '#17B26A' },
-  failed:        { bg: '#FEF3F2', text: '#B42318', dot: '#F04438' },
-  cancelled:     { bg: '#F2F4F7', text: '#475467', dot: '#98A2B3' },
+  executing: { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
+  checking: { bg: '#EEEFFD', text: '#5B5BD6', dot: '#5B5BD6' },
+  publishing: { bg: '#F9F5FF', text: '#6941C6', dot: '#7F56D9' },
+  learning: { bg: '#F9F5FF', text: '#6941C6', dot: '#7F56D9' },
+  completed: { bg: '#ECFDF3', text: '#17B26A', dot: '#17B26A' },
+  failed: { bg: '#FEF3F2', text: '#B42318', dot: '#F04438' },
+  cancelled: { bg: '#F2F4F7', text: '#475467', dot: '#98A2B3' },
 };
 
 function fmtK(n: number | null | undefined): string {
@@ -114,7 +114,11 @@ function PlanReviewChannelsPanel({ sessionId }: { sessionId: string }) {
               okText="Delete"
               okButtonProps={{ danger: true }}
             >
-              <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--c-error)' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--c-error)' }}
+              >
                 ✕
               </button>
             </Popconfirm>
@@ -247,6 +251,7 @@ export function SessionDetail() {
 
   const jobMap = Object.fromEntries(jobIds.map((jid, i) => [jid, jobQueries[i]?.data]));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on message count change
   useEffect(() => {
     if (threadRef.current) {
       threadRef.current.scrollTop = 0;
@@ -285,7 +290,15 @@ export function SessionDetail() {
       {/* Chat header */}
       <div className="chat-header">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 15,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {session.title}
           </div>
           {session.defaultGithubUrl && (
@@ -316,7 +329,12 @@ export function SessionDetail() {
           </div>
         )}
         {sendMutation.error && (
-          <Alert type="error" message={String(sendMutation.error)} style={{ marginBottom: 8 }} closable />
+          <Alert
+            type="error"
+            message={String(sendMutation.error)}
+            style={{ marginBottom: 8 }}
+            closable
+          />
         )}
         <div className="compose-box">
           <textarea
@@ -324,9 +342,10 @@ export function SessionDetail() {
             rows={3}
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
-            placeholder={jobMode === 'scout'
-              ? 'Describe what to investigate…\nThe agent will read the codebase and return a findings report.'
-              : 'Describe what you want done…\nFirst line becomes the job title.'
+            placeholder={
+              jobMode === 'scout'
+                ? 'Describe what to investigate…\nThe agent will read the codebase and return a findings report.'
+                : 'Describe what you want done…\nFirst line becomes the job title.'
             }
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
@@ -335,7 +354,15 @@ export function SessionDetail() {
           <div className="compose-footer">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* Mode toggle: Implement vs Scout */}
-              <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--c-border)', flexShrink: 0 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  borderRadius: 6,
+                  overflow: 'hidden',
+                  border: '1px solid var(--c-border)',
+                  flexShrink: 0,
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => setJobMode('implement')}
@@ -384,9 +411,15 @@ export function SessionDetail() {
               className="btn btn-primary"
               disabled={!messageInput.trim() || sendMutation.isPending}
               onClick={handleSend}
-              style={jobMode === 'scout' ? { background: '#0ea5e9', borderColor: '#0ea5e9' } : undefined}
+              style={
+                jobMode === 'scout' ? { background: '#0ea5e9', borderColor: '#0ea5e9' } : undefined
+              }
             >
-              {sendMutation.isPending ? 'Submitting…' : jobMode === 'scout' ? 'Scout' : 'Submit Job'}
+              {sendMutation.isPending
+                ? 'Submitting…'
+                : jobMode === 'scout'
+                  ? 'Scout'
+                  : 'Submit Job'}
               <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 4 }}>⌘↵</span>
             </button>
           </div>
@@ -398,8 +431,13 @@ export function SessionDetail() {
         {messages.length === 0 && (
           <div className="empty-state" style={{ margin: 'auto' }}>
             <div className="empty-state-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M21 3H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h5l3 3 3-3h7a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+              <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M21 3H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h5l3 3 3-3h7a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
             <p className="empty-state-title">No messages yet</p>
@@ -410,7 +448,9 @@ export function SessionDetail() {
         {[...messages].reverse().map((msg) => {
           const job = msg.jobId ? jobMap[msg.jobId] : undefined;
           const isUser = msg.role === 'user';
-          const statusStyle = job ? (JOB_STATUS_COLOR[job.status] ?? JOB_STATUS_COLOR.queued) : null;
+          const statusStyle = job
+            ? (JOB_STATUS_COLOR[job.status] ?? JOB_STATUS_COLOR.queued)
+            : null;
 
           return (
             <div
@@ -423,7 +463,9 @@ export function SessionDetail() {
               tabIndex={msg.jobId ? 0 : undefined}
               onKeyDown={
                 msg.jobId
-                  ? (e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/jobs/${msg.jobId}`); }
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') navigate(`/jobs/${msg.jobId}`);
+                    }
                   : undefined
               }
             >
@@ -437,20 +479,38 @@ export function SessionDetail() {
                       className="msg-job-status"
                       style={{ background: statusStyle.bg, color: statusStyle.text }}
                     >
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusStyle.dot, flexShrink: 0 }} />
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: statusStyle.dot,
+                          flexShrink: 0,
+                        }}
+                      />
                       {job?.status.replace(/_/g, ' ') ?? 'pending'}
                     </span>
                   )}
                   <span className="msg-card-time">
                     {new Date(msg.createdAt).toLocaleString(undefined, {
-                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
                     })}
                   </span>
                 </div>
               </div>
 
               <div className="msg-card-body">
-                <p style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.6,
+                  }}
+                >
                   {msg.content}
                 </p>
               </div>
@@ -464,7 +524,9 @@ export function SessionDetail() {
                     <span className="msg-card-meta-chip">${job.totalCostUsd.toFixed(4)}</span>
                   )}
                   {job.totalInputTokens != null && (
-                    <span className="msg-card-meta-chip">{fmtK(job.totalInputTokens)}↑ {fmtK(job.totalOutputTokens ?? 0)}↓</span>
+                    <span className="msg-card-meta-chip">
+                      {fmtK(job.totalInputTokens)}↑ {fmtK(job.totalOutputTokens ?? 0)}↓
+                    </span>
                   )}
                 </div>
               )}
@@ -483,7 +545,6 @@ export function SessionDetail() {
                 </div>
               )}
             </div>
-
           );
         })}
 
@@ -529,9 +590,7 @@ export function SessionDetail() {
                   </div>
 
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                      GitHub URL
-                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>GitHub URL</div>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {session.defaultGithubUrl ?? '—'}
                     </Typography.Text>
@@ -559,7 +618,10 @@ export function SessionDetail() {
 
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Model</div>
-                    <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 12, display: 'block', marginBottom: 4 }}
+                    >
                       Override the default model. Leave blank for claude-sonnet-4-6.
                     </Typography.Text>
                     <Input
@@ -576,7 +638,10 @@ export function SessionDetail() {
                     <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
                       Plan review hold (hours)
                     </div>
-                    <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 12, display: 'block', marginBottom: 4 }}
+                    >
                       How long to wait for plan approval. Max 168h.
                     </Typography.Text>
                     <InputNumber

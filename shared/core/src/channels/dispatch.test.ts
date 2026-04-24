@@ -1,35 +1,47 @@
-import { describe, it, expect, vi } from 'vitest';
+import type { PraxisEvent } from '@shared/contracts';
+import { describe, expect, it, vi } from 'vitest';
+import type { PluginRegistry } from '../plugins/registry';
 import { dispatchEvent, dispatchToConversation } from './dispatch';
 import type { PraxisChannel } from './types';
-import type { PraxisEvent } from '@shared/contracts';
-import type { PluginRegistry } from '../plugins/registry';
 
 // ── dispatchEvent ─────────────────────────────────────────────────────────────
 
 describe('dispatchEvent', () => {
   it('calls onPlanReady for plan.ready event', async () => {
-    const channel: PraxisChannel = { onPlanReady: vi.fn().mockResolvedValue(undefined) };
+    const channel: PraxisChannel = {
+      type: 'test',
+      meta: { label: 'Test', description: '' },
+      onPlanReady: vi.fn().mockResolvedValue(undefined),
+    };
     const event = { type: 'plan.ready' } as PraxisEvent;
     await dispatchEvent(channel, event);
     expect(channel.onPlanReady).toHaveBeenCalledWith(event);
   });
 
   it('calls onJobCompleted for job.completed event', async () => {
-    const channel: PraxisChannel = { onJobCompleted: vi.fn().mockResolvedValue(undefined) };
+    const channel: PraxisChannel = {
+      type: 'test',
+      meta: { label: 'Test', description: '' },
+      onJobCompleted: vi.fn().mockResolvedValue(undefined),
+    };
     const event = { type: 'job.completed' } as PraxisEvent;
     await dispatchEvent(channel, event);
     expect(channel.onJobCompleted).toHaveBeenCalledWith(event);
   });
 
   it('calls onJobFailed for job.failed event', async () => {
-    const channel: PraxisChannel = { onJobFailed: vi.fn().mockResolvedValue(undefined) };
+    const channel: PraxisChannel = {
+      type: 'test',
+      meta: { label: 'Test', description: '' },
+      onJobFailed: vi.fn().mockResolvedValue(undefined),
+    };
     const event = { type: 'job.failed' } as PraxisEvent;
     await dispatchEvent(channel, event);
     expect(channel.onJobFailed).toHaveBeenCalledWith(event);
   });
 
   it('does not throw when handler is not implemented', async () => {
-    const channel: PraxisChannel = {};
+    const channel: PraxisChannel = { type: 'test', meta: { label: 'Test', description: '' } };
     const event = { type: 'plan.ready' } as PraxisEvent;
     await expect(dispatchEvent(channel, event)).resolves.toBeUndefined();
   });
@@ -63,7 +75,11 @@ const MOCK_LOG = {
 describe('dispatchToConversation', () => {
   it('does nothing when no enabled channels', async () => {
     const db = makeDb([{ id: 'c1', type: 'webhook', config: {}, enabled: false }]);
-    const channel: PraxisChannel = { onPlanReady: vi.fn() };
+    const channel: PraxisChannel = {
+      type: 'test',
+      meta: { label: 'Test', description: '' },
+      onPlanReady: vi.fn(),
+    };
     const registry = makeRegistry(channel);
     const event = { type: 'plan.ready' } as PraxisEvent;
 
@@ -76,7 +92,11 @@ describe('dispatchToConversation', () => {
       { id: 'c1', type: 'webhook', config: {}, enabled: true },
       { id: 'c2', type: 'webhook', config: {}, enabled: true },
     ]);
-    const channel: PraxisChannel = { onPlanReady: vi.fn().mockResolvedValue(undefined) };
+    const channel: PraxisChannel = {
+      type: 'test',
+      meta: { label: 'Test', description: '' },
+      onPlanReady: vi.fn().mockResolvedValue(undefined),
+    };
     const registry = makeRegistry(channel);
     const event = { type: 'plan.ready' } as PraxisEvent;
 
@@ -89,7 +109,11 @@ describe('dispatchToConversation', () => {
       { id: 'c1', type: 'webhook', config: {}, enabled: true },
       { id: 'c2', type: 'webhook', config: {}, enabled: false },
     ]);
-    const channel: PraxisChannel = { onPlanReady: vi.fn().mockResolvedValue(undefined) };
+    const channel: PraxisChannel = {
+      type: 'test',
+      meta: { label: 'Test', description: '' },
+      onPlanReady: vi.fn().mockResolvedValue(undefined),
+    };
     const registry = makeRegistry(channel);
     const event = { type: 'plan.ready' } as PraxisEvent;
 
@@ -104,6 +128,8 @@ describe('dispatchToConversation', () => {
     ]);
     let callCount = 0;
     const channel: PraxisChannel = {
+      type: 'test',
+      meta: { label: 'Test', description: '' },
       onPlanReady: vi.fn().mockImplementation(() => {
         callCount++;
         if (callCount === 1) throw new Error('webhook failed');

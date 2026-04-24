@@ -128,10 +128,10 @@ function extractErrorCode(err: unknown): string {
   // Anthropic: { error: { type: string } }
   const errorBody = obj.error as Record<string, unknown> | null;
   if (errorBody) {
-    const type = lower(errorBody.type) + ' ' + lower(errorBody.code);
+    const type = `${lower(errorBody.type)} ${lower(errorBody.code)}`;
     return type;
   }
-  return lower(obj.code) + ' ' + lower(obj.type);
+  return `${lower(obj.code)} ${lower(obj.type)}`;
 }
 
 /** Disambiguate HTTP 402: billing exhaustion vs transient usage quota. */
@@ -163,7 +163,13 @@ function classify400(message: string, approxTokens?: number): ClassifiedError {
   if (approxTokens && approxTokens > 100_000) {
     return { reason: 'context_overflow', retryable: true, shouldCompress: true, message };
   }
-  return { reason: 'format_error', retryable: false, shouldCompress: false, message, statusCode: 400 };
+  return {
+    reason: 'format_error',
+    retryable: false,
+    shouldCompress: false,
+    message,
+    statusCode: 400,
+  };
 }
 
 // ── Main classifier ──────────────────────────────────────────────────────────
@@ -210,12 +216,24 @@ export function classifyProviderError(err: unknown, approxTokens?: number): Clas
     }
     if (statusCode === 404) {
       if (matchesAny(message, MODEL_NOT_FOUND_PATTERNS)) {
-        return { reason: 'model_not_found', retryable: false, shouldCompress: false, message, statusCode };
+        return {
+          reason: 'model_not_found',
+          retryable: false,
+          shouldCompress: false,
+          message,
+          statusCode,
+        };
       }
       return { reason: 'unknown', retryable: false, shouldCompress: false, message, statusCode };
     }
     if (statusCode === 413) {
-      return { reason: 'context_overflow', retryable: true, shouldCompress: true, message, statusCode };
+      return {
+        reason: 'context_overflow',
+        retryable: true,
+        shouldCompress: true,
+        message,
+        statusCode,
+      };
     }
     if (statusCode === 429) {
       return { reason: 'rate_limit', retryable: true, shouldCompress: false, message, statusCode };
@@ -224,13 +242,25 @@ export function classifyProviderError(err: unknown, approxTokens?: number): Clas
       return { ...classify400(message, approxTokens), statusCode };
     }
     if (statusCode === 500 || statusCode === 502) {
-      return { reason: 'server_error', retryable: true, shouldCompress: false, message, statusCode };
+      return {
+        reason: 'server_error',
+        retryable: true,
+        shouldCompress: false,
+        message,
+        statusCode,
+      };
     }
     if (statusCode === 503 || statusCode === 529) {
       return { reason: 'overloaded', retryable: true, shouldCompress: false, message, statusCode };
     }
     if (statusCode >= 400 && statusCode < 500) {
-      return { reason: 'format_error', retryable: false, shouldCompress: false, message, statusCode };
+      return {
+        reason: 'format_error',
+        retryable: false,
+        shouldCompress: false,
+        message,
+        statusCode,
+      };
     }
   }
 
@@ -265,8 +295,12 @@ export function classifyProviderError(err: unknown, approxTokens?: number): Clas
 
   // ── Layer 5: Transport error heuristics ──────────────────────────────────
 
-  const errName = typeof errObj.name === 'string' ? errObj.name : err?.constructor?.name ?? '';
-  if (TRANSPORT_ERROR_NAMES.has(errName) || message.includes('network') || message.includes('socket')) {
+  const errName = typeof errObj.name === 'string' ? errObj.name : (err?.constructor?.name ?? '');
+  if (
+    TRANSPORT_ERROR_NAMES.has(errName) ||
+    message.includes('network') ||
+    message.includes('socket')
+  ) {
     // Server disconnect with large session → likely context overflow
     if (approxTokens && approxTokens > 80_000) {
       return { reason: 'context_overflow', retryable: true, shouldCompress: true, message };
@@ -290,7 +324,7 @@ export function classifyProviderError(err: unknown, approxTokens?: number): Clas
  * For rate_limit errors use base=30, max=300.
  */
 export function jitteredBackoff(attempt: number, base = 5, max = 120): number {
-  const delay = Math.min(base * Math.pow(2, attempt - 1), max);
+  const delay = Math.min(base * 2 ** (attempt - 1), max);
   const jitter = Math.random() * 0.5 * delay;
   return delay + jitter;
 }

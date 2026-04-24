@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockRepo = {
-  findByConversation: vi.fn().mockResolvedValue([]),  // repo method name stays as-is
+  findByConversation: vi.fn().mockResolvedValue([]), // repo method name stays as-is
   create: vi.fn(),
   toggle: vi.fn(),
   delete: vi.fn().mockResolvedValue(undefined),

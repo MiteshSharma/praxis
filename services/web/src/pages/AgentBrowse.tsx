@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AgentDto } from '@shared/contracts';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -20,8 +20,16 @@ import { useState } from 'react';
 import { rpc } from '../rpc';
 
 const TOOL_OPTIONS = [
-  'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash',
-  'WebFetch', 'WebSearch', 'TodoWrite', 'TodoRead',
+  'Read',
+  'Write',
+  'Edit',
+  'Glob',
+  'Grep',
+  'Bash',
+  'WebFetch',
+  'WebSearch',
+  'TodoWrite',
+  'TodoRead',
 ].map((t) => ({ value: t, label: t }));
 
 const MODEL_OPTIONS = [
@@ -68,24 +76,40 @@ function AgentFormModal({
   });
 
   const createMutation = useMutation({
-    mutationFn: (v: AgentFormValues) =>
-      rpc.agents.create({ source: 'form', ...v }),
-    onSuccess: () => { onSaved(); onClose(); setError(null); form.resetFields(); },
+    mutationFn: (v: AgentFormValues) => rpc.agents.create({ source: 'form', ...v }),
+    onSuccess: () => {
+      onSaved();
+      onClose();
+      setError(null);
+      form.resetFields();
+    },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
   });
 
   const updateMutation = useMutation({
-    mutationFn: (v: AgentFormValues) =>
-      rpc.agents.update({ agentId: editingAgent!.id, ...v }),
-    onSuccess: () => { onSaved(); onClose(); setError(null); form.resetFields(); },
+    mutationFn: (v: AgentFormValues) => {
+      if (!editingAgent) throw new Error('No agent selected');
+      return rpc.agents.update({ agentId: editingAgent.id, ...v });
+    },
+    onSuccess: () => {
+      onSaved();
+      onClose();
+      setError(null);
+      form.resetFields();
+    },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
   });
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  const def = editingAgent?.latestVersion?.definition as {
-    model?: string; systemPrompt?: string; allowedTools?: string[]; dependsOn?: string[]
-  } | undefined;
+  const def = editingAgent?.latestVersion?.definition as
+    | {
+        model?: string;
+        systemPrompt?: string;
+        allowedTools?: string[];
+        dependsOn?: string[];
+      }
+    | undefined;
 
   const initialValues: AgentFormValues = editingAgent
     ? {
@@ -97,13 +121,24 @@ function AgentFormModal({
         allowedTools: def?.allowedTools ?? [],
         dependsOn: def?.dependsOn ?? [],
       }
-    : { kind: 'agent', model: 'claude-sonnet-4-6', allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'], systemPrompt: '', dependsOn: [] };
+    : {
+        kind: 'agent' as const,
+        name: '',
+        model: 'claude-sonnet-4-6',
+        allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
+        systemPrompt: '',
+        dependsOn: [],
+      };
 
   return (
     <Modal
       title={isEdit ? `Edit ${editingAgent?.kind}` : 'Create agent / skill'}
       open={open}
-      onCancel={() => { onClose(); setError(null); form.resetFields(); }}
+      onCancel={() => {
+        onClose();
+        setError(null);
+        form.resetFields();
+      }}
       footer={null}
       width={580}
       destroyOnClose
@@ -112,7 +147,7 @@ function AgentFormModal({
         form={form}
         layout="vertical"
         initialValues={initialValues}
-        onFinish={(v) => isEdit ? updateMutation.mutate(v) : createMutation.mutate(v)}
+        onFinish={(v) => (isEdit ? updateMutation.mutate(v) : createMutation.mutate(v))}
         style={{ marginTop: 16 }}
       >
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
@@ -120,7 +155,10 @@ function AgentFormModal({
         <Form.Item name="kind" label="Kind" rules={[{ required: true }]}>
           <Select
             disabled={isEdit}
-            options={[{ value: 'agent', label: 'Agent' }, { value: 'skill', label: 'Skill' }]}
+            options={[
+              { value: 'agent', label: 'Agent' },
+              { value: 'skill', label: 'Skill' },
+            ]}
           />
         </Form.Item>
 
@@ -206,7 +244,11 @@ function ImportModal({
     <Modal
       title="Import agent / skill"
       open={open}
-      onCancel={() => { onClose(); setError(null); form.resetFields(); }}
+      onCancel={() => {
+        onClose();
+        setError(null);
+        form.resetFields();
+      }}
       footer={null}
       destroyOnClose
     >
@@ -220,11 +262,21 @@ function ImportModal({
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
 
         <Form.Item name="kind" label="Kind">
-          <Select options={[{ value: 'agent', label: 'Agent' }, { value: 'skill', label: 'Skill' }]} />
+          <Select
+            options={[
+              { value: 'agent', label: 'Agent' },
+              { value: 'skill', label: 'Skill' },
+            ]}
+          />
         </Form.Item>
 
         <Form.Item name="source" label="Source">
-          <Select options={[{ value: 'github', label: 'GitHub URL' }, { value: 'inline', label: 'Paste markdown' }]} />
+          <Select
+            options={[
+              { value: 'github', label: 'GitHub URL' },
+              { value: 'inline', label: 'Paste markdown' },
+            ]}
+          />
         </Form.Item>
 
         {source === 'github' || !source ? (
@@ -237,7 +289,12 @@ function ImportModal({
             </Form.Item>
           </>
         ) : (
-          <Form.Item name="inlineContent" label="Markdown" rules={[{ required: true }]} extra="Frontmatter must have kind: agent">
+          <Form.Item
+            name="inlineContent"
+            label="Markdown"
+            rules={[{ required: true }]}
+            extra="Frontmatter must have kind: agent"
+          >
             <Input.TextArea rows={8} />
           </Form.Item>
         )}
@@ -302,9 +359,11 @@ function AgentDetailDrawer({
   const attachedIds = new Set((skillsQuery.data ?? []).map((s) => s.id));
   const availableSkills = (allSkillsQuery.data ?? []).filter((s) => !attachedIds.has(s.id));
 
-  const def = agent?.latestVersion?.definition as {
-    dependsOn?: string[];
-  } | undefined;
+  const def = agent?.latestVersion?.definition as
+    | {
+        dependsOn?: string[];
+      }
+    | undefined;
   const dependsOnIds: string[] = def?.dependsOn ?? [];
   const agentMap = Object.fromEntries((allAgentsQuery.data ?? []).map((a) => [a.id, a.name]));
 
@@ -316,12 +375,20 @@ function AgentDetailDrawer({
             <Tag color={agent.kind === 'skill' ? 'purple' : 'blue'}>{agent.kind}</Tag>
             {agent.name}
           </Space>
-        ) : 'Loading…'
+        ) : (
+          'Loading…'
+        )
       }
       open
       onClose={onClose}
       width={480}
-      extra={agent && <Button size="small" onClick={() => onEdit(agent)}>Edit</Button>}
+      extra={
+        agent && (
+          <Button size="small" onClick={() => onEdit(agent)}>
+            Edit
+          </Button>
+        )
+      }
     >
       {!agent ? null : (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -329,7 +396,9 @@ function AgentDetailDrawer({
             <Descriptions.Item label="Description">{agent.description || '—'}</Descriptions.Item>
             {agent.latestVersion && (
               <>
-                <Descriptions.Item label="Version">v{agent.latestVersion.version}</Descriptions.Item>
+                <Descriptions.Item label="Version">
+                  v{agent.latestVersion.version}
+                </Descriptions.Item>
                 <Descriptions.Item label="Source">{agent.latestVersion.source}</Descriptions.Item>
               </>
             )}
@@ -338,7 +407,17 @@ function AgentDetailDrawer({
           {agent.latestVersion && (
             <>
               <Typography.Text strong>Definition</Typography.Text>
-              <pre style={{ background: '#f5f5f5', borderRadius: 4, padding: 12, fontSize: 12, overflow: 'auto', maxHeight: 220, margin: 0 }}>
+              <pre
+                style={{
+                  background: '#f5f5f5',
+                  borderRadius: 4,
+                  padding: 12,
+                  fontSize: 12,
+                  overflow: 'auto',
+                  maxHeight: 220,
+                  margin: 0,
+                }}
+              >
                 {JSON.stringify(agent.latestVersion.definition, null, 2)}
               </pre>
             </>
@@ -353,7 +432,9 @@ function AgentDetailDrawer({
               ) : (
                 <Space wrap>
                   {dependsOnIds.map((depId) => (
-                    <Tag key={depId} color="blue">{agentMap[depId] ?? depId}</Tag>
+                    <Tag key={depId} color="blue">
+                      {agentMap[depId] ?? depId}
+                    </Tag>
                   ))}
                 </Space>
               )}
@@ -380,8 +461,14 @@ function AgentDetailDrawer({
                       key: 'detach',
                       width: 70,
                       render: (_: unknown, row: AgentDto) => (
-                        <Popconfirm title="Detach?" onConfirm={() => detachMutation.mutate(row.id)} okText="Detach">
-                          <Button type="text" size="small" danger>Detach</Button>
+                        <Popconfirm
+                          title="Detach?"
+                          onConfirm={() => detachMutation.mutate(row.id)}
+                          okText="Detach"
+                        >
+                          <Button type="text" size="small" danger>
+                            Detach
+                          </Button>
                         </Popconfirm>
                       ),
                     },
@@ -437,9 +524,7 @@ export function AgentBrowse() {
       title: 'Kind',
       dataIndex: 'kind',
       width: 80,
-      render: (kind: string) => (
-        <Tag color={kind === 'skill' ? 'purple' : 'blue'}>{kind}</Tag>
-      ),
+      render: (kind: string) => <Tag color={kind === 'skill' ? 'purple' : 'blue'}>{kind}</Tag>,
     },
     {
       title: 'Name',
@@ -459,8 +544,12 @@ export function AgentBrowse() {
       title: 'Version',
       render: (_: unknown, row: AgentDto) =>
         row.latestVersion ? (
-          <Tag>v{row.latestVersion.version} · {row.latestVersion.source}</Tag>
-        ) : '—',
+          <Tag>
+            v{row.latestVersion.version} · {row.latestVersion.source}
+          </Tag>
+        ) : (
+          '—'
+        ),
     },
     {
       title: '',
@@ -468,14 +557,18 @@ export function AgentBrowse() {
       width: 120,
       render: (_: unknown, row: AgentDto) => (
         <Space size={4}>
-          <Button type="link" size="small" onClick={() => setEditingAgent(row)}>Edit</Button>
+          <Button type="link" size="small" onClick={() => setEditingAgent(row)}>
+            Edit
+          </Button>
           <Popconfirm
             title="Delete?"
             onConfirm={() => deleteMutation.mutate(row.id)}
             okText="Delete"
             okButtonProps={{ danger: true }}
           >
-            <Button type="text" danger size="small">Delete</Button>
+            <Button type="text" danger size="small">
+              Delete
+            </Button>
           </Popconfirm>
         </Space>
       ),
@@ -487,15 +580,22 @@ export function AgentBrowse() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Agents &amp; Skills</h1>
-          <p className="page-subtitle">Agents run workflow steps. Skills are reusable modules attached to agents or used standalone.</p>
+          <p className="page-subtitle">
+            Agents run workflow steps. Skills are reusable modules attached to agents or used
+            standalone.
+          </p>
         </div>
         <Space>
           <Button onClick={() => setShowImport(true)}>Import</Button>
-          <Button type="primary" onClick={() => setShowCreate(true)}>Create</Button>
+          <Button type="primary" onClick={() => setShowCreate(true)}>
+            Create
+          </Button>
         </Space>
       </div>
 
-      {listQuery.error && <Alert type="error" message={String(listQuery.error)} style={{ marginBottom: 16 }} />}
+      {listQuery.error && (
+        <Alert type="error" message={String(listQuery.error)} style={{ marginBottom: 16 }} />
+      )}
 
       <Card>
         <Table
@@ -512,15 +612,14 @@ export function AgentBrowse() {
         <AgentDetailDrawer
           id={selected}
           onClose={() => setSelected(null)}
-          onEdit={(agent) => { setSelected(null); setEditingAgent(agent); }}
+          onEdit={(agent) => {
+            setSelected(null);
+            setEditingAgent(agent);
+          }}
         />
       )}
 
-      <AgentFormModal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        onSaved={invalidate}
-      />
+      <AgentFormModal open={showCreate} onClose={() => setShowCreate(false)} onSaved={invalidate} />
       <AgentFormModal
         open={!!editingAgent}
         onClose={() => setEditingAgent(null)}

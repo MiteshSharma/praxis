@@ -132,7 +132,10 @@ export function MemoryEditor() {
               key: 'view',
               label: 'Preview',
               children: (
-                <div className="prose" style={{ padding: '8px 0 16px', maxHeight: 600, overflowY: 'auto' }}>
+                <div
+                  className="prose"
+                  style={{ padding: '8px 0 16px', maxHeight: 600, overflowY: 'auto' }}
+                >
                   <ReactMarkdown>{saveContent}</ReactMarkdown>
                 </div>
               ),

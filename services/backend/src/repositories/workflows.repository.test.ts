@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { toWorkflowDto, toWorkflowVersionDto } from './workflows.repository';
 
 // ── Pure DTO converter tests ───────────────────────────────────────────────────
@@ -46,7 +46,7 @@ describe('toWorkflowDto', () => {
     expect(dto.name).toBe('My Workflow');
     expect(dto.description).toBe('Does coding tasks');
     expect(dto.latestVersion).not.toBeNull();
-    expect(dto.latestVersion!.id).toBe('wfver-1');
+    expect(dto.latestVersion?.id).toBe('wfver-1');
     expect(dto.createdAt).toBe('2026-01-01T00:00:00.000Z');
     expect(dto.updatedAt).toBe('2026-02-01T00:00:00.000Z');
   });

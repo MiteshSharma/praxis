@@ -18,7 +18,10 @@ export class SlackAdapter implements PlatformAdapter {
 
   constructor(private readonly secrets: SlackSecrets) {}
 
-  async parseWebhook(body: unknown, headers: Record<string, string>): Promise<IncomingMessage | null> {
+  async parseWebhook(
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<IncomingMessage | null> {
     const payload = body as Record<string, unknown>;
 
     // Handle Slack URL verification challenge (BEFORE signature check — no sig on challenge)
@@ -32,8 +35,8 @@ export class SlackAdapter implements PlatformAdapter {
     const event = payload.event as Record<string, unknown> | undefined;
     if (!event) return null;
 
-    // Only handle message events
-    if (event.type !== 'message') return null;
+    // Handle message and app_mention events
+    if (event.type !== 'message' && event.type !== 'app_mention') return null;
 
     // Ignore bot messages and message subtypes (edits, deletes, etc.)
     if (event.bot_id || event.subtype) return null;
@@ -99,11 +102,8 @@ export class SlackAdapter implements PlatformAdapter {
 
   // ── Private ──────────────────────────────────────────────────────────────────
 
-  private async verifySignature(
-    headers: Record<string, string>,
-    _body: unknown,
-  ): Promise<void> {
-    const rawBody = headers['__raw_body'] ?? '';
+  private async verifySignature(headers: Record<string, string>, _body: unknown): Promise<void> {
+    const rawBody = headers.__raw_body ?? '';
     const timestamp = headers['x-slack-request-timestamp'] ?? '';
     const signature = headers['x-slack-signature'] ?? '';
 

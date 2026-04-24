@@ -114,8 +114,13 @@ export function SessionList() {
       ) : sessions.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M21 3H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h5l3 3 3-3h7a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 3H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h5l3 3 3-3h7a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
             </svg>
           </div>
           <p className="empty-state-title">No sessions yet</p>
@@ -137,7 +142,15 @@ export function SessionList() {
               {/* Main clickable area */}
               <button
                 type="button"
-                style={{ flex: 1, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', minWidth: 0 }}
+                style={{
+                  flex: 1,
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  minWidth: 0,
+                }}
                 onClick={() => navigate(`/sessions/${session.id}`)}
               >
                 <div className="conv-card-body">
@@ -165,8 +178,13 @@ export function SessionList() {
                   title="Rename"
                   onClick={(e) => openEdit(e, session)}
                 >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                    <path d="M11.5 2.5a2.121 2.121 0 0 1 3 3L5 15H2v-3L11.5 2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M11.5 2.5a2.121 2.121 0 0 1 3 3L5 15H2v-3L11.5 2.5Z"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 </button>
                 <button
@@ -176,8 +194,14 @@ export function SessionList() {
                   style={{ color: 'var(--c-error)' }}
                   onClick={(e) => openDelete(e, session)}
                 >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                    <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 </button>
               </div>
@@ -190,7 +214,10 @@ export function SessionList() {
       <Modal
         title="New session"
         open={showCreate}
-        onCancel={() => { setShowCreate(false); createForm.resetFields(); }}
+        onCancel={() => {
+          setShowCreate(false);
+          createForm.resetFields();
+        }}
         footer={null}
         destroyOnClose
       >
@@ -211,7 +238,11 @@ export function SessionList() {
             <Input placeholder="https://github.com/you/your-repo" />
           </Form.Item>
           {createMutation.error && (
-            <Alert type="error" message={String(createMutation.error)} style={{ marginBottom: 16 }} />
+            <Alert
+              type="error"
+              message={String(createMutation.error)}
+              style={{ marginBottom: 16 }}
+            />
           )}
           <Button type="primary" htmlType="submit" loading={createMutation.isPending}>
             Create
@@ -239,7 +270,11 @@ export function SessionList() {
             <Input autoFocus />
           </Form.Item>
           {renameMutation.error && (
-            <Alert type="error" message={String(renameMutation.error)} style={{ marginBottom: 16 }} />
+            <Alert
+              type="error"
+              message={String(renameMutation.error)}
+              style={{ marginBottom: 16 }}
+            />
           )}
           <Button type="primary" htmlType="submit" loading={renameMutation.isPending}>
             Save
@@ -251,15 +286,19 @@ export function SessionList() {
       <Modal
         title="Delete session"
         open={!!deletingSession}
-        onCancel={() => { setDeletingSession(null); setDeleteConfirmed(false); setDeleteError(''); }}
+        onCancel={() => {
+          setDeletingSession(null);
+          setDeleteConfirmed(false);
+          setDeleteError('');
+        }}
         footer={null}
         destroyOnClose
       >
         {!deleteConfirmed ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
             <p style={{ margin: 0 }}>
-              Are you sure you want to delete <strong>{deletingSession?.title}</strong>?
-              This will permanently remove the session and all its messages.
+              Are you sure you want to delete <strong>{deletingSession?.title}</strong>? This will
+              permanently remove the session and all its messages.
             </p>
             <p style={{ margin: 0, color: 'var(--c-text-2)', fontSize: 13 }}>
               Sessions with active jobs cannot be deleted.
@@ -276,9 +315,7 @@ export function SessionList() {
             <p style={{ margin: 0 }}>
               This action is permanent and cannot be undone. Confirm to proceed.
             </p>
-            {deleteError && (
-              <Alert type="error" message={deleteError} />
-            )}
+            {deleteError && <Alert type="error" message={deleteError} />}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Button onClick={() => setDeleteConfirmed(false)}>Back</Button>
               <Button

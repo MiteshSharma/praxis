@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // We test WebhookChannel indirectly via the channelRegistry (self-registration pattern).
 // Import after setting up vi.stubGlobal so the module picks up mocked fetch.
@@ -37,7 +37,7 @@ describe('WebhookChannel (via channelRegistry)', () => {
       planId: 'plan-1',
       callbackToken: 'tok-abc',
     };
-    await channel.onPlanReady!(event as never);
+    await channel.onPlanReady?.(event as never);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -51,14 +51,14 @@ describe('WebhookChannel (via channelRegistry)', () => {
     mockFetch.mockResolvedValue(new Response('Service Unavailable', { status: 503 }));
     const channel = channelRegistry.create('webhook', { url: 'https://example.com/hook' });
 
-    await expect(channel.onPlanReady!({} as never)).rejects.toThrow('webhook POST failed: 503');
+    await expect(channel.onPlanReady?.({} as never)).rejects.toThrow('webhook POST failed: 503');
   });
 
   it('includes the response body text in the error message on failure', async () => {
     mockFetch.mockResolvedValue(new Response('not found', { status: 404 }));
     const channel = channelRegistry.create('webhook', { url: 'https://example.com/hook' });
 
-    await expect(channel.onPlanReady!({} as never)).rejects.toThrow('404');
+    await expect(channel.onPlanReady?.({} as never)).rejects.toThrow('404');
   });
 
   it('factory returns null when url is missing', () => {

@@ -1,13 +1,26 @@
 import { sql } from 'drizzle-orm';
-import { customType, index, integer, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  customType,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 // Drizzle doesn't have built-in tsvector/vector types, so we declare them as custom.
 const tsvector = customType<{ data: string }>({
-  dataType() { return 'tsvector'; },
+  dataType() {
+    return 'tsvector';
+  },
 });
 
 const vector = customType<{ data: number[]; config: { dimensions: number } }>({
-  dataType(config) { return `vector(${config?.dimensions ?? 1536})`; },
+  dataType(config) {
+    return `vector(${config?.dimensions ?? 1536})`;
+  },
 });
 
 export const memoryChunks = pgTable(

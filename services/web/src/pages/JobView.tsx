@@ -1,8 +1,20 @@
 import type { JobStatus, ReviewCommentDto, TimelineEventDto } from '@shared/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Collapse, Descriptions, Drawer, Dropdown, Input, Modal, Space, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Collapse,
+  Descriptions,
+  Drawer,
+  Dropdown,
+  Input,
+  Modal,
+  Space,
+  Tag,
+  Typography,
+} from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
-import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FileChangesSidebar } from '../components/FileChangesSidebar';
 import type { FileChange } from '../components/FileChangesSidebar';
@@ -49,7 +61,12 @@ function parseChunk(raw: unknown): ParsedChunk[] {
         const text = String(b.text ?? '').trim();
         if (text) out.push({ kind: 'text', label: 'Assistant', detail: text, color: 'blue' });
       } else if (b.type === 'tool_use') {
-        out.push({ kind: 'tool', name: String(b.name ?? 'tool'), input: (b.input as Record<string, unknown>) ?? {}, color: 'orange' });
+        out.push({
+          kind: 'tool',
+          name: String(b.name ?? 'tool'),
+          input: (b.input as Record<string, unknown>) ?? {},
+          color: 'orange',
+        });
       }
     }
     return out;
@@ -69,18 +86,32 @@ function parseChunk(raw: unknown): ParsedChunk[] {
         typeof content === 'string'
           ? content
           : Array.isArray(content)
-            ? content.map((c) => (typeof c === 'object' && c !== null ? (c as Record<string, unknown>).text ?? '' : c)).join('')
+            ? content
+                .map((c) =>
+                  typeof c === 'object' && c !== null
+                    ? ((c as Record<string, unknown>).text ?? '')
+                    : c,
+                )
+                .join('')
             : '';
       // Phase 2: structured JSON from executor
       let displayText = rawText;
       try {
         const parsed = JSON.parse(rawText) as { path?: string; status?: string };
         if (parsed.path && parsed.status) {
-          displayText = parsed.status === 'added' ? `Created ${parsed.path}` : `Modified ${parsed.path}`;
+          displayText =
+            parsed.status === 'added' ? `Created ${parsed.path}` : `Modified ${parsed.path}`;
         }
-      } catch { /* not JSON */ }
+      } catch {
+        /* not JSON */
+      }
       const trimmed = displayText.trim().slice(0, 300);
-      if (trimmed) out.push({ kind: 'tool_result', text: trimmed + (displayText.length > 300 ? '…' : ''), isError });
+      if (trimmed)
+        out.push({
+          kind: 'tool_result',
+          text: trimmed + (displayText.length > 300 ? '…' : ''),
+          isError,
+        });
     }
     return out;
   }
@@ -107,8 +138,14 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STREAM_STATUSES = new Set([
-  'provisioning', 'preparing', 'building', 'plan_revising',
-  'executing', 'checking', 'learning', 'publishing',
+  'provisioning',
+  'preparing',
+  'building',
+  'plan_revising',
+  'executing',
+  'checking',
+  'learning',
+  'publishing',
 ]);
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'plan_rejected']);
@@ -190,7 +227,10 @@ function extractFileChanges(items: StreamItem[]): Map<string, FileChange> {
             const relPath = toRelative(parsed.path);
             const existing = changes.get(relPath);
             if (existing) {
-              changes.set(relPath, { ...existing, status: parsed.status === 'added' ? 'added' : 'modified' });
+              changes.set(relPath, {
+                ...existing,
+                status: parsed.status === 'added' ? 'added' : 'modified',
+              });
             }
           }
         } catch {
@@ -223,7 +263,8 @@ function ExpandableText({ text, color }: { text: string; color?: string }) {
 
 function ReportPanel({ output }: { output: Record<string, unknown> }) {
   const str = (v: unknown) => (typeof v === 'string' ? v : null);
-  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  const arr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
 
   const summary = str(output.summary);
   const frameworks = arr(output.frameworks);
@@ -236,11 +277,20 @@ function ReportPanel({ output }: { output: Record<string, unknown> }) {
 
   const tagList = (items: string[], color?: string) =>
     items.length > 0
-      ? items.map((t, i) => <Tag key={i} color={color} style={{ marginBottom: 4, fontSize: 11 }}>{t}</Tag>)
+      ? items.map((t, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: tag items are plain strings without stable ids
+          <Tag key={i} color={color} style={{ marginBottom: 4, fontSize: 11 }}>
+            {t}
+          </Tag>
+        ))
       : null;
 
   return (
-    <Descriptions size="small" column={1} styles={{ label: { fontSize: 11, width: 110 }, content: { fontSize: 11 } }}>
+    <Descriptions
+      size="small"
+      column={1}
+      styles={{ label: { fontSize: 11, width: 110 }, content: { fontSize: 11 } }}
+    >
       {summary && (
         <Descriptions.Item label="Summary">
           <span style={{ whiteSpace: 'pre-wrap' }}>{summary}</span>
@@ -273,7 +323,8 @@ function ReportPanel({ output }: { output: Record<string, unknown> }) {
 
 function ReportModalContent({ output }: { output: Record<string, unknown> }) {
   const str = (v: unknown) => (typeof v === 'string' ? v : null);
-  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  const arr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
 
   const summary = str(output.summary);
   const objective = str(output.objective);
@@ -291,12 +342,23 @@ function ReportModalContent({ output }: { output: Record<string, unknown> }) {
   const section = (title: string, items: string[], color?: string) =>
     items.length === 0 ? null : (
       <div style={{ marginBottom: 20 }}>
-        <Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--c-text-3)' }}>
+        <Typography.Text
+          strong
+          style={{
+            fontSize: 12,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: 'var(--c-text-3)',
+          }}
+        >
           {title}
         </Typography.Text>
         <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {items.map((t, i) => (
-            <Tag key={i} color={color} style={{ fontSize: 12, padding: '2px 8px' }}>{t}</Tag>
+            // biome-ignore lint/suspicious/noArrayIndexKey: tag items are plain strings without stable ids
+            <Tag key={i} color={color} style={{ fontSize: 12, padding: '2px 8px' }}>
+              {t}
+            </Tag>
           ))}
         </div>
       </div>
@@ -305,15 +367,42 @@ function ReportModalContent({ output }: { output: Record<string, unknown> }) {
   return (
     <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
       {objective && (
-        <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--c-surface-2)', borderRadius: 8, borderLeft: '3px solid var(--c-primary, #1677ff)' }}>
-          <Typography.Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Objective</Typography.Text>
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '10px 14px',
+            background: 'var(--c-surface-2)',
+            borderRadius: 8,
+            borderLeft: '3px solid var(--c-primary, #1677ff)',
+          }}
+        >
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+          >
+            Objective
+          </Typography.Text>
           <div style={{ marginTop: 4, fontSize: 13 }}>{objective}</div>
         </div>
       )}
       {summary && (
-        <div style={{ marginBottom: 20, padding: '10px 14px', background: 'var(--c-surface-2)', borderRadius: 8 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Summary</Typography.Text>
-          <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{summary}</div>
+        <div
+          style={{
+            marginBottom: 20,
+            padding: '10px 14px',
+            background: 'var(--c-surface-2)',
+            borderRadius: 8,
+          }}
+        >
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+          >
+            Summary
+          </Typography.Text>
+          <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+            {summary}
+          </div>
         </div>
       )}
       {section('Frameworks & Libraries', frameworks)}
@@ -327,12 +416,23 @@ function ReportModalContent({ output }: { output: Record<string, unknown> }) {
       {section('Noteworthy', noteworthy, 'gold')}
       {openQuestions.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--c-text-3)' }}>
+          <Typography.Text
+            strong
+            style={{
+              fontSize: 12,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              color: 'var(--c-text-3)',
+            }}
+          >
             Open Questions
           </Typography.Text>
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {openQuestions.map((q, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13 }}>
+              <div
+                key={q}
+                style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13 }}
+              >
                 <span style={{ color: 'var(--c-text-3)', flexShrink: 0 }}>{i + 1}.</span>
                 <span style={{ lineHeight: 1.5 }}>{q}</span>
               </div>
@@ -347,8 +447,13 @@ function ReportModalContent({ output }: { output: Record<string, unknown> }) {
 const PLAN_REVIEW_STATUSES = new Set(['plan_ready', 'plan_review']);
 
 const PLAN_VIEWABLE_STATUSES = new Set([
-  'executing', 'checking', 'learning', 'publishing',
-  'completed', 'failed', 'plan_rejected',
+  'executing',
+  'checking',
+  'learning',
+  'publishing',
+  'completed',
+  'failed',
+  'plan_rejected',
 ]);
 
 export function JobView() {
@@ -358,7 +463,10 @@ export function JobView() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [promptModal, setPromptModal] = useState<{ phase: string; text: string } | null>(null);
   const [showPlanDrawer, setShowPlanDrawer] = useState(false);
-  const showPrompt = useCallback((phase: string, text: string) => setPromptModal({ phase, text }), []);
+  const showPrompt = useCallback(
+    (phase: string, text: string) => setPromptModal({ phase, text }),
+    [],
+  );
 
   const [reviewModal, setReviewModal] = useState(false);
   const [followupTask, setFollowupTask] = useState('');
@@ -406,7 +514,8 @@ export function JobView() {
   const artifactsQuery = useQuery({
     queryKey: ['job', jobId, 'artifacts'],
     queryFn: () => rpc.jobs.listArtifacts({ jobId: jobId ?? '' }),
-    enabled: !!jobId && ['publishing', 'learning', 'completed'].includes(jobQuery.data?.status ?? ''),
+    enabled:
+      !!jobId && ['publishing', 'learning', 'completed'].includes(jobQuery.data?.status ?? ''),
   });
 
   const reviewCommentsQuery = useQuery({
@@ -464,14 +573,23 @@ export function JobView() {
   }, [jobId, isTerminal]);
 
   const resolvedItems = useMemo(
-    () => isTerminal ? normalizeTimelineEvents(timelineQuery.data?.events ?? []) : items,
+    () => (isTerminal ? normalizeTimelineEvents(timelineQuery.data?.events ?? []) : items),
     [isTerminal, timelineQuery.data, items],
   );
 
   const fileChanges = useMemo(() => extractFileChanges(resolvedItems), [resolvedItems]);
 
   type TLItem =
-    | { itemType: 'default'; id: string; color: string; label: string; detail?: string; isPrompt: boolean; phase: string; text: string }
+    | {
+        itemType: 'default';
+        id: string;
+        color: string;
+        label: string;
+        detail?: string;
+        isPrompt: boolean;
+        phase: string;
+        text: string;
+      }
     | { itemType: 'tool'; id: string; name: string; input: Record<string, unknown> }
     | { itemType: 'tool_result'; id: string; text: string; isError: boolean }
     | { itemType: 'thinking'; id: string; text: string };
@@ -483,7 +601,17 @@ export function JobView() {
 
         if (kind === 'status-changed') {
           const ev = item.event as { from?: string; to?: string };
-          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'blue', label: `${ev.from} → ${ev.to}`, isPrompt: false, phase: '', text: '' }];
+          return [
+            {
+              itemType: 'default' as const,
+              id: `${item.id}-${idx}`,
+              color: 'blue',
+              label: `${ev.from} → ${ev.to}`,
+              isPrompt: false,
+              phase: '',
+              text: '',
+            },
+          ];
         }
 
         if (kind === 'chunk') {
@@ -492,35 +620,106 @@ export function JobView() {
           return chunks.map((c, ci): TLItem => {
             const id = `${item.id}-${idx}-${ci}`;
             if (c.kind === 'tool') return { itemType: 'tool', id, name: c.name, input: c.input };
-            if (c.kind === 'tool_result') return { itemType: 'tool_result', id, text: c.text, isError: c.isError };
+            if (c.kind === 'tool_result')
+              return { itemType: 'tool_result', id, text: c.text, isError: c.isError };
             if (c.kind === 'thinking') return { itemType: 'thinking', id, text: c.text };
-            if (c.kind === 'system') return { itemType: 'default', id, color: 'gray', label: c.label, isPrompt: false, phase: '', text: '' };
+            if (c.kind === 'system')
+              return {
+                itemType: 'default',
+                id,
+                color: 'gray',
+                label: c.label,
+                isPrompt: false,
+                phase: '',
+                text: '',
+              };
             // text
-            return { itemType: 'default', id, color: c.color, label: c.label, detail: c.detail, isPrompt: false, phase: '', text: '' };
+            return {
+              itemType: 'default',
+              id,
+              color: c.color,
+              label: c.label,
+              detail: c.detail,
+              isPrompt: false,
+              phase: '',
+              text: '',
+            };
           });
         }
 
         if (kind === 'prompt-snapshot') {
           const ev = item.event as { phase?: string; systemPrompt?: string };
           const phase = ev.phase ?? 'unknown';
-          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'purple', label: `System prompt (${phase})`, isPrompt: true, phase, text: ev.systemPrompt ?? '' }];
+          return [
+            {
+              itemType: 'default' as const,
+              id: `${item.id}-${idx}`,
+              color: 'purple',
+              label: `System prompt (${phase})`,
+              isPrompt: true,
+              phase,
+              text: ev.systemPrompt ?? '',
+            },
+          ];
         }
 
         if (kind === 'artifact-created') {
           const ev = item.event as { artifactKind?: string; url?: string };
-          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'green', label: kind, detail: `${ev.artifactKind}: ${ev.url ?? ''}`, isPrompt: false, phase: '', text: '' }];
+          return [
+            {
+              itemType: 'default' as const,
+              id: `${item.id}-${idx}`,
+              color: 'green',
+              label: kind,
+              detail: `${ev.artifactKind}: ${ev.url ?? ''}`,
+              isPrompt: false,
+              phase: '',
+              text: '',
+            },
+          ];
         }
 
         if (kind === 'failed') {
           const ev = item.event as { error?: string };
-          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'red', label: kind, detail: ev.error, isPrompt: false, phase: '', text: '' }];
+          return [
+            {
+              itemType: 'default' as const,
+              id: `${item.id}-${idx}`,
+              color: 'red',
+              label: kind,
+              detail: ev.error,
+              isPrompt: false,
+              phase: '',
+              text: '',
+            },
+          ];
         }
 
         if (kind === 'completed') {
-          return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'green', label: kind, isPrompt: false, phase: '', text: '' }];
+          return [
+            {
+              itemType: 'default' as const,
+              id: `${item.id}-${idx}`,
+              color: 'green',
+              label: kind,
+              isPrompt: false,
+              phase: '',
+              text: '',
+            },
+          ];
         }
 
-        return [{ itemType: 'default' as const, id: `${item.id}-${idx}`, color: 'gray', label: kind, isPrompt: false, phase: '', text: '' }];
+        return [
+          {
+            itemType: 'default' as const,
+            id: `${item.id}-${idx}`,
+            color: 'gray',
+            label: kind,
+            isPrompt: false,
+            phase: '',
+            text: '',
+          },
+        ];
       }),
     [resolvedItems],
   );
@@ -533,11 +732,15 @@ export function JobView() {
     return undefined;
   }, [resolvedItems]);
 
-  if (jobQuery.isLoading) return (
-    <div className="page-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
-      <span className="muted">Loading…</span>
-    </div>
-  );
+  if (jobQuery.isLoading)
+    return (
+      <div
+        className="page-content"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}
+      >
+        <span className="muted">Loading…</span>
+      </div>
+    );
   if (jobQuery.error) return <Alert type="error" message={String(jobQuery.error)} />;
 
   const job = jobQuery.data;
@@ -558,7 +761,6 @@ export function JobView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-
       {/* ── Static top section ─────────────────────────────────────────────── */}
       <div style={{ flexShrink: 0, padding: '16px 28px 0', background: 'var(--c-bg)' }}>
         {/* Breadcrumb */}
@@ -566,7 +768,9 @@ export function JobView() {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() => navigate(job.parentJobId ? `/jobs/${job.parentJobId}` : `/sessions/${job.sessionId}`)}
+            onClick={() =>
+              navigate(job.parentJobId ? `/jobs/${job.parentJobId}` : `/sessions/${job.sessionId}`)
+            }
             style={{ paddingLeft: 0, marginBottom: 12 }}
           >
             {job.parentJobId ? '← Back to job' : '← Back to session'}
@@ -597,22 +801,43 @@ export function JobView() {
               gap: 12,
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 15, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: 15,
+                flex: 1,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {job.title}
             </div>
             <Space size={6}>
               <Tag color={STATUS_COLORS[job.status] ?? 'default'}>{job.status.toUpperCase()}</Tag>
               {job.noChanges && (
-                <Tag color="default" style={{ borderStyle: 'dashed' }}>No changes</Tag>
+                <Tag color="default" style={{ borderStyle: 'dashed' }}>
+                  No changes
+                </Tag>
               )}
               {job.triggerKind === 'scout' && (
-                <Tag color="blue" style={{ borderStyle: 'solid' }}>Scout</Tag>
+                <Tag color="blue" style={{ borderStyle: 'solid' }}>
+                  Scout
+                </Tag>
               )}
               {latestPlanQuery.data && (
-                <Button size="small" onClick={() => setShowPlanDrawer(true)}>View Plan</Button>
+                <Button size="small" onClick={() => setShowPlanDrawer(true)}>
+                  View Plan
+                </Button>
               )}
               {job.status === 'failed' && latestPlanQuery.data?.status === 'approved' && (
-                <Button size="small" type="primary" onClick={() => resumeMutation.mutate()} loading={resumeMutation.isPending}>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => resumeMutation.mutate()}
+                  loading={resumeMutation.isPending}
+                >
                   Resume from plan
                 </Button>
               )}
@@ -627,15 +852,27 @@ export function JobView() {
                 </Button>
               )}
               {isTerminal && (
-                <Button size="small" onClick={() => restartMutation.mutate()} loading={restartMutation.isPending}>
+                <Button
+                  size="small"
+                  onClick={() => restartMutation.mutate()}
+                  loading={restartMutation.isPending}
+                >
                   Restart
                 </Button>
               )}
               <Dropdown
-                menu={{ items: [
-                  { key: 'export-timeline', label: 'Export Timeline', disabled: !isTerminal, onClick: () => window.open(`http://localhost:3000/jobs/${jobId}/audit`, '_blank') },
-                  { key: 'delete', label: 'Delete job', danger: true, onClick: handleDelete },
-                ] }}
+                menu={{
+                  items: [
+                    {
+                      key: 'export-timeline',
+                      label: 'Export Timeline',
+                      disabled: !isTerminal,
+                      onClick: () =>
+                        window.open(`http://localhost:3000/jobs/${jobId}/audit`, '_blank'),
+                    },
+                    { key: 'delete', label: 'Delete job', danger: true, onClick: handleDelete },
+                  ],
+                }}
                 trigger={['click']}
               >
                 <Button size="small">···</Button>
@@ -646,11 +883,15 @@ export function JobView() {
           <div style={{ padding: '10px 16px' }}>
             <Descriptions size="small" column={2}>
               <Descriptions.Item label="Repo">
-                <a href={job.githubUrl} target="_blank" rel="noreferrer">{job.githubUrl}</a>
-                {' '}@ {job.githubBranch}
+                <a href={job.githubUrl} target="_blank" rel="noreferrer">
+                  {job.githubUrl}
+                </a>{' '}
+                @ {job.githubBranch}
               </Descriptions.Item>
               {job.githubCommitSha && (
-                <Descriptions.Item label="Commit">{job.githubCommitSha.slice(0, 12)}</Descriptions.Item>
+                <Descriptions.Item label="Commit">
+                  {job.githubCommitSha.slice(0, 12)}
+                </Descriptions.Item>
               )}
               {job.totalCostUsd != null && (
                 <Descriptions.Item label="Cost">
@@ -658,7 +899,8 @@ export function JobView() {
                     <Typography.Text strong>${job.totalCostUsd.toFixed(4)}</Typography.Text>
                     {job.totalInputTokens != null && (
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {job.totalInputTokens.toLocaleString()} in · {(job.totalOutputTokens ?? 0).toLocaleString()} out
+                        {job.totalInputTokens.toLocaleString()} in ·{' '}
+                        {(job.totalOutputTokens ?? 0).toLocaleString()} out
                       </Typography.Text>
                     )}
                   </Space>
@@ -681,11 +923,20 @@ export function JobView() {
         </div>
 
         {/* Plan review */}
-        {showPlanReview && jobId && <div style={{ marginBottom: 14 }}><PlanReviewCard jobId={jobId} /></div>}
+        {showPlanReview && jobId && (
+          <div style={{ marginBottom: 14 }}>
+            <PlanReviewCard jobId={jobId} />
+          </div>
+        )}
 
         {/* Rejected */}
         {job.status === 'plan_rejected' && (
-          <Alert type="error" message="Plan rejected" description="The plan was rejected. No code was changed." style={{ marginBottom: 14 }} />
+          <Alert
+            type="error"
+            message="Plan rejected"
+            description="The plan was rejected. No code was changed."
+            style={{ marginBottom: 14 }}
+          />
         )}
 
         {/* PR banner */}
@@ -713,7 +964,19 @@ export function JobView() {
                 }}
               >
                 <span>Pull request created →</span>
-                <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--c-text-2)', marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prUrl}</span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 400,
+                    color: 'var(--c-text-2)',
+                    marginLeft: 'auto',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {prUrl}
+                </span>
               </a>
               {job.status === 'completed' && (
                 <Button onClick={() => setReviewModal(true)}>Fix Review Comments</Button>
@@ -724,31 +987,88 @@ export function JobView() {
 
         {/* Child jobs — plan review ones get a full card; the rest go in the follow-ups list */}
         {/* Only show child plan-review cards when the current job is NOT itself awaiting review */}
-        {!showPlanReview && (childJobsQuery.data ?? []).filter((c) => c.status === 'plan_ready' || c.status === 'plan_review').map((child) => (
-          <div key={child.id} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-              Plan review — {child.title}
-            </div>
-            <PlanReviewCard jobId={child.id} />
-          </div>
-        ))}
-
-        {(childJobsQuery.data ?? []).filter((c) => c.status !== 'plan_ready' && c.status !== 'plan_review').length > 0 && (
-          <div style={{ marginBottom: 14, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--c-border-subtle)', background: 'var(--c-surface-2)', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)' }}>
-              Review follow-ups
-            </div>
-            {(childJobsQuery.data ?? []).filter((c) => c.status !== 'plan_ready' && c.status !== 'plan_review').map((child) => (
-              <div
-                key={child.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--c-border-subtle)', cursor: 'pointer' }}
-                onClick={() => navigate(`/jobs/${child.id}`)}
-              >
-                <Tag color={STATUS_COLORS[child.status] ?? 'default'} style={{ flexShrink: 0 }}>{child.status.toUpperCase()}</Tag>
-                <span style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{child.title}</span>
-                <span style={{ fontSize: 11, color: 'var(--c-text-3)', flexShrink: 0 }}>{new Date(child.createdAt).toLocaleDateString()}</span>
+        {!showPlanReview &&
+          (childJobsQuery.data ?? [])
+            .filter((c) => c.status === 'plan_ready' || c.status === 'plan_review')
+            .map((child) => (
+              <div key={child.id} style={{ marginBottom: 14 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--c-text-3)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    marginBottom: 6,
+                  }}
+                >
+                  Plan review — {child.title}
+                </div>
+                <PlanReviewCard jobId={child.id} />
               </div>
             ))}
+
+        {(childJobsQuery.data ?? []).filter(
+          (c) => c.status !== 'plan_ready' && c.status !== 'plan_review',
+        ).length > 0 && (
+          <div
+            style={{
+              marginBottom: 14,
+              background: 'var(--c-surface)',
+              border: '1px solid var(--c-border)',
+              borderRadius: 10,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '8px 14px',
+                borderBottom: '1px solid var(--c-border-subtle)',
+                background: 'var(--c-surface-2)',
+                fontSize: 12,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--c-text-3)',
+              }}
+            >
+              Review follow-ups
+            </div>
+            {(childJobsQuery.data ?? [])
+              .filter((c) => c.status !== 'plan_ready' && c.status !== 'plan_review')
+              .map((child) => (
+                <div
+                  key={child.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '8px 14px',
+                    borderBottom: '1px solid var(--c-border-subtle)',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => navigate(`/jobs/${child.id}`)}
+                  onKeyDown={(e) => e.key === 'Enter' && navigate(`/jobs/${child.id}`)}
+                >
+                  <Tag color={STATUS_COLORS[child.status] ?? 'default'} style={{ flexShrink: 0 }}>
+                    {child.status.toUpperCase()}
+                  </Tag>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {child.title}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--c-text-3)', flexShrink: 0 }}>
+                    {new Date(child.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
           </div>
         )}
 
@@ -756,7 +1076,10 @@ export function JobView() {
         <Modal
           title="Fix Review Comments"
           open={reviewModal}
-          onCancel={() => { setReviewModal(false); setFollowupTask(''); }}
+          onCancel={() => {
+            setReviewModal(false);
+            setFollowupTask('');
+          }}
           onOk={() => createFollowupMutation.mutate()}
           okText="Create follow-up job"
           confirmLoading={createFollowupMutation.isPending}
@@ -765,12 +1088,29 @@ export function JobView() {
         >
           {reviewCommentsQuery.isLoading && <p className="muted small">Loading review comments…</p>}
           {reviewCommentsQuery.data && reviewCommentsQuery.data.length > 0 && (
-            <div style={{ marginBottom: 16, maxHeight: 280, overflowY: 'auto', border: '1px solid var(--c-border)', borderRadius: 8, padding: '8px 12px' }}>
+            <div
+              style={{
+                marginBottom: 16,
+                maxHeight: 280,
+                overflowY: 'auto',
+                border: '1px solid var(--c-border)',
+                borderRadius: 8,
+                padding: '8px 12px',
+              }}
+            >
               {reviewCommentsQuery.data.map((c: ReviewCommentDto) => (
-                <div key={c.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--c-border-subtle)' }}>
+                <div
+                  key={c.id}
+                  style={{
+                    marginBottom: 12,
+                    paddingBottom: 12,
+                    borderBottom: '1px solid var(--c-border-subtle)',
+                  }}
+                >
                   {c.path && (
                     <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginBottom: 4 }}>
-                      {c.path}{c.line ? `:${c.line}` : ''}
+                      {c.path}
+                      {c.line ? `:${c.line}` : ''}
                     </div>
                   )}
                   <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.body}</div>
@@ -782,9 +1122,15 @@ export function JobView() {
             </div>
           )}
           {reviewCommentsQuery.data?.length === 0 && (
-            <Alert type="info" message="No review comments found on this PR." style={{ marginBottom: 16 }} />
+            <Alert
+              type="info"
+              message="No review comments found on this PR."
+              style={{ marginBottom: 16 }}
+            />
           )}
-          <div style={{ marginBottom: 8, fontWeight: 500, fontSize: 13 }}>What should the agent fix?</div>
+          <div style={{ marginBottom: 8, fontWeight: 500, fontSize: 13 }}>
+            What should the agent fix?
+          </div>
           <Input.TextArea
             rows={4}
             placeholder="Describe what changes to make based on the review comments above, or type your own instructions…"
@@ -792,176 +1138,275 @@ export function JobView() {
             onChange={(e) => setFollowupTask(e.target.value)}
           />
           {createFollowupMutation.error && (
-            <Alert type="error" message={String(createFollowupMutation.error)} style={{ marginTop: 12 }} />
+            <Alert
+              type="error"
+              message={String(createFollowupMutation.error)}
+              style={{ marginTop: 12 }}
+            />
           )}
         </Modal>
       </div>
 
       {/* ── Fills remaining screen ──────────────────────────────────────────── */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', gap: 0, padding: '0 28px 0' }}>
-
         {/* Timeline — always present, grows to fill height */}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 28 }}>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            paddingBottom: 28,
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              background: 'var(--c-surface)',
+              border: '1px solid var(--c-border)',
+              borderRadius: 10,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             <div
               style={{
-                flex: 1,
-                background: 'var(--c-surface)',
-                border: '1px solid var(--c-border)',
-                borderRadius: 10,
-                overflow: 'hidden',
                 display: 'flex',
-                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 16px',
+                borderBottom: '1px solid var(--c-border-subtle)',
+                background: 'var(--c-surface-2)',
+                flexShrink: 0,
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 16px',
-                  borderBottom: '1px solid var(--c-border-subtle)',
-                  background: 'var(--c-surface-2)',
-                  flexShrink: 0,
-                }}
-              >
-                <span style={{ fontWeight: 600, fontSize: 13 }}>{isTerminal ? 'Timeline' : 'Live timeline'}</span>
-                {streamError && <Tag color="red">{streamError}</Tag>}
-              </div>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>
+                {isTerminal ? 'Timeline' : 'Live timeline'}
+              </span>
+              {streamError && <Tag color="red">{streamError}</Tag>}
+            </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
-                {timelineItems.length === 0 ? (
-                  <p className="muted small" style={{ padding: '8px 0' }}>
-                    {isTerminal ? 'No timeline events recorded.' : 'Waiting for events…'}
-                  </p>
-                ) : (
-                  <div className="timeline">
-                    {[...timelineItems].reverse().map((item, idx) => {
-                      // Tool call — distinct card, no dot
-                      if (item.itemType === 'tool') {
-                        const fileKey = (item.input.file_path ?? item.input.path) as string | undefined;
-                        const displayPath = fileKey ?? Object.values(item.input)[0];
-                        return (
-                          <div key={item.id} className="timeline-item timeline-item--tool">
-                            <div className="timeline-dot-col">
-                              <div className="timeline-dot" style={{ background: 'var(--c-warning)', width: 7, height: 7 }} />
-                              {idx < timelineItems.length - 1 && <div className="timeline-line" />}
-                            </div>
-                            <div className="timeline-content" style={{ width: '100%' }}>
-                              <details style={{ width: '100%' }}>
-                                <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>{item.name}</Tag>
-                                  {displayPath && (
-                                    <span style={{ fontSize: 12, color: 'var(--c-text-2)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {String(displayPath)}
-                                    </span>
-                                  )}
-                                </summary>
-                                <pre style={{ margin: '6px 0 0', fontSize: 11, background: 'var(--c-surface-2)', borderRadius: 4, padding: '6px 8px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                  {JSON.stringify(item.input, null, 2)}
-                                </pre>
-                              </details>
-                            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+              {timelineItems.length === 0 ? (
+                <p className="muted small" style={{ padding: '8px 0' }}>
+                  {isTerminal ? 'No timeline events recorded.' : 'Waiting for events…'}
+                </p>
+              ) : (
+                <div className="timeline">
+                  {[...timelineItems].reverse().map((item, idx) => {
+                    // Tool call — distinct card, no dot
+                    if (item.itemType === 'tool') {
+                      const fileKey = (item.input.file_path ?? item.input.path) as
+                        | string
+                        | undefined;
+                      const displayPath =
+                        fileKey ?? (Object.values(item.input)[0] as string | undefined);
+                      return (
+                        <div key={item.id} className="timeline-item timeline-item--tool">
+                          <div className="timeline-dot-col">
+                            <div
+                              className="timeline-dot"
+                              style={{ background: 'var(--c-warning)', width: 7, height: 7 }}
+                            />
+                            {idx < timelineItems.length - 1 && <div className="timeline-line" />}
                           </div>
-                        );
-                      }
-
-                      // Tool result
-                      if (item.itemType === 'tool_result') {
-                        const color = item.isError ? 'var(--c-error)' : undefined;
-                        return (
-                          <div key={item.id} className="timeline-item">
-                            <div className="timeline-dot-col">
-                              <div className="timeline-dot" style={{ background: item.isError ? 'var(--c-error)' : 'var(--c-success)', width: 7, height: 7 }} />
-                              {idx < timelineItems.length - 1 && <div className="timeline-line" />}
-                            </div>
-                            <div className="timeline-content" style={{ width: '100%' }}>
-                              {item.text.length > 120
-                                ? (
-                                  <ExpandableText text={item.text} color={color} />
-                                )
-                                : <div className="timeline-detail" style={{ color }}>{item.text}</div>
-                              }
-                            </div>
+                          <div className="timeline-content" style={{ width: '100%' }}>
+                            <details style={{ width: '100%' }}>
+                              <summary
+                                style={{
+                                  cursor: 'pointer',
+                                  listStyle: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                              >
+                                <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>
+                                  {item.name}
+                                </Tag>
+                                {displayPath && (
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      color: 'var(--c-text-2)',
+                                      fontFamily: 'monospace',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {String(displayPath)}
+                                  </span>
+                                )}
+                              </summary>
+                              <pre
+                                style={{
+                                  margin: '6px 0 0',
+                                  fontSize: 11,
+                                  background: 'var(--c-surface-2)',
+                                  borderRadius: 4,
+                                  padding: '6px 8px',
+                                  overflowX: 'auto',
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-all',
+                                }}
+                              >
+                                {JSON.stringify(item.input, null, 2)}
+                              </pre>
+                            </details>
                           </div>
-                        );
-                      }
+                        </div>
+                      );
+                    }
 
-                      // Thinking block — collapsed by default
-                      if (item.itemType === 'thinking') {
-                        return (
-                          <div key={item.id} className="timeline-item">
-                            <div className="timeline-dot-col">
-                              <div className="timeline-dot" style={{ background: '#7C3AED', width: 7, height: 7 }} />
-                              {idx < timelineItems.length - 1 && <div className="timeline-line" />}
-                            </div>
-                            <div className="timeline-content" style={{ width: '100%' }}>
-                              <details>
-                                <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontSize: 12, color: '#7C3AED', fontWeight: 500 }}>Thinking</span>
-                                  <span className="muted small">· {item.text.length > 60 ? item.text.slice(0, 60) + '…' : item.text}</span>
-                                </summary>
-                                <pre style={{ margin: '6px 0 0', fontSize: 11, background: 'var(--c-surface-2)', borderRadius: 4, padding: '6px 8px', overflowX: 'auto', whiteSpace: 'pre-wrap', color: 'var(--c-text-2)', fontFamily: 'inherit' }}>
-                                  {item.text}
-                                </pre>
-                              </details>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      // Default (status, text, prompt, other)
+                    // Tool result
+                    if (item.itemType === 'tool_result') {
+                      const color = item.isError ? 'var(--c-error)' : undefined;
                       return (
                         <div key={item.id} className="timeline-item">
                           <div className="timeline-dot-col">
                             <div
                               className="timeline-dot"
                               style={{
-                                background:
-                                  item.color === 'green' ? 'var(--c-success)'
-                                  : item.color === 'red' ? 'var(--c-error)'
-                                  : item.color === 'blue' ? 'var(--c-primary)'
-                                  : item.color === 'orange' ? 'var(--c-warning)'
-                                  : item.color === 'purple' ? '#7C3AED'
-                                  : 'var(--c-border)',
+                                background: item.isError ? 'var(--c-error)' : 'var(--c-success)',
+                                width: 7,
+                                height: 7,
                               }}
                             />
                             {idx < timelineItems.length - 1 && <div className="timeline-line" />}
                           </div>
-                          <div className="timeline-content">
-                            <div className="timeline-label">
-                              {item.label}
-                              {item.isPrompt && (
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost btn-sm"
-                                  style={{ marginLeft: 6, padding: '0 6px', fontSize: 11 }}
-                                  onClick={() => showPrompt(item.phase, item.text)}
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                            {item.detail && (
-                              item.label === 'Assistant' && item.detail.length > 120
-                                ? (
-                                  <ExpandableText text={item.detail} />
-                                )
-                                : <div className="timeline-detail">{item.detail}</div>
+                          <div className="timeline-content" style={{ width: '100%' }}>
+                            {item.text.length > 120 ? (
+                              <ExpandableText text={item.text} color={color} />
+                            ) : (
+                              <div className="timeline-detail" style={{ color }}>
+                                {item.text}
+                              </div>
                             )}
                           </div>
                         </div>
                       );
-                    })}
-                  </div>
-                )}
-              </div>
+                    }
+
+                    // Thinking block — collapsed by default
+                    if (item.itemType === 'thinking') {
+                      return (
+                        <div key={item.id} className="timeline-item">
+                          <div className="timeline-dot-col">
+                            <div
+                              className="timeline-dot"
+                              style={{ background: '#7C3AED', width: 7, height: 7 }}
+                            />
+                            {idx < timelineItems.length - 1 && <div className="timeline-line" />}
+                          </div>
+                          <div className="timeline-content" style={{ width: '100%' }}>
+                            <details>
+                              <summary
+                                style={{
+                                  cursor: 'pointer',
+                                  listStyle: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                              >
+                                <span style={{ fontSize: 12, color: '#7C3AED', fontWeight: 500 }}>
+                                  Thinking
+                                </span>
+                                <span className="muted small">
+                                  ·{' '}
+                                  {item.text.length > 60 ? `${item.text.slice(0, 60)}…` : item.text}
+                                </span>
+                              </summary>
+                              <pre
+                                style={{
+                                  margin: '6px 0 0',
+                                  fontSize: 11,
+                                  background: 'var(--c-surface-2)',
+                                  borderRadius: 4,
+                                  padding: '6px 8px',
+                                  overflowX: 'auto',
+                                  whiteSpace: 'pre-wrap',
+                                  color: 'var(--c-text-2)',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                {item.text}
+                              </pre>
+                            </details>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Default (status, text, prompt, other)
+                    return (
+                      <div key={item.id} className="timeline-item">
+                        <div className="timeline-dot-col">
+                          <div
+                            className="timeline-dot"
+                            style={{
+                              background:
+                                item.color === 'green'
+                                  ? 'var(--c-success)'
+                                  : item.color === 'red'
+                                    ? 'var(--c-error)'
+                                    : item.color === 'blue'
+                                      ? 'var(--c-primary)'
+                                      : item.color === 'orange'
+                                        ? 'var(--c-warning)'
+                                        : item.color === 'purple'
+                                          ? '#7C3AED'
+                                          : 'var(--c-border)',
+                            }}
+                          />
+                          {idx < timelineItems.length - 1 && <div className="timeline-line" />}
+                        </div>
+                        <div className="timeline-content">
+                          <div className="timeline-label">
+                            {item.label}
+                            {item.isPrompt && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ marginLeft: 6, padding: '0 6px', fontSize: 11 }}
+                                onClick={() => showPrompt(item.phase, item.text)}
+                              >
+                                View
+                              </button>
+                            )}
+                          </div>
+                          {item.detail &&
+                            (item.label === 'Assistant' && item.detail.length > 120 ? (
+                              <ExpandableText text={item.detail} />
+                            ) : (
+                              <div className="timeline-detail">{item.detail}</div>
+                            ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
+        </div>
 
         {/* Right column — steps + file changes stacked */}
         {jobId && (
-          <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 28, paddingLeft: 16 }}>
-
+          <div
+            style={{
+              width: 280,
+              flexShrink: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              paddingBottom: 28,
+              paddingLeft: 16,
+            }}
+          >
             {/* Steps panel — always compact, scrollable if many steps */}
             <div
               style={{
@@ -1032,12 +1477,22 @@ export function JobView() {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
                     <span>Report</span>
-                    {job.triggerKind === 'scout' && <Tag color="blue" style={{ marginBottom: 0, fontSize: 10 }}>scout</Tag>}
+                    {job.triggerKind === 'scout' && (
+                      <Tag color="blue" style={{ marginBottom: 0, fontSize: 10 }}>
+                        scout
+                      </Tag>
+                    )}
                   </div>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    style={{ padding: '0 6px', fontSize: 11, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}
+                    style={{
+                      padding: '0 6px',
+                      fontSize: 11,
+                      fontWeight: 400,
+                      textTransform: 'none',
+                      letterSpacing: 0,
+                    }}
                     onClick={() => setShowReportModal(true)}
                   >
                     Full view
@@ -1109,33 +1564,50 @@ export function JobView() {
               {latestPlanQuery.data.data.affectedPaths.length > 0 && (
                 <Descriptions.Item label="Affected files">
                   {latestPlanQuery.data.data.affectedPaths.map((p) => (
-                    <Tag key={p} style={{ marginBottom: 2 }}>{p}</Tag>
+                    <Tag key={p} style={{ marginBottom: 2 }}>
+                      {p}
+                    </Tag>
                   ))}
                 </Descriptions.Item>
               )}
               {(latestPlanQuery.data.data.risks ?? []).length > 0 && (
                 <Descriptions.Item label="Risks">
-                  {(latestPlanQuery.data.data.risks ?? []).map((r, i) => (
-                    <Tag color="orange" key={i} style={{ marginBottom: 2 }}>{r}</Tag>
+                  {(latestPlanQuery.data.data.risks ?? []).map((r) => (
+                    <Tag color="orange" key={r} style={{ marginBottom: 2 }}>
+                      {r}
+                    </Tag>
                   ))}
                 </Descriptions.Item>
               )}
             </Descriptions>
 
-            <Collapse ghost items={[{
-              key: 'body',
-              label: 'Full plan details',
-              children: (
-                <div className="prose" style={{ maxHeight: 480, overflowY: 'auto' }}>
-                  <Markdown>{latestPlanQuery.data.data.bodyMarkdown}</Markdown>
-                </div>
-              ),
-            }]} />
+            <Collapse
+              ghost
+              items={[
+                {
+                  key: 'body',
+                  label: 'Full plan details',
+                  children: (
+                    <div className="prose" style={{ maxHeight: 480, overflowY: 'auto' }}>
+                      <Markdown>{latestPlanQuery.data.data.bodyMarkdown}</Markdown>
+                    </div>
+                  ),
+                },
+              ]}
+            />
 
             <Typography.Title level={5}>Steps</Typography.Title>
             {latestPlanQuery.data.data.steps.map((step) => (
               <Space key={step.id} align="start">
-                <Tag color={step.status === 'done' ? 'success' : step.status === 'skipped' ? 'default' : 'blue'}>
+                <Tag
+                  color={
+                    step.status === 'done'
+                      ? 'success'
+                      : step.status === 'skipped'
+                        ? 'default'
+                        : 'blue'
+                  }
+                >
                   {step.status}
                 </Tag>
                 <Typography.Text>{step.content}</Typography.Text>

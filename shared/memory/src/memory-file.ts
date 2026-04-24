@@ -1,10 +1,9 @@
 import { type Database, repoMemories } from '@shared/db';
-import { type StorageClient, storage, StorageNotConfiguredError } from '@shared/storage';
+import { type StorageClient, StorageNotConfiguredError, storage } from '@shared/storage';
 import { eq } from 'drizzle-orm';
 import { InvalidMemoryFormatError, validateMemoryFormat } from './validator';
 
-const MEMORY_KEY = (repoKey: string) =>
-  `memory/${repoKey.replace(/\//g, '_')}/MEMORY.md`;
+const MEMORY_KEY = (repoKey: string) => `memory/${repoKey.replace(/\//g, '_')}/MEMORY.md`;
 
 /** Hard ceiling — prevents runaway growth from injecting too many tokens into the plan prompt. */
 export const MAX_MEMORY_BYTES = 32_768; // 32 KB ≈ 8 K tokens

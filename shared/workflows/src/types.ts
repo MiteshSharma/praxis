@@ -6,7 +6,11 @@ const TOOL_SET_NAMES = ['file', 'shell', 'memory', 'plan'] as const;
 
 export const AgentRefSchema = z.discriminatedUnion('ref', [
   z.object({ ref: z.literal('github'), url: z.string(), commitSha: z.string().optional() }),
-  z.object({ ref: z.literal('id'), agentId: z.string().uuid(), agentVersionId: z.string().uuid().optional() }),
+  z.object({
+    ref: z.literal('id'),
+    agentId: z.string().uuid(),
+    agentVersionId: z.string().uuid().optional(),
+  }),
 ]);
 export type AgentRef = z.infer<typeof AgentRefSchema>;
 
@@ -54,10 +58,21 @@ export const CheckStepDefSchema = z.object({
   capture: z.enum(['stdout', 'stderr', 'both']).default('both'),
 });
 
+export const ScoutStepDefSchema = z.object({
+  kind: z.literal('scout'),
+  name: z.string(),
+  /** Override the model for this step. Beats agent model and job model. */
+  model: z.string().optional(),
+  agent: AgentRefSchema.optional().nullable(),
+  // Skill used as the primary agent for this step (equivalent to agent)
+  skillId: z.string().uuid().optional(),
+});
+
 export const WorkflowStepDefSchema = z.discriminatedUnion('kind', [
   PlanStepDefSchema,
   ExecuteStepDefSchema,
   CheckStepDefSchema,
+  ScoutStepDefSchema,
 ]);
 export type WorkflowStepDef = z.infer<typeof WorkflowStepDefSchema>;
 
@@ -71,8 +86,21 @@ export const WorkflowInputSchema = z.object({
 });
 export type WorkflowInput = z.infer<typeof WorkflowInputSchema>;
 
+/**
+ * Optional scout section — overrides model/agent used for scout jobs.
+ * If absent, the default scout agent is used.
+ */
+export const ScoutSectionSchema = z.object({
+  model: z.string().optional(),
+  agent: AgentRefSchema.optional().nullable(),
+  skillId: z.string().uuid().optional(),
+});
+export type ScoutSection = z.infer<typeof ScoutSectionSchema>;
+
 export const WorkflowDefinitionSchema = z.object({
   inputs: z.array(WorkflowInputSchema).optional(),
+  /** Scout configuration — model/agent for read-only investigation jobs. Optional. */
+  scout: ScoutSectionSchema.optional(),
   steps: z.array(WorkflowStepDefSchema).min(1),
 });
 export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;

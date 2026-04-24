@@ -1,6 +1,6 @@
 import { ORPCError } from '@orpc/server';
-import { SETTING_DEFAULTS, SETTING_DESCRIPTIONS, type SettingKey } from '@shared/db';
 import type { SettingDto } from '@shared/contracts';
+import { SETTING_DEFAULTS, SETTING_DESCRIPTIONS, type SettingKey } from '@shared/db';
 import type { SettingsRepository } from '../repositories/settings.repository';
 
 export class SettingsService {

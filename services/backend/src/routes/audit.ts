@@ -39,7 +39,7 @@ function summarize(type: string, payload: Record<string, unknown>): string {
     case 'memory-saved':
       return `Memory saved (${payload.entryCount} entries, ${payload.sizeBytes} bytes)`;
     case 'memory-loaded':
-      return `Memory loaded`;
+      return 'Memory loaded';
     case 'recovered':
       return 'Job recovered from stuck state';
     default:
@@ -60,22 +60,22 @@ export function auditRoutes(app: Hono, db: Database): void {
       .where(eq(jobTimeline.jobId, jobId))
       .orderBy(asc(jobTimeline.seq));
 
-    const lines: string[] = [
-      csvRow(['seq', 'timestamp', 'type', 'actor', 'summary', 'detail']),
-    ];
+    const lines: string[] = [csvRow(['seq', 'timestamp', 'type', 'actor', 'summary', 'detail'])];
 
     for (const entry of entries) {
       const payload = (entry.payload ?? {}) as Record<string, unknown>;
       const actor = payload.actor === 'user' ? 'user' : 'system';
       const summary = summarize(entry.type, payload);
-      lines.push(csvRow([
-        entry.seq,
-        entry.createdAt.toISOString(),
-        entry.type,
-        actor,
-        summary,
-        JSON.stringify(payload),
-      ]));
+      lines.push(
+        csvRow([
+          entry.seq,
+          entry.createdAt.toISOString(),
+          entry.type,
+          actor,
+          summary,
+          JSON.stringify(payload),
+        ]),
+      );
     }
 
     const csv = lines.join('\r\n');

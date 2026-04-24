@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Mock WorkflowsRepository ──────────────────────────────────────────────────
 
@@ -70,9 +70,9 @@ describe('WorkflowsService', () => {
     });
 
     it('throws BAD_REQUEST when steps are missing', async () => {
-      await expect(
-        service.create({ source: 'form', name: 'My Workflow' }),
-      ).rejects.toThrow('at least one step is required');
+      await expect(service.create({ source: 'form', name: 'My Workflow' })).rejects.toThrow(
+        'at least one step is required',
+      );
     });
 
     it('applies defaults for check step command and timeoutSeconds', async () => {
@@ -110,7 +110,10 @@ describe('WorkflowsService', () => {
       await service.create({
         source: 'form',
         name: 'My Workflow',
-        steps: [{ kind: 'plan', name: 'Plan step' }, { kind: 'execute', name: 'Execute' }],
+        steps: [
+          { kind: 'plan', name: 'Plan step' },
+          { kind: 'execute', name: 'Execute' },
+        ],
       });
 
       const callArgs = mockRepo.create.mock.calls[0];
@@ -135,9 +138,7 @@ describe('WorkflowsService', () => {
 
   describe('create — inline source', () => {
     it('throws BAD_REQUEST when inlineContent is missing', async () => {
-      await expect(service.create({ source: 'inline' })).rejects.toThrow(
-        'inlineContent required',
-      );
+      await expect(service.create({ source: 'inline' })).rejects.toThrow('inlineContent required');
     });
 
     it('throws BAD_REQUEST when loaded definition is not kind=workflow', async () => {
@@ -169,8 +170,11 @@ describe('WorkflowsService', () => {
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        'InlineWorkflow', 'inline wf', 'inline',
-        expect.stringContaining('inline:'), expect.any(Object),
+        'InlineWorkflow',
+        'inline wf',
+        'inline',
+        expect.stringContaining('inline:'),
+        expect.any(Object),
       );
       expect(result).toBe(dto);
     });
@@ -210,7 +214,9 @@ describe('WorkflowsService', () => {
       });
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        'GHWorkflow', 'from github', 'github',
+        'GHWorkflow',
+        'from github',
+        'github',
         'github:https://github.com/o/r/wf.yaml@cafebabe',
         expect.any(Object),
       );

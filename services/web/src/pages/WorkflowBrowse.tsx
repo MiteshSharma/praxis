@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AgentDto, WorkflowDto } from '@shared/contracts';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -32,9 +32,15 @@ interface FormStep {
   timeoutSeconds?: number;
 }
 
+interface FormScout {
+  model?: string;
+  agentOrSkillId?: string;
+}
+
 interface CreateWorkflowValues {
   name: string;
   description?: string;
+  scout?: FormScout;
   steps: FormStep[];
 }
 
@@ -56,17 +62,38 @@ function StepRow({
   const agentOrSkillId = Form.useWatch(['steps', fieldName, 'agentOrSkillId'], form);
 
   // If selected value is a skill, check for declared agent dependencies
-  const selectedSkillId = agentOrSkillId?.startsWith('skill:') ? agentOrSkillId.slice(6) : undefined;
+  const selectedSkillId = agentOrSkillId?.startsWith('skill:')
+    ? agentOrSkillId.slice(6)
+    : undefined;
   const selectedSkill = skills.find((s) => s.id === selectedSkillId);
-  const dependsOn: string[] = (selectedSkill?.latestVersion?.definition as { dependsOn?: string[] })?.dependsOn ?? [];
+  const dependsOn: string[] =
+    (selectedSkill?.latestVersion?.definition as { dependsOn?: string[] })?.dependsOn ?? [];
 
   // Combined options: agents first (blue), then skills (purple)
   const combinedOptions = [
     ...(agents.length
-      ? [{ label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>Agents</Typography.Text>, options: agents.map((a) => ({ value: `agent:${a.id}`, label: a.name })) }]
+      ? [
+          {
+            label: (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Agents
+              </Typography.Text>
+            ),
+            options: agents.map((a) => ({ value: `agent:${a.id}`, label: a.name })),
+          },
+        ]
       : []),
     ...(skills.length
-      ? [{ label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>Skills</Typography.Text>, options: skills.map((s) => ({ value: `skill:${s.id}`, label: s.name })) }]
+      ? [
+          {
+            label: (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Skills
+              </Typography.Text>
+            ),
+            options: skills.map((s) => ({ value: `skill:${s.id}`, label: s.name })),
+          },
+        ]
       : []),
   ];
 
@@ -74,8 +101,16 @@ function StepRow({
     <Card
       size="small"
       style={{ marginBottom: 8 }}
-      title={<Typography.Text type="secondary" style={{ fontSize: 12 }}>Step {stepNumber}</Typography.Text>}
-      extra={<Button type="text" size="small" danger onClick={onRemove}>Remove</Button>}
+      title={
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          Step {stepNumber}
+        </Typography.Text>
+      }
+      extra={
+        <Button type="text" size="small" danger onClick={onRemove}>
+          Remove
+        </Button>
+      }
     >
       {/* Kind + Name row */}
       <div style={{ display: 'flex', gap: 8 }}>
@@ -204,6 +239,17 @@ function toFormStep(s: Record<string, unknown>): FormStep {
   };
 }
 
+function toFormScout(s: Record<string, unknown> | undefined): FormScout | undefined {
+  if (!s) return undefined;
+  const agent = s.agent as { agentId?: string } | undefined;
+  const agentOrSkillId = agent?.agentId
+    ? `agent:${agent.agentId}`
+    : s.skillId
+      ? `skill:${s.skillId as string}`
+      : undefined;
+  return { model: s.model as string | undefined, agentOrSkillId };
+}
+
 function CreateWorkflowModal({
   open,
   onClose,
@@ -244,13 +290,37 @@ function CreateWorkflowModal({
     });
   }
 
+  function decodeScout(scout?: FormScout) {
+    if (!scout) return undefined;
+    const { agentOrSkillId, ...rest } = scout;
+    const agentId = agentOrSkillId?.startsWith('agent:') ? agentOrSkillId.slice(6) : undefined;
+    const skillId = agentOrSkillId?.startsWith('skill:') ? agentOrSkillId.slice(6) : undefined;
+    // Only include scout if at least one field is set
+    const decoded = { ...rest, agentId, skillId };
+    if (!decoded.model && !decoded.agentId && !decoded.skillId) return undefined;
+    return decoded;
+  }
+
   const mutation = useMutation({
     mutationFn: (v: CreateWorkflowValues) => {
       const steps = decodeSteps(v.steps);
+      const scout = decodeScout(v.scout);
       if (isEdit) {
-        return rpc.workflows.update({ workflowId, name: v.name, description: v.description, steps });
+        return rpc.workflows.update({
+          workflowId,
+          name: v.name,
+          description: v.description,
+          scout,
+          steps,
+        });
       }
-      return rpc.workflows.create({ source: 'form', name: v.name, description: v.description, steps });
+      return rpc.workflows.create({
+        source: 'form',
+        name: v.name,
+        description: v.description,
+        scout,
+        steps,
+      });
     },
     onSuccess: () => {
       onCreated();
@@ -276,7 +346,11 @@ function CreateWorkflowModal({
     <Modal
       title={isEdit ? 'Edit workflow' : 'Create workflow'}
       open={open}
-      onCancel={() => { onClose(); setError(null); form.resetFields(); }}
+      onCancel={() => {
+        onClose();
+        setError(null);
+        form.resetFields();
+      }}
       footer={null}
       width={660}
       destroyOnClose
@@ -298,7 +372,88 @@ function CreateWorkflowModal({
           <Input placeholder="What this workflow does" />
         </Form.Item>
 
-        <Form.List name="steps" rules={[{ validator: async (_, steps) => { if (!steps || steps.length === 0) return Promise.reject(new Error('Add at least one step')); } }]}>
+        {/* Scout section */}
+        <div style={{ marginBottom: 16 }}>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+            Scout
+          </Typography.Text>
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 12, display: 'block', marginBottom: 10 }}
+          >
+            Agent and model used when this workflow runs a read-only investigation job. Leave blank
+            to use the default scout agent.
+          </Typography.Text>
+          <Card size="small" style={{ background: 'var(--ant-color-fill-quinary, #fafafa)' }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Form.Item
+                name={['scout', 'agentOrSkillId']}
+                label="Agent or skill"
+                style={{ flex: 1, marginBottom: 0 }}
+              >
+                <Select
+                  allowClear
+                  placeholder="Default scout agent"
+                  options={[
+                    ...(agentsQuery.data?.length
+                      ? [
+                          {
+                            label: (
+                              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                                Agents
+                              </Typography.Text>
+                            ),
+                            options: agentsQuery.data.map((a) => ({
+                              value: `agent:${a.id}`,
+                              label: a.name,
+                            })),
+                          },
+                        ]
+                      : []),
+                    ...(skillsQuery.data?.length
+                      ? [
+                          {
+                            label: (
+                              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                                Skills
+                              </Typography.Text>
+                            ),
+                            options: skillsQuery.data.map((s) => ({
+                              value: `skill:${s.id}`,
+                              label: s.name,
+                            })),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item
+                name={['scout', 'model']}
+                label="Model"
+                style={{ flex: '0 0 200px', marginBottom: 0 }}
+              >
+                <Input placeholder="Default model" />
+              </Form.Item>
+            </div>
+          </Card>
+        </div>
+
+        <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+          Implementation steps
+        </Typography.Text>
+
+        <Form.List
+          name="steps"
+          rules={[
+            {
+              validator: async (_, steps) => {
+                if (!steps || steps.length === 0)
+                  return Promise.reject(new Error('Add at least one step'));
+              },
+            },
+          ]}
+        >
           {(fields, { add, remove }, { errors }) => (
             <>
               {fields.map((field, index) => (
@@ -315,15 +470,34 @@ function CreateWorkflowModal({
               <Form.ErrorList errors={errors} />
 
               <Space style={{ marginTop: 4 }}>
-                <Button size="small" onClick={() => add({ kind: 'plan', name: 'Plan', agentOrSkillId: undefined })}>+ Plan step</Button>
-                <Button size="small" onClick={() => add({ kind: 'execute', name: 'Implement', agentOrSkillId: undefined })}>+ Execute step</Button>
-                <Button size="small" onClick={() => add({ kind: 'check', name: 'Verify' })}>+ Check step</Button>
+                <Button
+                  size="small"
+                  onClick={() => add({ kind: 'plan', name: 'Plan', agentOrSkillId: undefined })}
+                >
+                  + Plan step
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    add({ kind: 'execute', name: 'Implement', agentOrSkillId: undefined })
+                  }
+                >
+                  + Execute step
+                </Button>
+                <Button size="small" onClick={() => add({ kind: 'check', name: 'Verify' })}>
+                  + Check step
+                </Button>
               </Space>
             </>
           )}
         </Form.List>
 
-        <Button type="primary" htmlType="submit" loading={mutation.isPending} style={{ marginTop: 16 }}>
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={mutation.isPending}
+          style={{ marginTop: 16 }}
+        >
           {isEdit ? 'Save' : 'Create'}
         </Button>
       </Form>
@@ -368,7 +542,11 @@ function ImportModal({
     <Modal
       title="Import workflow"
       open={open}
-      onCancel={() => { onClose(); setError(null); form.resetFields(); }}
+      onCancel={() => {
+        onClose();
+        setError(null);
+        form.resetFields();
+      }}
       footer={null}
       destroyOnClose
     >
@@ -382,7 +560,12 @@ function ImportModal({
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
 
         <Form.Item name="source" label="Source">
-          <Select options={[{ value: 'github', label: 'GitHub URL' }, { value: 'inline', label: 'Paste markdown' }]} />
+          <Select
+            options={[
+              { value: 'github', label: 'GitHub URL' },
+              { value: 'inline', label: 'Paste markdown' },
+            ]}
+          />
         </Form.Item>
 
         {source === 'github' || !source ? (
@@ -395,7 +578,12 @@ function ImportModal({
             </Form.Item>
           </>
         ) : (
-          <Form.Item name="inlineContent" label="Markdown" rules={[{ required: true }]} extra="Frontmatter must have kind: workflow">
+          <Form.Item
+            name="inlineContent"
+            label="Markdown"
+            rules={[{ required: true }]}
+            extra="Frontmatter must have kind: workflow"
+          >
             <Input.TextArea rows={10} />
           </Form.Item>
         )}
@@ -454,7 +642,7 @@ function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void
               <Typography.Text strong>Steps</Typography.Text>
               <Table
                 size="small"
-                dataSource={steps.map((s, i) => ({ ...s as object, _i: i }))}
+                dataSource={steps.map((s, i) => ({ ...(s as object), _i: i }))}
                 rowKey="_i"
                 pagination={false}
                 columns={[
@@ -462,7 +650,9 @@ function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void
                     title: '#',
                     dataIndex: '_i',
                     width: 32,
-                    render: (n: number) => <Typography.Text type="secondary">{n + 1}</Typography.Text>,
+                    render: (n: number) => (
+                      <Typography.Text type="secondary">{n + 1}</Typography.Text>
+                    ),
                   },
                   {
                     title: 'Kind',
@@ -474,15 +664,32 @@ function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void
                   {
                     title: 'Agent / Command',
                     render: (_: unknown, row: Record<string, unknown>) => {
-                      if (row.command) return <Typography.Text code style={{ fontSize: 11 }}>{String(row.command)}</Typography.Text>;
+                      if (row.command)
+                        return (
+                          <Typography.Text code style={{ fontSize: 11 }}>
+                            {String(row.command)}
+                          </Typography.Text>
+                        );
                       const agentRef = row.agent as { ref?: string; agentId?: string } | undefined;
                       const agentName = agentRef?.agentId ? agentMap[agentRef.agentId] : undefined;
                       const skillName = row.skillId ? skillMap[row.skillId as string] : undefined;
                       if (agentName && skillName) {
-                        return <Typography.Text style={{ fontSize: 12 }}>{agentName} + <Tag style={{ fontSize: 11 }}>{skillName}</Tag></Typography.Text>;
+                        return (
+                          <Typography.Text style={{ fontSize: 12 }}>
+                            {agentName} + <Tag style={{ fontSize: 11 }}>{skillName}</Tag>
+                          </Typography.Text>
+                        );
                       }
-                      if (agentName) return <Typography.Text style={{ fontSize: 12 }}>{agentName}</Typography.Text>;
-                      if (skillName) return <Tag color="blue" style={{ fontSize: 11 }}>{skillName}</Tag>;
+                      if (agentName)
+                        return (
+                          <Typography.Text style={{ fontSize: 12 }}>{agentName}</Typography.Text>
+                        );
+                      if (skillName)
+                        return (
+                          <Tag color="blue" style={{ fontSize: 11 }}>
+                            {skillName}
+                          </Tag>
+                        );
                       return <Typography.Text type="secondary">default</Typography.Text>;
                     },
                   },
@@ -490,7 +697,13 @@ function WorkflowDetailDrawer({ id, onClose }: { id: string; onClose: () => void
                     title: 'Model',
                     dataIndex: 'model',
                     render: (m: string | undefined) =>
-                      m ? <Tag style={{ fontSize: 11 }}>{m}</Tag> : <Typography.Text type="secondary" style={{ fontSize: 11 }}>inherited</Typography.Text>,
+                      m ? (
+                        <Tag style={{ fontSize: 11 }}>{m}</Tag>
+                      ) : (
+                        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                          inherited
+                        </Typography.Text>
+                      ),
                   },
                 ]}
               />
@@ -540,18 +753,27 @@ export function WorkflowBrowse() {
         return steps.length ? (
           <Space size={4}>
             {(steps as Array<{ kind: string }>).map((s, i) => (
-              <Tag key={i} style={{ fontSize: 11 }}>{s.kind}</Tag>
+              // biome-ignore lint/suspicious/noArrayIndexKey: steps have no stable id
+              <Tag key={i} style={{ fontSize: 11 }}>
+                {s.kind}
+              </Tag>
             ))}
           </Space>
-        ) : '—';
+        ) : (
+          '—'
+        );
       },
     },
     {
       title: 'Version',
       render: (_: unknown, row: WorkflowDto) =>
         row.latestVersion ? (
-          <Tag>v{row.latestVersion.version} · {row.latestVersion.source}</Tag>
-        ) : '—',
+          <Tag>
+            v{row.latestVersion.version} · {row.latestVersion.source}
+          </Tag>
+        ) : (
+          '—'
+        ),
     },
     {
       title: 'Created',
@@ -561,11 +783,7 @@ export function WorkflowBrowse() {
     {
       title: 'Actions',
       render: (_: unknown, row: WorkflowDto) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={() => setEditingWorkflow(row)}
-        >
+        <Button type="link" size="small" onClick={() => setEditingWorkflow(row)}>
           Edit
         </Button>
       ),
@@ -576,8 +794,12 @@ export function WorkflowBrowse() {
     ? {
         name: editingWorkflow.name,
         description: editingWorkflow.description ?? undefined,
+        scout: toFormScout(
+          (editingWorkflow.latestVersion?.definition as { scout?: Record<string, unknown> })?.scout,
+        ),
         steps: (
-          (editingWorkflow.latestVersion?.definition as { steps?: Record<string, unknown>[] })?.steps ?? []
+          (editingWorkflow.latestVersion?.definition as { steps?: Record<string, unknown>[] })
+            ?.steps ?? []
         ).map(toFormStep),
       }
     : undefined;
@@ -591,11 +813,15 @@ export function WorkflowBrowse() {
         </div>
         <Space>
           <Button onClick={() => setShowImport(true)}>Import</Button>
-          <Button type="primary" onClick={() => setShowCreate(true)}>Create workflow</Button>
+          <Button type="primary" onClick={() => setShowCreate(true)}>
+            Create workflow
+          </Button>
         </Space>
       </div>
 
-      {listQuery.error && <Alert type="error" message={String(listQuery.error)} style={{ marginBottom: 16 }} />}
+      {listQuery.error && (
+        <Alert type="error" message={String(listQuery.error)} style={{ marginBottom: 16 }} />
+      )}
 
       <Card>
         <Table
@@ -610,7 +836,11 @@ export function WorkflowBrowse() {
 
       {selected && <WorkflowDetailDrawer id={selected} onClose={() => setSelected(null)} />}
 
-      <CreateWorkflowModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={invalidate} />
+      <CreateWorkflowModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={invalidate}
+      />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onCreated={invalidate} />
       <CreateWorkflowModal
         open={!!editingWorkflow}

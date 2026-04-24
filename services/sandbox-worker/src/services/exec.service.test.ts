@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // We mock child_process before importing ExecService so the module
 // picks up the mock when it calls promisify(execCb).
@@ -15,9 +15,15 @@ const { ExecService } = await import('./exec.service');
 
 /** Make exec resolve with stdout/stderr */
 function execSuccess(stdout: string, stderr = '') {
-  execMock.mockImplementation((_cmd: string, _opts: unknown, cb: (err: null, result: { stdout: string; stderr: string }) => void) => {
-    cb(null, { stdout, stderr });
-  });
+  execMock.mockImplementation(
+    (
+      _cmd: string,
+      _opts: unknown,
+      cb: (err: null, result: { stdout: string; stderr: string }) => void,
+    ) => {
+      cb(null, { stdout, stderr });
+    },
+  );
 }
 
 /** Make exec call callback with an error */
@@ -80,7 +86,7 @@ describe('ExecService.run', () => {
     execSuccess('');
     await svc.run({ ...BASE_INPUT, env: { MY_VAR: 'hello' } });
 
-    const callOpts = execMock.mock.calls[0]![1] as { env: Record<string, string> };
+    const callOpts = execMock.mock.calls[0]?.[1] as { env: Record<string, string> };
     expect(callOpts.env.MY_VAR).toBe('hello');
     expect(callOpts.env.PATH).toBeDefined();
   });
@@ -89,7 +95,7 @@ describe('ExecService.run', () => {
     execSuccess('');
     await svc.run({ ...BASE_INPUT, timeoutSeconds: 30 });
 
-    const callOpts = execMock.mock.calls[0]![1] as { timeout: number };
+    const callOpts = execMock.mock.calls[0]?.[1] as { timeout: number };
     expect(callOpts.timeout).toBe(30000);
   });
 
@@ -97,7 +103,7 @@ describe('ExecService.run', () => {
     execSuccess('');
     await svc.run(BASE_INPUT);
 
-    const callOpts = execMock.mock.calls[0]![1] as { timeout: number };
+    const callOpts = execMock.mock.calls[0]?.[1] as { timeout: number };
     expect(callOpts.timeout).toBe(120000);
   });
 
@@ -105,7 +111,7 @@ describe('ExecService.run', () => {
     execSuccess('');
     await svc.run({ ...BASE_INPUT, cwd: '/custom/dir' });
 
-    const callOpts = execMock.mock.calls[0]![1] as { cwd: string };
+    const callOpts = execMock.mock.calls[0]?.[1] as { cwd: string };
     expect(callOpts.cwd).toBe('/custom/dir');
   });
 });

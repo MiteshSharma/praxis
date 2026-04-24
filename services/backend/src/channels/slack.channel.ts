@@ -1,8 +1,8 @@
 import type { PraxisEvent } from '@shared/contracts';
-import type { Database } from '@shared/db';
 import { type SecretBackend, registerChannel } from '@shared/core';
-import { SlackAdapter } from '../adapters/slack';
+import type { Database } from '@shared/db';
 import { findThreadForJob } from '../adapters/handlers';
+import { SlackAdapter } from '../adapters/slack';
 
 /**
  * Slack PraxisChannel — registered as type 'slack'.
@@ -31,7 +31,10 @@ class SlackChannel {
     const raw = await this.secretBackend.get('platform:slack');
     if (!raw) return null;
     try {
-      const { botToken, signingSecret } = JSON.parse(raw) as { botToken?: string; signingSecret?: string };
+      const { botToken, signingSecret } = JSON.parse(raw) as {
+        botToken?: string;
+        signingSecret?: string;
+      };
       if (!botToken || !signingSecret) return null;
       return new SlackAdapter({ botToken, signingSecret });
     } catch {
@@ -54,7 +57,7 @@ class SlackChannel {
       steps,
       plan.risks?.length ? `\n*Risks:* ${plan.risks.join(', ')}` : '',
       '',
-      `Reply *approve*, *reject*, or with feedback to revise.`,
+      'Reply *approve*, *reject*, or with feedback to revise.',
     ]
       .filter((l) => l !== undefined)
       .join('\n');
@@ -87,11 +90,7 @@ class SlackChannel {
       `*Job \`${event.job.id.slice(0, 8)}\` failed.* Error: ${event.error}`,
     );
 
-    await adapter.send(
-      this.chatId,
-      text,
-      thread ? { threadId: thread.threadId } : undefined,
-    );
+    await adapter.send(this.chatId, text, thread ? { threadId: thread.threadId } : undefined);
   }
 }
 
@@ -100,12 +99,9 @@ class SlackChannel {
  * Call this once at backend startup (routes/index.ts).
  */
 export function registerSlackChannel(db: Database, secretBackend: SecretBackend): void {
-  registerChannel(
-    'slack',
-    (config) => {
-      const cfg = config as { chatId?: string };
-      if (!cfg.chatId) return null;
-      return new SlackChannel(cfg.chatId, db, secretBackend);
-    },
-  );
+  registerChannel('slack', (config) => {
+    const cfg = config as { chatId?: string };
+    if (!cfg.chatId) return null;
+    return new SlackChannel(cfg.chatId, db, secretBackend);
+  });
 }

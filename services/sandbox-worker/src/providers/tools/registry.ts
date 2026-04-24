@@ -38,7 +38,9 @@ export class ToolRegistry {
   }
 
   /** Convert tools to OpenAI function-calling schema format. */
-  toFunctionSchema(tools: Tool[]): Array<{ name: string; description: string; parameters: Record<string, unknown> }> {
+  toFunctionSchema(
+    tools: Tool[],
+  ): Array<{ name: string; description: string; parameters: Record<string, unknown> }> {
     return tools.map((t) => ({
       name: t.name,
       description: t.description,

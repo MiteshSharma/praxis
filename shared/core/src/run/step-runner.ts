@@ -1,34 +1,48 @@
 import { randomUUID } from 'node:crypto';
 import type { JobStatus, NotifyEvent, PlanWakeEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
-import { type Database, type Job, type JobStep, agentSkills, agentVersions, agents, artifacts, conversations, jobSteps, jobs } from '@shared/db';
+import {
+  type Database,
+  type Job,
+  type JobStep,
+  agentSkills,
+  agentVersions,
+  agents,
+  artifacts,
+  conversations,
+  jobSteps,
+  jobs,
+} from '@shared/db';
 import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
 import type { Logger } from '@shared/telemetry';
 import type { AgentRef } from '@shared/workflows';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 import Redis from 'ioredis';
 import type PgBoss from 'pg-boss';
-import { emitNotification } from '../egress/notify';
-import { DEFAULT_AGENT } from '../defaults/default-agent';
-import { mintCallbackToken } from '../plan-review/auth';
 import { dispatchToConversation } from '../channels/dispatch';
+import { DEFAULT_AGENT } from '../defaults/default-agent';
+import { SCOUT_AGENT } from '../defaults/scout-agent';
+import { type ToolSetName, expandToolSets } from '../defaults/tool-sets';
+import { emitNotification } from '../egress/notify';
+import { mintCallbackToken } from '../plan-review/auth';
 import { buildExecuteSystemPrompt } from '../prompts/execute-session';
 import { buildMemorySection, buildPlanSessionSystemPrompt } from '../prompts/plan-session';
-import { buildRevisionSystemPrompt } from '../prompts/revision-session';
 import { loadRepoContext } from '../prompts/repo-context';
+import { buildRevisionSystemPrompt } from '../prompts/revision-session';
 import { buildScoutSystemPrompt } from '../prompts/scout-session';
-import { SCOUT_AGENT } from '../defaults/scout-agent';
-import { expandToolSets, type ToolSetName } from '../defaults/tool-sets';
 import type { TaskTracker } from '../task-tracker/task-tracker';
-import { parseSSE } from './sse';
-import { appendTimeline, transitionJob } from './transitions';
 import { buildResumeContext, isContextOverflowError } from './compress';
 import { classifyProviderError, jitteredBackoff } from './errors';
+import { parseSSE } from './sse';
+import { appendTimeline, transitionJob } from './transitions';
 
 const DEFAULT_PLAN_HOLD_HOURS = 24;
 
-
-export type PluginRegistryFactory = (db: Database) => { resolveForConversation(conversationId: string | null | undefined): Promise<import('@shared/mcp').ResolvedPlugin[]> };
+export type PluginRegistryFactory = (db: Database) => {
+  resolveForConversation(
+    conversationId: string | null | undefined,
+  ): Promise<import('@shared/mcp').ResolvedPlugin[]>;
+};
 
 export interface StepRunnerDeps {
   db: Database;
@@ -117,16 +131,28 @@ function normalizeChunkPaths(chunk: unknown, workingDir: string): unknown {
       if (!block || typeof block !== 'object') return block;
       const b = block as Record<string, unknown>;
       if (b.type !== 'tool_use') return block;
-      if (b.name !== 'Write' && b.name !== 'Edit' && b.name !== 'write_file' && b.name !== 'edit_file') return block;
+      if (
+        b.name !== 'Write' &&
+        b.name !== 'Edit' &&
+        b.name !== 'write_file' &&
+        b.name !== 'edit_file'
+      )
+        return block;
       const input = b.input as Record<string, unknown> | undefined;
       if (!input) return block;
       if (typeof input.file_path === 'string') {
         const rel = stripPrefix(input.file_path);
-        if (rel !== input.file_path) { changed = true; return { ...b, input: { ...input, file_path: rel } }; }
+        if (rel !== input.file_path) {
+          changed = true;
+          return { ...b, input: { ...input, file_path: rel } };
+        }
       }
       if (typeof input.path === 'string') {
         const rel = stripPrefix(input.path);
-        if (rel !== input.path) { changed = true; return { ...b, input: { ...input, path: rel } }; }
+        if (rel !== input.path) {
+          changed = true;
+          return { ...b, input: { ...input, path: rel } };
+        }
       }
       return block;
     });
@@ -145,9 +171,14 @@ function normalizeChunkPaths(chunk: unknown, workingDir: string): unknown {
         const json = JSON.parse(b.content) as { path?: string; status?: string };
         if (typeof json.path === 'string') {
           const rel = stripPrefix(json.path);
-          if (rel !== json.path) { changed = true; return { ...b, content: JSON.stringify({ ...json, path: rel }) }; }
+          if (rel !== json.path) {
+            changed = true;
+            return { ...b, content: JSON.stringify({ ...json, path: rel }) };
+          }
         }
-      } catch { /* not structured JSON */ }
+      } catch {
+        /* not structured JSON */
+      }
       return block;
     });
     return changed ? { ...msg, message: { ...message, content: newContent } } : chunk;
@@ -317,7 +348,9 @@ export class StepRunner {
       const parentPlan = await this.deps.taskTracker.getLatestPlanForJob(job.parentJobId);
       if (parentPlan) {
         const data = parentPlan.data as { bodyMarkdown?: string };
-        const parentJob = await this.deps.db.query.jobs.findFirst({ where: eq(jobs.id, job.parentJobId) });
+        const parentJob = await this.deps.db.query.jobs.findFirst({
+          where: eq(jobs.id, job.parentJobId),
+        });
         if (data.bodyMarkdown && parentJob) {
           parentContext = { planBodyMarkdown: data.bodyMarkdown, jobTitle: parentJob.title };
         }
@@ -330,7 +363,7 @@ export class StepRunner {
     if (!mcpToken || !this.deps.mcpEndpoint) {
       throw new Error(
         'Plan steps require MCP to be configured. ' +
-        'Set MCP_SHARED_SECRET (≥32 chars) and CONTROL_PLANE_MCP_URL in .env.local and restart the backend.',
+          'Set MCP_SHARED_SECRET (≥32 chars) and CONTROL_PLANE_MCP_URL in .env.local and restart the backend.',
       );
     }
 
@@ -345,8 +378,15 @@ export class StepRunner {
       ? `${basePrompt}\n\n${resolved.systemPrompt}${memorySection}`
       : `${basePrompt}${memorySection}`;
 
-    const planPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'plan', systemPrompt });
-    await this.emit(job.id, planPromptSeq, { kind: 'prompt-snapshot', phase: 'plan', systemPrompt });
+    const planPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', {
+      phase: 'plan',
+      systemPrompt,
+    });
+    await this.emit(job.id, planPromptSeq, {
+      kind: 'prompt-snapshot',
+      phase: 'plan',
+      systemPrompt,
+    });
 
     const planCfg = _step.config as { toolSets?: ToolSetName[] };
     // Plan phase: only read-only tools. Write/Edit/Bash are forbidden so the
@@ -381,7 +421,7 @@ export class StepRunner {
     if (!submittedPlan) {
       throw new Error(
         'Plan phase ended without submit_plan being called. ' +
-        'The agent must call submit_plan to complete the planning phase.',
+          'The agent must call submit_plan to complete the planning phase.',
       );
     }
 
@@ -469,7 +509,10 @@ export class StepRunner {
       });
       const parts = upstream
         .filter((j) => j.output != null)
-        .map((j) => `### Findings from: ${j.title} (${j.triggerKind})\n${JSON.stringify(j.output, null, 2)}`);
+        .map(
+          (j) =>
+            `### Findings from: ${j.title} (${j.triggerKind})\n${JSON.stringify(j.output, null, 2)}`,
+        );
       if (parts.length > 0) {
         systemPrompt += `\n\n---\n## Upstream findings\n\n${parts.join('\n\n')}`;
       }
@@ -482,10 +525,21 @@ export class StepRunner {
       systemPrompt = `${systemPrompt}\n\n${resolved.systemPrompt}`;
     }
 
-    const execPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'execute', systemPrompt });
-    await this.emit(job.id, execPromptSeq, { kind: 'prompt-snapshot', phase: 'execute', systemPrompt });
+    const execPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', {
+      phase: 'execute',
+      systemPrompt,
+    });
+    await this.emit(job.id, execPromptSeq, {
+      kind: 'prompt-snapshot',
+      phase: 'execute',
+      systemPrompt,
+    });
 
-    const execCfg = step.config as { toolSets?: ToolSetName[]; condition?: string; recoveryContext?: string };
+    const execCfg = step.config as {
+      toolSets?: ToolSetName[];
+      condition?: string;
+      recoveryContext?: string;
+    };
     const execAllowedTools = execCfg.toolSets?.length
       ? expandToolSets(execCfg.toolSets, resolved?.allowedTools)
       : resolved?.allowedTools;
@@ -520,7 +574,10 @@ export class StepRunner {
       } catch (err) {
         if (!isContextOverflowError(err) || attempt >= MAX_RESUME_ATTEMPTS) throw err;
         attempt++;
-        log.warn({ jobId: job.id, attempt }, 'execute: context overflow — compressing and retrying');
+        log.warn(
+          { jobId: job.id, attempt },
+          'execute: context overflow — compressing and retrying',
+        );
         await appendTimeline(this.deps.db, job.id, 'context-compressed', { attempt });
         resumeContext = await buildResumeContext(job.id, sandboxInfo, workspace, {
           db: this.deps.db,
@@ -556,7 +613,15 @@ export class StepRunner {
         cwd: _workspace,
         timeoutSeconds: cfg.timeoutSeconds ?? 300,
       }),
-    }).then((r) => r.json() as Promise<{ exitCode: number; stdout: string; stderr: string; durationMs: number }>);
+    }).then(
+      (r) =>
+        r.json() as Promise<{
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          durationMs: number;
+        }>,
+    );
 
     // Capture output per capture mode
     const capture = cfg.capture ?? 'both';
@@ -614,13 +679,17 @@ export class StepRunner {
     workspace: string,
     log: Logger,
   ): Promise<void> {
-    const systemPrompt = buildScoutSystemPrompt(
-      job.description ?? job.title,
-      workspace,
-    );
+    const systemPrompt = buildScoutSystemPrompt(job.description ?? job.title, workspace);
 
-    const execPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', { phase: 'scout', systemPrompt });
-    await this.emit(job.id, execPromptSeq, { kind: 'prompt-snapshot', phase: 'scout', systemPrompt });
+    const execPromptSeq = await appendTimeline(this.deps.db, job.id, 'prompt-snapshot', {
+      phase: 'scout',
+      systemPrompt,
+    });
+    await this.emit(job.id, execPromptSeq, {
+      kind: 'prompt-snapshot',
+      phase: 'scout',
+      systemPrompt,
+    });
 
     await this.mustTransition(job.id, 'preparing', 'executing');
     const stepModel = (step.config as { model?: string }).model;
@@ -660,17 +729,20 @@ export class StepRunner {
 
     const repoContext = await loadRepoContext(workspace);
     const repoContextSection = repoContext ? `## Repo-level agent rules\n\n${repoContext}\n\n` : '';
-    const systemPrompt = `${repoContextSection}${buildRevisionSystemPrompt({
-      previousPlan,
-      answers: feedback.answers,
-      additionalFeedback: feedback.additionalFeedback,
-    }, workspace)}`;
+    const systemPrompt = `${repoContextSection}${buildRevisionSystemPrompt(
+      {
+        previousPlan,
+        answers: feedback.answers,
+        additionalFeedback: feedback.additionalFeedback,
+      },
+      workspace,
+    )}`;
 
     const mcpToken = await this.mintToken(job.id);
     if (!mcpToken || !this.deps.mcpEndpoint) {
       throw new Error(
         'Revision steps require MCP to be configured. ' +
-        'Set MCP_SHARED_SECRET (≥32 chars) and CONTROL_PLANE_MCP_URL in .env.local and restart the backend.',
+          'Set MCP_SHARED_SECRET (≥32 chars) and CONTROL_PLANE_MCP_URL in .env.local and restart the backend.',
       );
     }
 
@@ -816,7 +888,10 @@ export class StepRunner {
    * step-level skill override. Returns null when the step has no agent/skill
    * config, signalling the caller to fall back to the default prompts.
    */
-  private async resolveStepAgent(step: JobStep, jobModel?: string): Promise<{
+  private async resolveStepAgent(
+    step: JobStep,
+    jobModel?: string,
+  ): Promise<{
     model: string;
     systemPrompt: string;
     allowedTools: string[];
@@ -829,7 +904,9 @@ export class StepRunner {
 
     // Step-level model with no agent: return just the model override, no prompt injection
     if (!cfg.agent && !cfg.skillId) {
-      return cfg.model ? { model: cfg.model, systemPrompt: '', allowedTools: DEFAULT_AGENT.allowedTools } : null;
+      return cfg.model
+        ? { model: cfg.model, systemPrompt: '', allowedTools: DEFAULT_AGENT.allowedTools }
+        : null;
     }
 
     let model = jobModel ?? DEFAULT_AGENT.model;
@@ -846,7 +923,11 @@ export class StepRunner {
         .limit(1);
 
       if (version) {
-        const def = version.definition as { model?: string; systemPrompt?: string; allowedTools?: string[] };
+        const def = version.definition as {
+          model?: string;
+          systemPrompt?: string;
+          allowedTools?: string[];
+        };
         model = def.model ?? model;
         basePrompt = def.systemPrompt ?? '';
         baseTools = def.allowedTools ?? baseTools;
@@ -880,13 +961,18 @@ export class StepRunner {
         ]);
 
         if (depVer) {
-          const def = depVer.definition as { model?: string; systemPrompt?: string; allowedTools?: string[] };
+          const def = depVer.definition as {
+            model?: string;
+            systemPrompt?: string;
+            allowedTools?: string[];
+          };
           if (!jobModel && def.model) model = def.model;
           if (def.systemPrompt) {
             const label = depAgent ? `# ${depAgent.name}\n\n` : '';
             skillDepSections.push(`${label}${def.systemPrompt}`);
           }
-          if (def.allowedTools?.length) baseTools = [...new Set([...baseTools, ...def.allowedTools])];
+          if (def.allowedTools?.length)
+            baseTools = [...new Set([...baseTools, ...def.allowedTools])];
         }
       }
     }
@@ -941,7 +1027,9 @@ export class StepRunner {
     const finalModel = cfg.model ?? model;
     return {
       model: finalModel,
-      systemPrompt: [basePrompt, ...skillInstructions, ...skillDepSections].filter(Boolean).join('\n\n'),
+      systemPrompt: [basePrompt, ...skillInstructions, ...skillDepSections]
+        .filter(Boolean)
+        .join('\n\n'),
       allowedTools: [...new Set([...baseTools, ...skillTools])],
     };
   }
@@ -956,7 +1044,11 @@ export class StepRunner {
     return conv?.planHoldHours ?? DEFAULT_PLAN_HOLD_HOURS;
   }
 
-  private async dispatchReviewNotifications(job: Job, holdHours: number, log: Logger): Promise<void> {
+  private async dispatchReviewNotifications(
+    job: Job,
+    holdHours: number,
+    log: Logger,
+  ): Promise<void> {
     if (!job.conversationId) return;
     if (!this.deps.mcpSecret || !this.deps.controlPlaneUrl) return;
 
@@ -964,9 +1056,12 @@ export class StepRunner {
     if (!plan) return;
 
     const planData = plan.data as {
-      title?: string; summary?: string; bodyMarkdown?: string;
+      title?: string;
+      summary?: string;
+      bodyMarkdown?: string;
       steps?: Array<{ id: string; content: string; status: string }>;
-      affectedPaths?: string[]; risks?: string[];
+      affectedPaths?: string[];
+      risks?: string[];
     };
 
     try {
@@ -1031,7 +1126,10 @@ export class StepRunner {
 
         const classified = classifyProviderError(err);
         if (!classified.retryable || attempt === MAX_RETRIES) {
-          log.warn({ reason: classified.reason, attempt }, 'sandbox call failed — non-retryable or max retries');
+          log.warn(
+            { reason: classified.reason, attempt },
+            'sandbox call failed — non-retryable or max retries',
+          );
           throw err;
         }
 
@@ -1141,15 +1239,24 @@ export class StepRunner {
 
     // Persist per-step cost to job_steps.output so the UI can show it per step.
     if (opts.stepId && (perCallInputTokens > 0 || perCallCostUsd > 0)) {
-      await db.update(jobSteps)
-        .set({ output: { inputTokens: perCallInputTokens, outputTokens: perCallOutputTokens, costUsd: perCallCostUsd } })
+      await db
+        .update(jobSteps)
+        .set({
+          output: {
+            inputTokens: perCallInputTokens,
+            outputTokens: perCallOutputTokens,
+            costUsd: perCallCostUsd,
+          },
+        })
         .where(eq(jobSteps.id, opts.stepId));
     }
 
     log.info({ phase: opts.sessionPhase }, 'sandbox session finished');
   }
 
-  private async resolvePlugins(conversationId: string | null | undefined): Promise<import('@shared/mcp').ResolvedPlugin[]> {
+  private async resolvePlugins(
+    conversationId: string | null | undefined,
+  ): Promise<import('@shared/mcp').ResolvedPlugin[]> {
     if (this.deps.createPluginRegistry) {
       const registry = this.deps.createPluginRegistry(this.deps.db);
       return registry.resolveForConversation(conversationId);
@@ -1202,4 +1309,3 @@ export class StepRunner {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-

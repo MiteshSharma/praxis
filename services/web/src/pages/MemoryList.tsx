@@ -30,9 +30,19 @@ export function MemoryList() {
       ) : repos.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2a8 8 0 0 1 8 8c0 3.2-1.3 6-3.2 7.7V20H7.2V17.7A9 9 0 0 1 4 10a8 8 0 0 1 8-8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-              <path d="M7 20h10M9 22h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 2a8 8 0 0 1 8 8c0 3.2-1.3 6-3.2 7.7V20H7.2V17.7A9 9 0 0 1 4 10a8 8 0 0 1 8-8Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M7 20h10M9 22h6"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
             </svg>
           </div>
           <p className="empty-state-title">No repo memories yet</p>
@@ -65,6 +75,7 @@ export function MemoryList() {
                   key={row.repoKey}
                   style={{ cursor: 'pointer' }}
                   onClick={() => navigate(`/memories/${row.repoKey}`)}
+                  onKeyDown={(e) => e.key === 'Enter' && navigate(`/memories/${row.repoKey}`)}
                 >
                   <td>
                     <code

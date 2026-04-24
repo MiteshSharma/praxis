@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DbTaskTracker } from './db-task-tracker';
 import type { PlanDraft } from './task-tracker';
 
@@ -8,19 +8,21 @@ const BASE_DRAFT: PlanDraft = {
   title: 'Add OAuth login',
   summary: 'Implement GitHub OAuth2 flow',
   bodyMarkdown: '## Steps\n1. Set up routes\n2. Add callback handler',
-  steps: [{ id: 'step-1', name: 'Setup routes', description: 'Add /auth/github routes' }],
+  steps: [{ id: 'step-1', content: 'Add /auth/github routes', status: 'pending' }],
   affectedPaths: ['src/routes/auth.ts'],
   risks: ['Token expiry edge cases'],
   openQuestions: [],
 };
 
-function makePlanRow(overrides: Partial<{
-  id: string;
-  version: number;
-  status: string;
-  feedbackFromUser: string | null;
-  approvedAt: Date | null;
-}> = {}) {
+function makePlanRow(
+  overrides: Partial<{
+    id: string;
+    version: number;
+    status: string;
+    feedbackFromUser: string | null;
+    approvedAt: Date | null;
+  }> = {},
+) {
   return {
     id: overrides.id ?? 'plan-1',
     jobId: 'job-1',
@@ -36,12 +38,14 @@ function makePlanRow(overrides: Partial<{
   };
 }
 
-function makeDb(options: {
-  existingPlanForLatest?: ReturnType<typeof makePlanRow> | null;
-  insertReturning?: ReturnType<typeof makePlanRow>;
-  updateReturning?: ReturnType<typeof makePlanRow>;
-  plans?: ReturnType<typeof makePlanRow>[];
-} = {}) {
+function makeDb(
+  options: {
+    existingPlanForLatest?: ReturnType<typeof makePlanRow> | null;
+    insertReturning?: ReturnType<typeof makePlanRow>;
+    updateReturning?: ReturnType<typeof makePlanRow>;
+    plans?: ReturnType<typeof makePlanRow>[];
+  } = {},
+) {
   const insertedPlan = options.insertReturning ?? makePlanRow();
   const updatedPlan = options.updateReturning ?? makePlanRow();
 
@@ -55,11 +59,15 @@ function makeDb(options: {
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
     orderBy: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockResolvedValue(
-      options.existingPlanForLatest !== undefined
-        ? options.existingPlanForLatest !== null ? [options.existingPlanForLatest] : []
-        : [],
-    ),
+    limit: vi
+      .fn()
+      .mockResolvedValue(
+        options.existingPlanForLatest !== undefined
+          ? options.existingPlanForLatest !== null
+            ? [options.existingPlanForLatest]
+            : []
+          : [],
+      ),
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([insertedPlan]),
@@ -97,9 +105,7 @@ describe('DbTaskTracker.createPlan', () => {
     await tracker.createPlan('job-1', BASE_DRAFT);
 
     const insertValues = db.insert.mock.results[0].value.values;
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ version: 4 }),
-    );
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ version: 4 }));
   });
 
   it('sets status=needs_answers when openQuestions are non-empty', async () => {
@@ -108,13 +114,11 @@ describe('DbTaskTracker.createPlan', () => {
 
     await tracker.createPlan('job-1', {
       ...BASE_DRAFT,
-      openQuestions: [{ id: 'q1', question: 'Which approach?' }],
+      openQuestions: [{ id: 'q1', question: 'Which approach?', answer: null }],
     });
 
     const insertValues = db.insert.mock.results[0].value.values;
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'needs_answers' }),
-    );
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs_answers' }));
   });
 
   it('sets status=ready when no openQuestions', async () => {
@@ -124,9 +128,7 @@ describe('DbTaskTracker.createPlan', () => {
     await tracker.createPlan('job-1', { ...BASE_DRAFT, openQuestions: [] });
 
     const insertValues = db.insert.mock.results[0].value.values;
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'ready' }),
-    );
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ status: 'ready' }));
   });
 
   it('sets contentUri to plans/{jobId}/v{version}', async () => {
@@ -164,7 +166,9 @@ describe('DbTaskTracker.createPlan', () => {
 
 describe('DbTaskTracker.approvePlan', () => {
   it('updates status to approved and sets approvedAt', async () => {
-    const db = makeDb({ updateReturning: makePlanRow({ status: 'approved', approvedAt: new Date() }) });
+    const db = makeDb({
+      updateReturning: makePlanRow({ status: 'approved', approvedAt: new Date() }),
+    });
     const tracker = new DbTaskTracker(db as never);
 
     const result = await tracker.approvePlan('plan-1');
@@ -194,7 +198,9 @@ describe('DbTaskTracker.approvePlan', () => {
 
 describe('DbTaskTracker.rejectPlan', () => {
   it('sets status=rejected without feedback when no reason', async () => {
-    const db = makeDb({ updateReturning: makePlanRow({ status: 'rejected', feedbackFromUser: null }) });
+    const db = makeDb({
+      updateReturning: makePlanRow({ status: 'rejected', feedbackFromUser: null }),
+    });
     const tracker = new DbTaskTracker(db as never);
 
     await tracker.rejectPlan('plan-1');
@@ -272,8 +278,6 @@ describe('DbTaskTracker.updatePlanStatus', () => {
     const tracker = new DbTaskTracker(db as never);
     await tracker.updatePlanStatus('plan-1', 'approved');
 
-    expect(setMock).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'approved' }),
-    );
+    expect(setMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved' }));
   });
 });

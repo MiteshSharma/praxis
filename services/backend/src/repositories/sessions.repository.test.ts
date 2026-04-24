@@ -1,9 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import {
-  toSessionDto,
-  toMessageDto,
-  toPluginDto,
-} from './sessions.repository';
+import { describe, expect, it } from 'vitest';
+import { toMessageDto, toPluginDto, toSessionDto } from './sessions.repository';
 
 // ── DTO converter tests ───────────────────────────────────────────────────────
 // These are pure functions — no mocking needed.

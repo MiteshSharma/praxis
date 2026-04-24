@@ -1,5 +1,11 @@
 // @shared/core triggers self-registration of channels + memory backends on import
-import { JOB_EXECUTE_QUEUE, JobOrchestrator, type ResumeMode, memoryBackendRegistry, secretBackendRegistry } from '@shared/core';
+import {
+  JOB_EXECUTE_QUEUE,
+  JobOrchestrator,
+  type ResumeMode,
+  memoryBackendRegistry,
+  secretBackendRegistry,
+} from '@shared/core';
 import type { Database } from '@shared/db';
 import { jobs, messages } from '@shared/db';
 import type { SandboxProvider } from '@shared/sandbox';
@@ -30,12 +36,15 @@ export async function registerJobExecute(
 
   // pg-boss v10 enforces expireInSeconds < 24 h (strict); use 23 h 59 m to cover the
   // full plan-review hold window without exceeding the limit.
-  await boss.createQueue(JOB_EXECUTE_QUEUE, { expireInSeconds: 23 * 60 * 60 + 59 * 60 });
+  await boss.createQueue(JOB_EXECUTE_QUEUE, {
+    name: JOB_EXECUTE_QUEUE,
+    expireInSeconds: 23 * 60 * 60 + 59 * 60,
+  });
 
   // teamSize: allow multiple jobs to run concurrently. Without this, a job
   // blocked in holdForPlanReview occupies the single worker slot, preventing
   // all other jobs from being picked up.
-  await boss.work<JobExecutePayload>(JOB_EXECUTE_QUEUE, { teamSize: 8 }, async (batch) => {
+  await boss.work<JobExecutePayload>(JOB_EXECUTE_QUEUE, { batchSize: 8 }, async (batch) => {
     for (const item of batch) {
       const { jobId } = item.data;
 

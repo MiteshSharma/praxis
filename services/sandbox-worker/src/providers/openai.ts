@@ -2,9 +2,9 @@ import OpenAI from 'openai';
 import type { PromptBody } from '../dto/agent.dto.js';
 import { ExecService } from '../services/exec.service.js';
 import { registerProvider } from './registry.js';
-import type { AgentProvider } from './types.js';
 import { toolRegistry } from './tools/index.js';
-import type { ToolContext, Phase } from './tools/index.js';
+import type { Phase, ToolContext } from './tools/index.js';
+import type { AgentProvider } from './types.js';
 
 /**
  * OpenAI provider — GPT-4o, o-series, and Codex models.
@@ -22,7 +22,9 @@ export class OpenAIProvider implements AgentProvider {
     }
 
     const phase: Phase =
-      body.sessionPhase === 'plan' || body.sessionPhase === 'revise' ? body.sessionPhase : 'execute';
+      body.sessionPhase === 'plan' || body.sessionPhase === 'revise'
+        ? body.sessionPhase
+        : 'execute';
 
     const ctx: ToolContext = {
       workingDir: body.workingDir,
@@ -33,14 +35,16 @@ export class OpenAIProvider implements AgentProvider {
 
     const availableTools = toolRegistry.getForPhase(phase, ctx);
 
-    const tools: OpenAI.Chat.ChatCompletionTool[] = toolRegistry.toFunctionSchema(availableTools).map((def) => ({
-      type: 'function',
-      function: {
-        name: def.name,
-        description: def.description,
-        parameters: def.parameters as OpenAI.FunctionParameters,
-      },
-    }));
+    const tools: OpenAI.Chat.ChatCompletionTool[] = toolRegistry
+      .toFunctionSchema(availableTools)
+      .map((def) => ({
+        type: 'function',
+        function: {
+          name: def.name,
+          description: def.description,
+          parameters: def.parameters as OpenAI.FunctionParameters,
+        },
+      }));
 
     const model = body.model ?? 'gpt-4o';
     const userPrompt = [body.title, body.description ?? ''].filter(Boolean).join('\n\n');
@@ -110,7 +114,9 @@ export class OpenAIProvider implements AgentProvider {
         const safeCalls = fnCalls.filter((tc) => safeToolNames.has(tc.function.name));
         const unsafeCalls = fnCalls.filter((tc) => !safeToolNames.has(tc.function.name));
 
-        const executeAndEmit = async (tc: OpenAI.Chat.ChatCompletionMessageFunctionToolCall): Promise<OpenAI.Chat.ChatCompletionToolMessageParam> => {
+        const executeAndEmit = async (
+          tc: OpenAI.Chat.ChatCompletionMessageFunctionToolCall,
+        ): Promise<OpenAI.Chat.ChatCompletionToolMessageParam> => {
           const args = parseJson(tc.function.arguments) as Record<string, unknown>;
           const content = await toolRegistry.execute(tc.function.name, args, ctx);
           await emit({

@@ -77,7 +77,8 @@ export class FleetsService {
     );
 
     const dto = await this.repo.findById(fleet.id);
-    if (!dto) throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'fleet not found after creation' });
+    if (!dto)
+      throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'fleet not found after creation' });
     return dto;
   }
 
@@ -123,7 +124,10 @@ export class FleetsService {
 
     const allJobs = await this.repo.findJobsWithDeps(input.fleetId);
     const dto = allJobs.find((j) => j.id === fleetJob.id);
-    if (!dto) throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'fleet job not found after creation' });
+    if (!dto)
+      throw new ORPCError('INTERNAL_SERVER_ERROR', {
+        message: 'fleet job not found after creation',
+      });
     return dto;
   }
 
@@ -138,7 +142,12 @@ export class FleetsService {
     }
 
     const [jobRow] = await this.db
-      .select({ status: jobs.status, output: jobs.output, noChanges: jobs.noChanges, errorCategory: jobs.errorCategory })
+      .select({
+        status: jobs.status,
+        output: jobs.output,
+        noChanges: jobs.noChanges,
+        errorCategory: jobs.errorCategory,
+      })
       .from(jobs)
       .where(eq(jobs.id, jobId));
 
@@ -153,18 +162,25 @@ export class FleetsService {
       ...(jobRow.errorCategory ? { errorCategory: jobRow.errorCategory } : {}),
     };
 
-    const isFatalError = jobRow.errorCategory != null && FLEET_FATAL_ERROR_CATEGORIES.has(jobRow.errorCategory);
+    const isFatalError =
+      jobRow.errorCategory != null && FLEET_FATAL_ERROR_CATEGORIES.has(jobRow.errorCategory);
 
     let newStatus: string;
     if (jobRow.status === 'completed' && jobRow.noChanges) {
       newStatus = 'noop';
     } else if (jobRow.status === 'completed') {
       newStatus = 'completed';
-    } else if (isFatalError || PERMANENT_FAILURE_STATUSES.has(jobRow.status) || fleetJob.retryCount >= 3) {
+    } else if (
+      isFatalError ||
+      PERMANENT_FAILURE_STATUSES.has(jobRow.status) ||
+      fleetJob.retryCount >= 3
+    ) {
       newStatus = 'failed';
     } else {
       // Transient failure — increment retry count and re-spawn
-      await this.repo.updateJobStatus(fleetJobId, 'pending', { retryCount: fleetJob.retryCount + 1 });
+      await this.repo.updateJobStatus(fleetJobId, 'pending', {
+        retryCount: fleetJob.retryCount + 1,
+      });
       await this._spawnFleetJob(fleetJobId, fleetJob.sessionId, fleetJob.task, false);
       return;
     }
@@ -174,7 +190,10 @@ export class FleetsService {
     // Billing/auth failures affect all jobs — fail the fleet immediately rather than
     // retrying remaining jobs that will hit the same error.
     if (isFatalError) {
-      this.log.warn({ fleetJobId, errorCategory: jobRow.errorCategory }, 'fatal error — failing fleet');
+      this.log.warn(
+        { fleetJobId, errorCategory: jobRow.errorCategory },
+        'fatal error — failing fleet',
+      );
       await this.repo.updateStatus(fleetJob.fleetId, 'failed');
       return;
     }
@@ -202,7 +221,10 @@ export class FleetsService {
     const allJobDtos = await this.repo.findJobsWithDeps(fleetId);
 
     // Load current plan from DB
-    const [fleetRow] = await this.db.select({ plan: fleets.plan }).from(fleets).where(eq(fleets.id, fleetId));
+    const [fleetRow] = await this.db
+      .select({ plan: fleets.plan })
+      .from(fleets)
+      .where(eq(fleets.id, fleetId));
     const currentPlan = (fleetRow?.plan ?? null) as Record<string, unknown> | null;
     const currentWave = (currentPlan?.currentWave as number | undefined) ?? 1;
 

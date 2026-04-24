@@ -1,6 +1,19 @@
 import type { FleetDto } from '@shared/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Badge, Button, Form, Input, InputNumber, Modal, Progress, Select, Switch, Table, Tag } from 'antd';
+import {
+  Alert,
+  Badge,
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Progress,
+  Select,
+  Switch,
+  Table,
+  Tag,
+} from 'antd';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { rpc } from '../rpc';
@@ -68,7 +81,19 @@ export function FleetList() {
       dataIndex: 'title',
       key: 'title',
       render: (title: string, record: FleetDto) => (
-        <a onClick={() => navigate(`/fleets/${record.id}`)}>{title}</a>
+        <button
+          type="button"
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: 'inherit',
+          }}
+          onClick={() => navigate(`/fleets/${record.id}`)}
+        >
+          {title}
+        </button>
       ),
     },
     {
@@ -86,7 +111,10 @@ export function FleetList() {
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
-        <Badge status={STATUS_COLOR[status] as Parameters<typeof Badge>[0]['status']} text={status} />
+        <Badge
+          status={STATUS_COLOR[status] as Parameters<typeof Badge>[0]['status']}
+          text={status}
+        />
       ),
     },
     {
@@ -100,7 +128,13 @@ export function FleetList() {
             <Progress
               percent={pct}
               size="small"
-              status={record.status === 'failed' ? 'exception' : record.status === 'completed' ? 'success' : 'active'}
+              status={
+                record.status === 'failed'
+                  ? 'exception'
+                  : record.status === 'completed'
+                    ? 'success'
+                    : 'active'
+              }
               format={() => `${done}/${record.totalJobs}`}
             />
           </div>
@@ -117,7 +151,14 @@ export function FleetList() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
         <h2 style={{ margin: 0 }}>Fleets</h2>
         <Button type="primary" onClick={() => setShowCreate(true)}>
           New Fleet
@@ -137,7 +178,11 @@ export function FleetList() {
       <Modal
         title="New Fan-Out Fleet"
         open={showCreate}
-        onCancel={() => { setShowCreate(false); setError(''); createForm.resetFields(); }}
+        onCancel={() => {
+          setShowCreate(false);
+          setError('');
+          createForm.resetFields();
+        }}
         footer={null}
         width={560}
       >
@@ -146,25 +191,37 @@ export function FleetList() {
           form={createForm}
           layout="vertical"
           initialValues={{ autoApprove: false, maxParallel: 10 }}
-          onFinish={(values) => { setError(''); createMutation.mutate(values); }}
+          onFinish={(values) => {
+            setError('');
+            createMutation.mutate(values);
+          }}
         >
           <Form.Item name="title" label="Title" rules={[{ required: true }]}>
             <Input placeholder="e.g. Upgrade dependency X across all repos" />
           </Form.Item>
           <Form.Item name="goal" label="Goal" rules={[{ required: true }]}>
-            <Input.TextArea rows={2} placeholder="High-level description of what this fleet should achieve" />
+            <Input.TextArea
+              rows={2}
+              placeholder="High-level description of what this fleet should achieve"
+            />
           </Form.Item>
           <Form.Item name="task" label="Task (sent to each session)" rules={[{ required: true }]}>
             <Input.TextArea rows={3} placeholder="Upgrade library X to v2.0.0 and run tests" />
           </Form.Item>
-          <Form.Item name="sessionIds" label="Sessions" rules={[{ required: true, type: 'array', min: 1 }]}>
+          <Form.Item
+            name="sessionIds"
+            label="Sessions"
+            rules={[{ required: true, type: 'array', min: 1 }]}
+          >
             <Select
               mode="multiple"
               loading={sessionsQuery.isLoading}
               placeholder="Select sessions (each owns a repo)"
               options={(sessionsQuery.data ?? []).map((s) => ({ value: s.id, label: s.title }))}
               filterOption={(input, opt) =>
-                String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                String(opt?.label ?? '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
               }
             />
           </Form.Item>

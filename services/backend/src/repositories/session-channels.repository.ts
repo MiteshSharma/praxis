@@ -33,7 +33,12 @@ export class SessionChannelsRepository {
   }): Promise<SessionChannelDto> {
     const [row] = await this.db
       .insert(conversationChannels)
-      .values({ conversationId: data.sessionId, type: data.type, name: data.name, config: data.config })
+      .values({
+        conversationId: data.sessionId,
+        type: data.type,
+        name: data.name,
+        config: data.config,
+      })
       .returning();
     if (!row) throw new Error('conversation_channels insert failed');
     return toDto(row);

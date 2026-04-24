@@ -1,14 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { recoverStuckJobs } from './recovery';
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 
-function makeStuckJob(overrides: {
-  id?: string;
-  status?: string;
-  retryCount?: number;
-  maxRetries?: number;
-} = {}) {
+function makeStuckJob(
+  overrides: {
+    id?: string;
+    status?: string;
+    retryCount?: number;
+    maxRetries?: number;
+  } = {},
+) {
   return {
     id: overrides.id ?? 'job-stuck',
     status: overrides.status ?? 'executing',
@@ -40,7 +42,9 @@ function makeDb(stuckJobs: ReturnType<typeof makeStuckJob>[]) {
     set: vi.fn().mockReturnThis(),
     // update().set().where() resolves to undefined (no returning needed)
     _where: vi.fn().mockResolvedValue(undefined),
-    transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     _tx: tx,
   };
 }
@@ -65,7 +69,9 @@ function makeDbWithUpdateWhere(stuckJobs: ReturnType<typeof makeStuckJob>[]) {
       if (isSelectChain) return Promise.resolve(stuckJobs);
       return Promise.resolve(undefined);
     }),
-    transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     _tx: tx as unknown as ReturnType<typeof vi.fn>,
   };
   return db;

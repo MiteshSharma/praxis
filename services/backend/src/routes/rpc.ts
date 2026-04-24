@@ -3,18 +3,18 @@ import { RPCHandler } from '@orpc/server/fetch';
 import { contract } from '@shared/contracts';
 import type { Hono } from 'hono';
 import type { AgentsService } from '../services/agents.service';
-import type { SessionsService } from '../services/sessions.service';
+import type { ChannelsService } from '../services/channels.service';
+import type { CostsService } from '../services/costs.service';
+import type { FleetsService } from '../services/fleets.service';
 import type { JobsService } from '../services/jobs.service';
 import type { MemoriesService } from '../services/memories.service';
 import type { PlansService } from '../services/plans.service';
-import type { ChannelsService } from '../services/channels.service';
-import type { PluginsService } from '../services/plugins.service';
-import type { WorkflowsService } from '../services/workflows.service';
-import type { CostsService } from '../services/costs.service';
-import type { ProviderConfigsService } from '../services/provider-configs.service';
-import type { SettingsService } from '../services/settings.service';
-import type { FleetsService } from '../services/fleets.service';
 import type { PlatformConfigsService } from '../services/platform-configs.service';
+import type { PluginsService } from '../services/plugins.service';
+import type { ProviderConfigsService } from '../services/provider-configs.service';
+import type { SessionsService } from '../services/sessions.service';
+import type { SettingsService } from '../services/settings.service';
+import type { WorkflowsService } from '../services/workflows.service';
 
 interface RpcDeps {
   jobsService: JobsService;
@@ -57,9 +57,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const jobsListArtifacts = os.jobs.listArtifacts.handler(({ input }) =>
     deps.jobsService.listArtifacts(input.jobId),
   );
-  const jobsRestart = os.jobs.restart.handler(({ input }) =>
-    deps.jobsService.restart(input.jobId),
-  );
+  const jobsRestart = os.jobs.restart.handler(({ input }) => deps.jobsService.restart(input.jobId));
   const jobsDelete = os.jobs.delete.handler(async ({ input }) => {
     await deps.jobsService.delete(input.jobId);
     return { ok: true };
@@ -93,9 +91,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     return { ok: true };
   });
 
-  const stepsList = os.steps.list.handler(({ input }) =>
-    deps.jobsService.listSteps(input.jobId),
-  );
+  const stepsList = os.steps.list.handler(({ input }) => deps.jobsService.listSteps(input.jobId));
 
   const timelineGet = os.timeline.get.handler(({ input }) =>
     deps.jobsService.getTimeline(input.jobId, input.limit, input.cursor),
@@ -132,12 +128,8 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const agentsList = os.agents.list.handler(({ input }) =>
     deps.agentsService.list(input?.limit ?? 50, input?.kind),
   );
-  const agentsGet = os.agents.get.handler(({ input }) =>
-    deps.agentsService.getById(input.agentId),
-  );
-  const agentsCreate = os.agents.create.handler(({ input }) =>
-    deps.agentsService.create(input),
-  );
+  const agentsGet = os.agents.get.handler(({ input }) => deps.agentsService.getById(input.agentId));
+  const agentsCreate = os.agents.create.handler(({ input }) => deps.agentsService.create(input));
   const agentsUpdate = os.agents.update.handler(({ input }) => {
     const { agentId: id, ...rest } = input;
     return deps.agentsService.update({ id, ...rest });
@@ -175,9 +167,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     await deps.sessionsService.delete(input.sessionId);
     return { ok: true };
   });
-  const sessionsSend = os.sessions.send.handler(({ input }) =>
-    deps.sessionsService.send(input),
-  );
+  const sessionsSend = os.sessions.send.handler(({ input }) => deps.sessionsService.send(input));
   const sessionsHistory = os.sessions.history.handler(({ input }) =>
     deps.sessionsService.history(input.sessionId, input.limit ?? 20, input.before),
   );
@@ -185,9 +175,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
   const pluginsList = os.plugins.list.handler(({ input }) =>
     deps.pluginsService.list(input.sessionId),
   );
-  const pluginsCreate = os.plugins.create.handler(({ input }) =>
-    deps.pluginsService.create(input),
-  );
+  const pluginsCreate = os.plugins.create.handler(({ input }) => deps.pluginsService.create(input));
   const pluginsToggle = os.plugins.toggle.handler(({ input }) =>
     deps.pluginsService.toggle(input.pluginId, input.enabled),
   );
@@ -210,9 +198,7 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     return { ok: true };
   });
 
-  const memoriesList = os.memories.list.handler(() =>
-    deps.memoriesService.listRepos(),
-  );
+  const memoriesList = os.memories.list.handler(() => deps.memoriesService.listRepos());
   const memoriesGet = os.memories.get.handler(({ input }) =>
     deps.memoriesService.get(input.repoKey),
   );
@@ -324,8 +310,12 @@ export function rpcRoutes(app: Hono, deps: RpcDeps): void {
     fleets: {
       list: os.fleets.list.handler(({ input }) => deps.fleetsService.list(input?.limit ?? 50)),
       get: os.fleets.get.handler(({ input }) => deps.fleetsService.get(input.fleetId)),
-      getGraph: os.fleets.getGraph.handler(({ input }) => deps.fleetsService.getGraph(input.fleetId)),
-      createFanOut: os.fleets.createFanOut.handler(({ input }) => deps.fleetsService.createFanOut(input)),
+      getGraph: os.fleets.getGraph.handler(({ input }) =>
+        deps.fleetsService.getGraph(input.fleetId),
+      ),
+      createFanOut: os.fleets.createFanOut.handler(({ input }) =>
+        deps.fleetsService.createFanOut(input),
+      ),
       cancel: os.fleets.cancel.handler(async ({ input }) => {
         await deps.fleetsService.cancel(input.fleetId);
         return { ok: true };

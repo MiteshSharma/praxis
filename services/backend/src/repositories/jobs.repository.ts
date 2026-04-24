@@ -1,4 +1,4 @@
-import type { ArtifactDto, JobDto, JobStepDto, JobStatus } from '@shared/contracts';
+import type { ArtifactDto, JobDto, JobStatus, JobStepDto } from '@shared/contracts';
 import { type Database, artifacts, jobSteps, jobs } from '@shared/db';
 import { and, asc, desc, eq, isNull, notInArray } from 'drizzle-orm';
 

@@ -7,7 +7,5 @@ import type { WorkflowDefinition } from '@shared/workflows';
  */
 export const SCOUT_WORKFLOW: WorkflowDefinition = {
   inputs: [{ name: 'prompt', required: true, description: 'What to investigate' }],
-  steps: [
-    { kind: 'scout', name: 'Investigate codebase', agent: null },
-  ],
+  steps: [{ kind: 'scout', name: 'Investigate codebase', agent: null }],
 };

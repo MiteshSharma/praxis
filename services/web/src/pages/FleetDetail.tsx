@@ -1,9 +1,5 @@
 import type { FleetDto, FleetGraphDto, FleetJobDto } from '@shared/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Button, Card, Descriptions, Popconfirm, Space, Tag, Typography } from 'antd';
-import dagre from 'dagre';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
 import {
   Background,
   Controls,
@@ -15,6 +11,10 @@ import {
   useEdgesState,
   useNodesState,
 } from '@xyflow/react';
+import { Badge, Button, Card, Descriptions, Popconfirm, Space, Tag, Typography } from 'antd';
+import dagre from 'dagre';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import '@xyflow/react/dist/style.css';
 import { rpc } from '../rpc';
 
@@ -149,7 +149,8 @@ function FleetRootNode({ data }: { data: { fleetId: string } }) {
   const done = fleet ? fleet.completedJobs + fleet.noopJobs : 0;
   const total = fleet?.totalJobs ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const isActive = fleet && ['running', 'scouting', 'implementing', 'planning'].includes(fleet.status);
+  const isActive =
+    fleet && ['running', 'scouting', 'implementing', 'planning'].includes(fleet.status);
 
   return (
     <div
@@ -164,20 +165,52 @@ function FleetRootNode({ data }: { data: { fleetId: string } }) {
         position: 'relative',
       }}
     >
-      <Handle type="source" position={Position.Bottom} style={{ background: color, border: 'none' }} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ background: color, border: 'none' }}
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
         {isActive && <span className="fleet-node-pulse" style={{ color: '#fff' }} />}
-        <span style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+        <span
+          style={{
+            fontWeight: 700,
+            fontSize: 13,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+          }}
+        >
           {fleet?.title ?? '…'}
         </span>
-        <span style={{ fontSize: 10, opacity: 0.85, whiteSpace: 'nowrap' }}>{fleet?.status ?? ''}</span>
+        <span style={{ fontSize: 10, opacity: 0.85, whiteSpace: 'nowrap' }}>
+          {fleet?.status ?? ''}
+        </span>
       </div>
       {total > 0 && (
         <div>
-          <div style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 4, height: 4, overflow: 'hidden' }}>
-            <div style={{ background: '#fff', width: `${pct}%`, height: '100%', borderRadius: 4, transition: 'width 0.4s' }} />
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.25)',
+              borderRadius: 4,
+              height: 4,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                background: '#fff',
+                width: `${pct}%`,
+                height: '100%',
+                borderRadius: 4,
+                transition: 'width 0.4s',
+              }}
+            />
           </div>
-          <div style={{ fontSize: 10, opacity: 0.85, marginTop: 3 }}>{done}/{total} done</div>
+          <div style={{ fontSize: 10, opacity: 0.85, marginTop: 3 }}>
+            {done}/{total} done
+          </div>
         </div>
       )}
     </div>
@@ -190,26 +223,55 @@ function JobNode({ data }: { data: FleetGraphDto['nodes'][0] }) {
   const isActive = data.status === 'running' || data.status === 'queued';
 
   const liveLabel = data.jobStatus ? (JOB_STATUS_LABEL[data.jobStatus] ?? data.jobStatus) : null;
-  const statusLabel = (data.status === 'running' && liveLabel) ? liveLabel : data.status;
+  const statusLabel = data.status === 'running' && liveLabel ? liveLabel : data.status;
 
   return (
     <div style={{ fontSize: 12, color: textColor }}>
-      <Handle type="target" position={Position.Top} style={{ background: 'transparent', border: 'none' }} />
-      <div style={{ fontWeight: 600, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ background: 'transparent', border: 'none' }}
+      />
+      <div
+        style={{
+          fontWeight: 600,
+          marginBottom: 2,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
         {data.sessionTitle ?? data.sessionId.slice(0, 8)}
       </div>
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
         <Tag style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>{data.jobType}</Tag>
         {isActive && <span className="fleet-node-pulse" style={{ color: textColor }} />}
         <span style={{ fontSize: 10, opacity: 0.9 }}>{statusLabel}</span>
-        {data.noChanges && <Tag color="default" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>no-op</Tag>}
+        {data.noChanges && (
+          <Tag color="default" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
+            no-op
+          </Tag>
+        )}
       </div>
       {data.currentStep && data.status === 'running' && (
-        <div style={{ fontSize: 10, marginTop: 2, opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div
+          style={{
+            fontSize: 10,
+            marginTop: 2,
+            opacity: 0.8,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {data.currentStep}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: 'transparent', border: 'none' }} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ background: 'transparent', border: 'none' }}
+      />
     </div>
   );
 }
@@ -221,23 +283,27 @@ function JobDetailPanel({ job, onClose }: { job: FleetJobDto; onClose: () => voi
   return (
     <Card
       title={job.sessionTitle || 'Job Detail'}
-      extra={<Button size="small" onClick={onClose}>✕</Button>}
+      extra={
+        <Button size="small" onClick={onClose}>
+          ✕
+        </Button>
+      }
       style={{ height: '100%', overflow: 'auto' }}
     >
       {job.status === 'running' && liveLabel && (
-        <div style={{
-          background: '#e6f4ff',
-          border: '1px solid #91caff',
-          borderRadius: 6,
-          padding: '8px 12px',
-          marginBottom: 12,
-          fontSize: 13,
-        }}>
+        <div
+          style={{
+            background: '#e6f4ff',
+            border: '1px solid #91caff',
+            borderRadius: 6,
+            padding: '8px 12px',
+            marginBottom: 12,
+            fontSize: 13,
+          }}
+        >
           <span style={{ fontWeight: 600 }}>⚡ {liveLabel}</span>
           {job.currentStep && (
-            <div style={{ marginTop: 4, fontSize: 12, color: '#555' }}>
-              Step: {job.currentStep}
-            </div>
+            <div style={{ marginTop: 4, fontSize: 12, color: '#555' }}>Step: {job.currentStep}</div>
           )}
           {job.jobId && (
             <Button
@@ -257,25 +323,43 @@ function JobDetailPanel({ job, onClose }: { job: FleetJobDto; onClose: () => voi
           <Badge color={STATUS_COLOR[job.status]} text={job.status} />
         </Descriptions.Item>
         {job.jobStatus && job.status !== 'running' && (
-          <Descriptions.Item label="Job status">
-            {liveLabel ?? job.jobStatus}
-          </Descriptions.Item>
+          <Descriptions.Item label="Job status">{liveLabel ?? job.jobStatus}</Descriptions.Item>
         )}
-        <Descriptions.Item label="Type"><Tag>{job.jobType}</Tag></Descriptions.Item>
+        <Descriptions.Item label="Type">
+          <Tag>{job.jobType}</Tag>
+        </Descriptions.Item>
         <Descriptions.Item label="Wave">{job.wave}</Descriptions.Item>
-        <Descriptions.Item label="Task" style={{ whiteSpace: 'pre-wrap' }}>{job.task}</Descriptions.Item>
+        <Descriptions.Item label="Task" style={{ whiteSpace: 'pre-wrap' }}>
+          {job.task}
+        </Descriptions.Item>
         {job.jobId && job.status !== 'running' && (
           <Descriptions.Item label="Job">
-            <a onClick={() => navigate(`/jobs/${job.jobId}`)}>View job →</a>
+            <button
+              type="button"
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: 'var(--ant-color-primary)',
+              }}
+              onClick={() => navigate(`/jobs/${job.jobId}`)}
+            >
+              View job →
+            </button>
           </Descriptions.Item>
         )}
         {job.prUrl && (
           <Descriptions.Item label="PR">
-            <a href={job.prUrl} target="_blank" rel="noopener noreferrer">{job.prUrl}</a>
+            <a href={job.prUrl} target="_blank" rel="noopener noreferrer">
+              {job.prUrl}
+            </a>
           </Descriptions.Item>
         )}
         {job.noChanges && <Descriptions.Item label="No changes">Yes (no-op)</Descriptions.Item>}
-        {job.retryCount > 0 && <Descriptions.Item label="Retries">{job.retryCount}</Descriptions.Item>}
+        {job.retryCount > 0 && (
+          <Descriptions.Item label="Retries">{job.retryCount}</Descriptions.Item>
+        )}
         {job.report && (
           <Descriptions.Item label="Report">
             <pre style={{ fontSize: 11, maxHeight: 300, overflow: 'auto', margin: 0 }}>
@@ -291,14 +375,35 @@ function JobDetailPanel({ job, onClose }: { job: FleetJobDto; onClose: () => voi
 function FleetSummary({ fleet }: { fleet: FleetDto }) {
   return (
     <div style={{ padding: 16 }}>
-      <Typography.Title level={5} style={{ margin: '0 0 12px' }}>Fleet Summary</Typography.Title>
+      <Typography.Title level={5} style={{ margin: '0 0 12px' }}>
+        Fleet Summary
+      </Typography.Title>
       <Space direction="vertical" style={{ width: '100%' }}>
-        <div>Total jobs: <strong>{fleet.totalJobs}</strong></div>
-        <div>Completed: <strong style={{ color: '#52c41a' }}>{fleet.completedJobs}</strong></div>
-        <div>No-op: <strong style={{ color: '#8c8c8c' }}>{fleet.noopJobs}</strong></div>
-        <div>Running: <strong style={{ color: '#1677ff' }}>{fleet.runningJobs}</strong></div>
-        <div>Failed: <strong style={{ color: '#ff4d4f' }}>{fleet.failedJobs}</strong></div>
-        <div>Pending: <strong>{fleet.totalJobs - fleet.completedJobs - fleet.noopJobs - fleet.failedJobs - fleet.runningJobs}</strong></div>
+        <div>
+          Total jobs: <strong>{fleet.totalJobs}</strong>
+        </div>
+        <div>
+          Completed: <strong style={{ color: '#52c41a' }}>{fleet.completedJobs}</strong>
+        </div>
+        <div>
+          No-op: <strong style={{ color: '#8c8c8c' }}>{fleet.noopJobs}</strong>
+        </div>
+        <div>
+          Running: <strong style={{ color: '#1677ff' }}>{fleet.runningJobs}</strong>
+        </div>
+        <div>
+          Failed: <strong style={{ color: '#ff4d4f' }}>{fleet.failedJobs}</strong>
+        </div>
+        <div>
+          Pending:{' '}
+          <strong>
+            {fleet.totalJobs -
+              fleet.completedJobs -
+              fleet.noopJobs -
+              fleet.failedJobs -
+              fleet.runningJobs}
+          </strong>
+        </div>
       </Space>
     </div>
   );
@@ -312,26 +417,31 @@ export function FleetDetail() {
 
   const fleetQuery = useQuery({
     queryKey: ['fleet', fleetId],
-    queryFn: () => rpc.fleets.get({ fleetId: fleetId! }),
+    queryFn: () => rpc.fleets.get({ fleetId: fleetId ?? '' }),
     enabled: !!fleetId,
     refetchInterval: (data) => {
       const status = data?.state?.data?.status;
-      return status && ['running', 'scouting', 'implementing', 'planning'].includes(status) ? 5000 : false;
+      return status && ['running', 'scouting', 'implementing', 'planning'].includes(status)
+        ? 5000
+        : false;
     },
   });
 
   const graphQuery = useQuery({
     queryKey: ['fleet-graph', fleetId],
-    queryFn: () => rpc.fleets.getGraph({ fleetId: fleetId! }),
+    queryFn: () => rpc.fleets.getGraph({ fleetId: fleetId ?? '' }),
     enabled: !!fleetId,
     refetchInterval: () => {
       const fleetStatus = fleetQuery.data?.status;
-      return fleetStatus && ['running', 'scouting', 'implementing', 'planning'].includes(fleetStatus) ? 5000 : false;
+      return fleetStatus &&
+        ['running', 'scouting', 'implementing', 'planning'].includes(fleetStatus)
+        ? 5000
+        : false;
     },
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => rpc.fleets.cancel({ fleetId: fleetId! }),
+    mutationFn: () => rpc.fleets.cancel({ fleetId: fleetId ?? '' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['fleet', fleetId] }),
   });
 
@@ -367,31 +477,53 @@ export function FleetDetail() {
   const fleet = fleetQuery.data;
   const selectedJob = fleet?.jobs.find((j) => j.id === selectedJobId) ?? null;
 
-  const isRunning = fleet && ['running', 'scouting', 'implementing', 'planning'].includes(fleet.status);
+  const isRunning =
+    fleet && ['running', 'scouting', 'implementing', 'planning'].includes(fleet.status);
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '12px 24px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Button type="text" onClick={() => navigate('/fleets')} style={{ padding: '0 4px' }}>← Fleets</Button>
+      <div
+        style={{
+          padding: '12px 24px',
+          borderBottom: '1px solid #f0f0f0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <Button type="text" onClick={() => navigate('/fleets')} style={{ padding: '0 4px' }}>
+          ← Fleets
+        </Button>
         <div style={{ flex: 1 }}>
-          <Typography.Title level={4} style={{ margin: 0 }}>{fleet?.title ?? '…'}</Typography.Title>
-          {fleet?.goal && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{fleet.goal}</Typography.Text>}
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {fleet?.title ?? '…'}
+          </Typography.Title>
+          {fleet?.goal && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {fleet.goal}
+            </Typography.Text>
+          )}
         </div>
         {fleet && (
           <Space>
             <Badge
               status={
-                fleet.status === 'completed' ? 'success' :
-                fleet.status === 'failed' ? 'error' :
-                ['running', 'scouting', 'implementing'].includes(fleet.status) ? 'processing' :
-                'default'
+                fleet.status === 'completed'
+                  ? 'success'
+                  : fleet.status === 'failed'
+                    ? 'error'
+                    : ['running', 'scouting', 'implementing'].includes(fleet.status)
+                      ? 'processing'
+                      : 'default'
               }
               text={fleet.status}
             />
             {isRunning && (
               <Popconfirm title="Cancel this fleet?" onConfirm={() => cancelMutation.mutate()}>
-                <Button danger size="small" loading={cancelMutation.isPending}>Cancel</Button>
+                <Button danger size="small" loading={cancelMutation.isPending}>
+                  Cancel
+                </Button>
               </Popconfirm>
             )}
           </Space>
@@ -418,7 +550,13 @@ export function FleetDetail() {
         </div>
 
         {/* Right panel */}
-        <div style={{ width: selectedJob ? '40%' : 240, borderLeft: '1px solid #f0f0f0', overflow: 'auto' }}>
+        <div
+          style={{
+            width: selectedJob ? '40%' : 240,
+            borderLeft: '1px solid #f0f0f0',
+            overflow: 'auto',
+          }}
+        >
           {selectedJob ? (
             <JobDetailPanel job={selectedJob} onClose={() => setSelectedJobId(null)} />
           ) : (

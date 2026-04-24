@@ -1,5 +1,5 @@
-import { vi } from 'vitest';
 import type { JobDto, PlanDto } from '@shared/contracts';
+import { vi } from 'vitest';
 import type { JobsRepository } from '../repositories/jobs.repository';
 import type { PlansRepository } from '../repositories/plans.repository';
 
@@ -28,10 +28,12 @@ export function createMockJobsRepository(
 
 // ── PlansRepository ───────────────────────────────────────────────────────────
 
-export function createMockPlansRepository(defaults: {
-  findLatestForJob?: PlanDto;
-  findAllForJob?: PlanDto[];
-} = {}) {
+export function createMockPlansRepository(
+  defaults: {
+    findLatestForJob?: PlanDto;
+    findAllForJob?: PlanDto[];
+  } = {},
+) {
   return {
     findById: vi.fn().mockResolvedValue(undefined),
     findLatestForJob: vi.fn().mockResolvedValue(defaults.findLatestForJob ?? undefined),

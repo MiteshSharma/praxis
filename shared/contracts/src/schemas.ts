@@ -298,11 +298,11 @@ export type PluginDto = z.infer<typeof PluginSchema>;
 // ── Platform configs ──────────────────────────────────────────────────────────
 
 export const PlatformConfigSchema = z.object({
-  platform:      z.string(),
-  enabled:       z.boolean(),
-  configured:    z.boolean(),
+  platform: z.string(),
+  enabled: z.boolean(),
+  configured: z.boolean(),
   maskedSecrets: z.record(z.string()).nullable(),
-  config:        z.record(z.string()),
+  config: z.record(z.string()),
 });
 export type PlatformConfigDto = z.infer<typeof PlatformConfigSchema>;
 

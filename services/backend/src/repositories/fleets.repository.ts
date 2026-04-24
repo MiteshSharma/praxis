@@ -1,6 +1,14 @@
 import type { FleetDto, FleetGraphDto, FleetJobDto } from '@shared/contracts';
 import type { Database } from '@shared/db';
-import { conversations, fleetJobDeps, fleetJobs, fleets, jobSteps, jobs, messages } from '@shared/db';
+import {
+  conversations,
+  fleetJobDeps,
+  fleetJobs,
+  fleets,
+  jobSteps,
+  jobs,
+  messages,
+} from '@shared/db';
 import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 
 function toFleetDto(
@@ -74,7 +82,7 @@ async function resolveLiveJobInfo(
   const withMsg = fleetJobRows.filter((fj) => fj.sessionMessageId != null);
   if (!withMsg.length) return result;
 
-  const msgIds = withMsg.map((fj) => fj.sessionMessageId!);
+  const msgIds = withMsg.map((fj) => fj.sessionMessageId as string);
 
   // message → job_id
   const msgRows = await db
@@ -87,7 +95,8 @@ async function resolveLiveJobInfo(
   const jobIds = msgRows.map((m) => m.jobId).filter(Boolean) as string[];
 
   if (!jobIds.length) {
-    for (const fj of withMsg) result.set(fj.id, { jobId: null, jobStatus: null, currentStep: null });
+    for (const fj of withMsg)
+      result.set(fj.id, { jobId: null, jobStatus: null, currentStep: null });
     return result;
   }
 
@@ -101,7 +110,13 @@ async function resolveLiveJobInfo(
 
   // Load current running steps for step names
   const runningSteps = await db
-    .select({ jobId: jobSteps.jobId, stepIndex: jobSteps.stepIndex, name: jobSteps.name, kind: jobSteps.kind, totalCount: sql<number>`count(*) over (partition by ${jobSteps.jobId})::int` })
+    .select({
+      jobId: jobSteps.jobId,
+      stepIndex: jobSteps.stepIndex,
+      name: jobSteps.name,
+      kind: jobSteps.kind,
+      totalCount: sql<number>`count(*) over (partition by ${jobSteps.jobId})::int`,
+    })
     .from(jobSteps)
     .where(and(inArray(jobSteps.jobId, jobIds), eq(jobSteps.status, 'running')));
 
@@ -116,7 +131,7 @@ async function resolveLiveJobInfo(
   const stepCountMap = new Map(stepCounts.map((s) => [s.jobId, s.total]));
 
   for (const fj of withMsg) {
-    const jobId = fj.sessionMessageId ? (msgJobMap.get(fj.sessionMessageId!) ?? null) : null;
+    const jobId = fj.sessionMessageId ? (msgJobMap.get(fj.sessionMessageId) ?? null) : null;
     if (!jobId) {
       result.set(fj.id, { jobId: null, jobStatus: null, currentStep: null });
       continue;
@@ -208,9 +223,9 @@ export class FleetsRepository {
     if (!row) throw new Error('fleet_job insert failed');
 
     if (input.dependsOn?.length) {
-      await this.db.insert(fleetJobDeps).values(
-        input.dependsOn.map((depId) => ({ fleetJobId: row.id, dependsOnId: depId })),
-      );
+      await this.db
+        .insert(fleetJobDeps)
+        .values(input.dependsOn.map((depId) => ({ fleetJobId: row.id, dependsOnId: depId })));
     }
 
     return row;
@@ -263,9 +278,7 @@ export class FleetsRepository {
     );
   }
 
-  async findJobsWithDeps(
-    fleetId: string,
-  ): Promise<Array<FleetJobDto>> {
+  async findJobsWithDeps(fleetId: string): Promise<Array<FleetJobDto>> {
     const jobRows = await this.db
       .select({
         job: fleetJobs,
@@ -291,14 +304,17 @@ export class FleetsRepository {
       depsMap.set(dep.fleetJobId, arr);
     }
 
-    const liveInfo = await resolveLiveJobInfo(this.db, jobRows.map((r) => r.job));
+    const liveInfo = await resolveLiveJobInfo(
+      this.db,
+      jobRows.map((r) => r.job),
+    );
 
     return jobRows.map(({ job, sessionTitle }) =>
       toFleetJobDto(
         job,
         sessionTitle ?? '',
         depsMap.get(job.id) ?? [],
-        (job.report as Record<string, unknown> | null)?.prUrl as string | null ?? null,
+        ((job.report as Record<string, unknown> | null)?.prUrl as string | null) ?? null,
         liveInfo.get(job.id) ?? { jobId: null, jobStatus: null, currentStep: null },
       ),
     );
@@ -332,7 +348,10 @@ export class FleetsRepository {
   }
 
   async updateStatus(fleetId: string, status: string): Promise<void> {
-    await this.db.update(fleets).set({ status, updatedAt: new Date() }).where(eq(fleets.id, fleetId));
+    await this.db
+      .update(fleets)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(fleets.id, fleetId));
   }
 
   async updatePlan(fleetId: string, plan: Record<string, unknown>): Promise<void> {
@@ -346,18 +365,11 @@ export class FleetsRepository {
     const [row] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(fleetJobs)
-      .where(
-        and(
-          eq(fleetJobs.fleetId, fleetId),
-          inArray(fleetJobs.status, ['queued', 'running']),
-        ),
-      );
+      .where(and(eq(fleetJobs.fleetId, fleetId), inArray(fleetJobs.status, ['queued', 'running'])));
     return row?.count ?? 0;
   }
 
-  async findNextPendingJob(
-    fleetId: string,
-  ): Promise<typeof fleetJobs.$inferSelect | null> {
+  async findNextPendingJob(fleetId: string): Promise<typeof fleetJobs.$inferSelect | null> {
     // A pending job is eligible when all its dependencies are completed+merged (or it has none).
     const pending = await this.db
       .select()
@@ -413,13 +425,13 @@ export class FleetsRepository {
 
     const jobIds = jobRows.map((r) => r.job.id);
     const depRows = jobIds.length
-      ? await this.db
-          .select()
-          .from(fleetJobDeps)
-          .where(inArray(fleetJobDeps.fleetJobId, jobIds))
+      ? await this.db.select().from(fleetJobDeps).where(inArray(fleetJobDeps.fleetJobId, jobIds))
       : [];
 
-    const liveInfo = await resolveLiveJobInfo(this.db, jobRows.map((r) => r.job));
+    const liveInfo = await resolveLiveJobInfo(
+      this.db,
+      jobRows.map((r) => r.job),
+    );
 
     const nodes = jobRows.map(({ job, sessionTitle }) => {
       const live = liveInfo.get(job.id) ?? { jobId: null, jobStatus: null, currentStep: null };
@@ -434,7 +446,7 @@ export class FleetsRepository {
         currentStep: live.currentStep,
         wave: job.wave,
         noChanges: (job.report as Record<string, unknown> | null)?.noChanges === true,
-        prUrl: (job.report as Record<string, unknown> | null)?.prUrl as string | null ?? null,
+        prUrl: ((job.report as Record<string, unknown> | null)?.prUrl as string | null) ?? null,
       };
     });
 

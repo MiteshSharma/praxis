@@ -87,9 +87,9 @@ ${entries}
 
   it('counts entries per section correctly', () => {
     const result = validateMemoryFormat(VALID_MEMORY);
-    expect(result.entryCountBySection['Conventions']).toBe(1);
-    expect(result.entryCountBySection['Architecture']).toBe(1);
+    expect(result.entryCountBySection.Conventions).toBe(1);
+    expect(result.entryCountBySection.Architecture).toBe(1);
     expect(result.entryCountBySection['Tech debt']).toBe(0);
-    expect(result.entryCountBySection['Decisions']).toBe(1);
+    expect(result.entryCountBySection.Decisions).toBe(1);
   });
 });

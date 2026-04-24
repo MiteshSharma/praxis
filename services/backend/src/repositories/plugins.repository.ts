@@ -21,21 +21,28 @@ export class PluginsRepository {
     env?: Record<string, string>;
     requiredEnv?: string[];
   }): Promise<PluginDto> {
-    const [row] = await this.db.insert(plugins).values({
-      conversationId: data.sessionId,
-      name: data.name,
-      transport: data.transport,
-      command: data.command ?? null,
-      url: data.url ?? null,
-      env: data.env ?? {},
-      requiredEnv: data.requiredEnv ?? [],
-    }).returning();
+    const [row] = await this.db
+      .insert(plugins)
+      .values({
+        conversationId: data.sessionId,
+        name: data.name,
+        transport: data.transport,
+        command: data.command ?? null,
+        url: data.url ?? null,
+        env: data.env ?? {},
+        requiredEnv: data.requiredEnv ?? [],
+      })
+      .returning();
     if (!row) throw new Error('plugin insert failed');
     return toPluginDto(row);
   }
 
   async toggle(id: string, enabled: boolean): Promise<PluginDto | null> {
-    const [row] = await this.db.update(plugins).set({ enabled }).where(eq(plugins.id, id)).returning();
+    const [row] = await this.db
+      .update(plugins)
+      .set({ enabled })
+      .where(eq(plugins.id, id))
+      .returning();
     return row ? toPluginDto(row) : null;
   }
 

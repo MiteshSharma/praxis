@@ -10,22 +10,14 @@ interface FleetJobCompletePayload {
   jobId: string;
 }
 
-export function registerFleetJobCompleteWorker(
-  boss: PgBoss,
-  db: Database,
-  log: Logger,
-): void {
+export function registerFleetJobCompleteWorker(boss: PgBoss, db: Database, log: Logger): void {
   const fleetsService = new FleetsService(db, boss, log);
 
-  boss.work<FleetJobCompletePayload>(
-    FLEET_JOB_COMPLETE_QUEUE,
-    { batchSize: 5 },
-    async (batch) => {
-      for (const item of batch) {
-        const { fleetJobId, jobId } = item.data;
-        log.info({ fleetJobId, jobId }, 'fleet-job-complete: processing');
-        await fleetsService.onJobComplete(fleetJobId, jobId);
-      }
-    },
-  );
+  boss.work<FleetJobCompletePayload>(FLEET_JOB_COMPLETE_QUEUE, { batchSize: 5 }, async (batch) => {
+    for (const item of batch) {
+      const { fleetJobId, jobId } = item.data;
+      log.info({ fleetJobId, jobId }, 'fleet-job-complete: processing');
+      await fleetsService.onJobComplete(fleetJobId, jobId);
+    }
+  });
 }

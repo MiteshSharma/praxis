@@ -39,8 +39,9 @@ export async function gatherJobContext(jobId: string, db: Database): Promise<str
   if (steps.length > 0) {
     const stepLines = steps.map((s) => {
       const output = s.output as Record<string, unknown> | null;
-      const outputSnippet =
-        output?.output ? `\n  Output: ${String(output.output).slice(0, 500)}` : '';
+      const outputSnippet = output?.output
+        ? `\n  Output: ${String(output.output).slice(0, 500)}`
+        : '';
       return `- ${s.name} (${s.kind}) — ${s.status}${outputSnippet}`;
     });
     sections.push(`## Step History\n\n${stepLines.join('\n')}`);

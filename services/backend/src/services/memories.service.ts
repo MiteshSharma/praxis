@@ -1,6 +1,6 @@
 import { ORPCError } from '@orpc/server';
-import { InvalidMemoryFormatError, MemoryTooLargeError, type MemoryBackend } from '@shared/memory';
-import { MemoriesRepository } from '../repositories/memories.repository';
+import { InvalidMemoryFormatError, type MemoryBackend, MemoryTooLargeError } from '@shared/memory';
+import type { MemoriesRepository } from '../repositories/memories.repository';
 
 export class MemoriesService {
   constructor(
@@ -15,9 +15,13 @@ export class MemoriesService {
     return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.toISOString() }));
   }
 
-  async get(
-    repoKey: string,
-  ): Promise<{ repoKey: string; content: string; sizeBytes: number; entryCount: number; updatedAt: string } | null> {
+  async get(repoKey: string): Promise<{
+    repoKey: string;
+    content: string;
+    sizeBytes: number;
+    entryCount: number;
+    updatedAt: string;
+  } | null> {
     const row = await this.repo.findByRepoKey(repoKey);
     if (!row) return null;
 
@@ -45,6 +49,10 @@ export class MemoriesService {
       }
       throw err;
     }
+  }
+
+  static isValidationError(err: unknown): err is InvalidMemoryFormatError | MemoryTooLargeError {
+    return err instanceof InvalidMemoryFormatError || err instanceof MemoryTooLargeError;
   }
 
   async delete(repoKey: string): Promise<void> {

@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runLearningPass } from './learning';
-import { createMockMemoryBackend, createMockFetch } from '../__tests__/mocks';
 import { InvalidMemoryFormatError, MemoryTooLargeError } from '@shared/memory';
 import { StorageNotConfiguredError } from '@shared/storage';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockFetch, createMockMemoryBackend } from '../__tests__/mocks';
+import { runLearningPass } from './learning';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -14,11 +14,13 @@ const SANDBOX_INFO = {
   workspacePath: '/tmp/ws',
 };
 
-function makeJob(overrides: Partial<{
-  id: string;
-  githubUrl: string;
-  title: string;
-}> = {}) {
+function makeJob(
+  overrides: Partial<{
+    id: string;
+    githubUrl: string;
+    title: string;
+  }> = {},
+) {
   return {
     id: overrides.id ?? 'aabbccdd-1234-5678-abcd-ef0123456789',
     githubUrl: overrides.githubUrl ?? 'https://github.com/owner/repo',
@@ -44,7 +46,9 @@ function makeDb(job: ReturnType<typeof makeJob> | null = makeJob()) {
       jobSteps: { findMany: vi.fn().mockResolvedValue([]) },
       plans: { findFirst: vi.fn().mockResolvedValue(null) },
     },
-    transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockResolvedValue([]),
@@ -184,7 +188,9 @@ describe('runLearningPass', () => {
       usage: { input_tokens: 500, output_tokens: 200 },
       total_cost_usd: 0.01,
     };
-    const fetchFn = vi.fn().mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
 
     const result = await runLearningPass(makeJob().id, SANDBOX_INFO, '/ws', {
       db: db as never,
@@ -216,7 +222,9 @@ describe('runLearningPass', () => {
       usage: { input_tokens: 10, output_tokens: 5 },
       total_cost_usd: 0.001,
     };
-    const fetchFn = vi.fn().mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
 
     const result = await runLearningPass(makeJob().id, SANDBOX_INFO, '/ws', {
       db: db as never,
@@ -251,7 +259,9 @@ describe('runLearningPass', () => {
       usage: { input_tokens: 10, output_tokens: 5 },
       total_cost_usd: 0.001,
     };
-    const fetchFn = vi.fn().mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
 
     await runLearningPass(makeJob().id, SANDBOX_INFO, '/ws', {
       db: db as never,
@@ -279,7 +289,9 @@ describe('runLearningPass', () => {
       usage: { input_tokens: 10, output_tokens: 5 },
       total_cost_usd: 0.001,
     };
-    const fetchFn = vi.fn().mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
 
     const result = await runLearningPass(makeJob().id, SANDBOX_INFO, '/ws', {
       db: db as never,
@@ -300,9 +312,9 @@ describe('runLearningPass', () => {
     const db = makeDb();
     const memoryBackend = createMockMemoryBackend();
     const errorEvent = { type: 'error', error: 'tool_use_failed' };
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(makeSseBody(errorEvent), { status: 200 }),
-    );
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response(makeSseBody(errorEvent), { status: 200 }));
 
     const result = await runLearningPass(makeJob().id, SANDBOX_INFO, '/ws', {
       db: db as never,
@@ -328,7 +340,9 @@ describe('runLearningPass', () => {
       usage: { input_tokens: 100, output_tokens: 50 },
       total_cost_usd: 0.005,
     };
-    const fetchFn = vi.fn().mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response(makeSseBody(resultEvent), { status: 200 }));
 
     await runLearningPass(makeJob().id, SANDBOX_INFO, '/ws', {
       db: db as never,
@@ -338,7 +352,9 @@ describe('runLearningPass', () => {
     });
 
     // The fetch body should contain the empty template header
-    const fetchBody = JSON.parse((fetchFn.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const fetchBody = JSON.parse(
+      (fetchFn.mock.calls[0] as [string, RequestInit])[1].body as string,
+    );
     expect(fetchBody.description).toContain('Repository Memory:');
   });
 });

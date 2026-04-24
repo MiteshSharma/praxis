@@ -51,7 +51,10 @@ class BuiltinMemoryBackend implements MemoryBackend {
     return null;
   }
 
-  async save(repoKey: string, markdown: string): Promise<{ sizeBytes: number; entryCount: number }> {
+  async save(
+    repoKey: string,
+    markdown: string,
+  ): Promise<{ sizeBytes: number; entryCount: number }> {
     const validation = validateMemoryFormat(markdown);
     if (!validation.ok) throw new InvalidMemoryFormatError(validation.errors);
     const { entryCount } = validation;
@@ -124,7 +127,11 @@ function chunkMarkdown(markdown: string): string[] {
 
     for (const line of lines) {
       // A new entry line that would push us over the limit — flush current chunk first
-      if (line.startsWith('- ') && current.length + line.length > CHARS_PER_CHUNK && current.trim()) {
+      if (
+        line.startsWith('- ') &&
+        current.length + line.length > CHARS_PER_CHUNK &&
+        current.trim()
+      ) {
         chunks.push(current.trimEnd());
         // Keep the section header for context in subsequent chunks
         const headerMatch = section.match(/^##[^\n]*/);

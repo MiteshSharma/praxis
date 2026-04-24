@@ -1,8 +1,15 @@
-import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 
 export class StorageNotConfiguredError extends Error {
   constructor() {
-    super('Storage is not configured — set STORAGE_ENDPOINT, STORAGE_BUCKET, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY');
+    super(
+      'Storage is not configured — set STORAGE_ENDPOINT, STORAGE_BUCKET, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY',
+    );
     this.name = 'StorageNotConfiguredError';
   }
 }

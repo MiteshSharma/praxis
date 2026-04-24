@@ -1,6 +1,6 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
 import type { Job, Plan } from '@shared/db';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
 
 // ── substituteInputs ─────────────────────────────────────────────────────────
 
@@ -16,10 +16,7 @@ describe('substituteInputs', () => {
   });
 
   it('recurses into nested objects', () => {
-    const result = substituteInputs(
-      { outer: { inner: '$input.val' } },
-      { val: 'resolved' },
-    );
+    const result = substituteInputs({ outer: { inner: '$input.val' } }, { val: 'resolved' });
     expect((result.outer as Record<string, unknown>).inner).toBe('resolved');
   });
 
@@ -40,7 +37,7 @@ describe('injectGithubToken', () => {
     process.env.GITHUB_TOKEN = 'ghp_testtoken';
   });
   afterEach(() => {
-    delete process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = undefined;
   });
 
   it('injects the token into an HTTPS URL', () => {
@@ -49,10 +46,8 @@ describe('injectGithubToken', () => {
   });
 
   it('returns the URL unchanged when no token is set', () => {
-    delete process.env.GITHUB_TOKEN;
-    expect(injectGithubToken('https://github.com/user/repo')).toBe(
-      'https://github.com/user/repo',
-    );
+    process.env.GITHUB_TOKEN = undefined;
+    expect(injectGithubToken('https://github.com/user/repo')).toBe('https://github.com/user/repo');
   });
 
   it('returns SSH URLs unchanged (token injection only applies to HTTPS)', () => {

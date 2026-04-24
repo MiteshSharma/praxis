@@ -10,7 +10,9 @@ class WebhookChannel implements PraxisChannel {
 
   constructor(private readonly url: string) {}
 
-  async onPlanReady(event: Extract<import('@shared/contracts').PraxisEvent, { type: 'plan.ready' }>): Promise<void> {
+  async onPlanReady(
+    event: Extract<import('@shared/contracts').PraxisEvent, { type: 'plan.ready' }>,
+  ): Promise<void> {
     const res = await fetch(this.url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

@@ -1,4 +1,10 @@
-import { type Database, SETTING_DEFAULTS, SETTING_DESCRIPTIONS, type SettingKey, settings } from '@shared/db';
+import {
+  type Database,
+  SETTING_DEFAULTS,
+  SETTING_DESCRIPTIONS,
+  type SettingKey,
+  settings,
+} from '@shared/db';
 import { eq } from 'drizzle-orm';
 
 export class SettingsRepository {

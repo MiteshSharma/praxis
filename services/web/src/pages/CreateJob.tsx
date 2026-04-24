@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Form, Input, Select, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { rpc } from '../rpc';
@@ -37,11 +37,7 @@ export function CreateJob() {
 
   return (
     <Card title="Submit a job">
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={(values) => mutation.mutate(values)}
-      >
+      <Form form={form} layout="vertical" onFinish={(values) => mutation.mutate(values)}>
         <Form.Item
           name="sessionId"
           label="Session"

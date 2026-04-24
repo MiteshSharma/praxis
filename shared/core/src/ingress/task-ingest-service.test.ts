@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskIngestService } from './task-ingest-service';
 import type { NormalizedTask } from './task-source';
 
@@ -28,10 +28,12 @@ function makeTx(jobRow = makeInsertedJob()) {
   };
 }
 
-function makeDb(options: {
-  existingJob?: { id: string } | null;
-  insertedJob?: ReturnType<typeof makeInsertedJob>;
-} = {}) {
+function makeDb(
+  options: {
+    existingJob?: { id: string } | null;
+    insertedJob?: ReturnType<typeof makeInsertedJob>;
+  } = {},
+) {
   const tx = makeTx(options.insertedJob);
   return {
     query: {
@@ -39,7 +41,9 @@ function makeDb(options: {
         findFirst: vi.fn().mockResolvedValue(options.existingJob ?? null),
       },
     },
-    transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    transaction: vi
+      .fn()
+      .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     _tx: tx,
   };
 }
@@ -100,10 +104,7 @@ describe('TaskIngestService.ingest', () => {
 
     await svc.ingest(BASE_TASK);
 
-    expect(boss.send).toHaveBeenCalledWith(
-      expect.any(String),
-      { jobId: 'job-enqueue' },
-    );
+    expect(boss.send).toHaveBeenCalledWith(expect.any(String), { jobId: 'job-enqueue' });
   });
 
   it('inserts job-created timeline row inside transaction', async () => {
@@ -134,14 +135,12 @@ describe('TaskIngestService.ingest', () => {
     const svc = new TaskIngestService(db as never, boss as never, log as never);
 
     const taskWithoutBranch = { ...BASE_TASK };
-    delete (taskWithoutBranch as Partial<NormalizedTask>).githubBranch;
+    (taskWithoutBranch as Partial<NormalizedTask>).githubBranch = undefined;
 
     await svc.ingest(taskWithoutBranch);
 
     const insertValues = db._tx.insert.mock.results[0].value.values;
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ githubBranch: 'main' }),
-    );
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ githubBranch: 'main' }));
   });
 
   it('sets initial status to queued', async () => {
@@ -151,9 +150,7 @@ describe('TaskIngestService.ingest', () => {
     await svc.ingest(BASE_TASK);
 
     const insertValues = db._tx.insert.mock.results[0].value.values;
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'queued' }),
-    );
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ status: 'queued' }));
   });
 
   it('merges workflowInputs into metadata', async () => {

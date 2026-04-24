@@ -13,7 +13,9 @@ export interface ResolvedPlugin {
 export class PluginRegistry {
   constructor(private readonly db: Database) {}
 
-  async resolveForConversation(conversationId: string | null | undefined): Promise<ResolvedPlugin[]> {
+  async resolveForConversation(
+    conversationId: string | null | undefined,
+  ): Promise<ResolvedPlugin[]> {
     if (!conversationId) return [];
     const rows = await this.db
       .select()

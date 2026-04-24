@@ -1,14 +1,14 @@
-import { ToolRegistry } from './registry.js';
 import {
-  readFileTool,
+  bashTool,
+  editFileTool,
   globTool,
   grepTool,
-  writeFileTool,
-  editFileTool,
-  bashTool,
-  submitPlanTool,
   queryMemoryTool,
+  readFileTool,
+  submitPlanTool,
+  writeFileTool,
 } from './definitions.js';
+import { ToolRegistry } from './registry.js';
 
 export const toolRegistry = new ToolRegistry();
 

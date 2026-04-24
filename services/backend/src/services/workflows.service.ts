@@ -7,6 +7,7 @@ import { WorkflowsRepository } from '../repositories/workflows.repository';
 interface FormStep {
   kind: 'plan' | 'execute' | 'check';
   name: string;
+  model?: string;
   agentId?: string;
   skillId?: string;
   condition?: 'previous_check_failed';
@@ -14,11 +15,18 @@ interface FormStep {
   timeoutSeconds?: number;
 }
 
+interface FormScout {
+  model?: string;
+  agentId?: string;
+  skillId?: string;
+}
+
 interface CreateWorkflowInput {
   source: 'inline' | 'github' | 'form';
   // form
   name?: string;
   description?: string;
+  scout?: FormScout;
   steps?: FormStep[];
   // inline
   inlineContent?: string;
@@ -32,6 +40,14 @@ export class WorkflowsService {
 
   constructor(db: Database) {
     this.repo = new WorkflowsRepository(db);
+  }
+
+  private buildScoutDefinition(s: FormScout): Record<string, unknown> {
+    return {
+      ...(s.model ? { model: s.model } : {}),
+      ...(s.agentId ? { agent: { ref: 'id' as const, agentId: s.agentId } } : {}),
+      ...(s.skillId ? { skillId: s.skillId } : {}),
+    };
   }
 
   private buildStepDefinition(s: FormStep): Record<string, unknown> {
@@ -63,11 +79,20 @@ export class WorkflowsService {
     return wf;
   }
 
-  async update(input: { id: string; name: string; description?: string; steps: FormStep[] }): Promise<WorkflowDto> {
+  async update(input: {
+    id: string;
+    name: string;
+    description?: string;
+    scout?: FormScout;
+    steps: FormStep[];
+  }): Promise<WorkflowDto> {
     if (!input.steps || input.steps.length === 0) {
       throw new ORPCError('BAD_REQUEST', { message: 'at least one step is required' });
     }
-    const definition = { steps: input.steps.map((s) => this.buildStepDefinition(s)) };
+    const definition = {
+      ...(input.scout ? { scout: this.buildScoutDefinition(input.scout) } : {}),
+      steps: input.steps.map((s) => this.buildStepDefinition(s)),
+    };
     return this.repo.update(
       input.id,
       input.name,
@@ -85,6 +110,7 @@ export class WorkflowsService {
         throw new ORPCError('BAD_REQUEST', { message: 'at least one step is required' });
       }
       const definition = {
+        ...(input.scout ? { scout: this.buildScoutDefinition(input.scout) } : {}),
         steps: input.steps.map((s) => this.buildStepDefinition(s)),
       };
       const contentUri = `form:${Date.now()}`;
@@ -103,7 +129,9 @@ export class WorkflowsService {
       }
       const { definition, bodyMarkdown } = loadFromInline(input.inlineContent);
       if (definition.kind !== 'workflow') {
-        throw new ORPCError('BAD_REQUEST', { message: 'expected a workflow file (kind: workflow)' });
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'expected a workflow file (kind: workflow)',
+        });
       }
       const contentUri = `inline:${Date.now()}`;
       return this.repo.create(
@@ -126,7 +154,9 @@ export class WorkflowsService {
         token,
       );
       if (definition.kind !== 'workflow') {
-        throw new ORPCError('BAD_REQUEST', { message: 'expected a workflow file (kind: workflow)' });
+        throw new ORPCError('BAD_REQUEST', {
+          message: 'expected a workflow file (kind: workflow)',
+        });
       }
       const contentUri = `github:${input.githubUrl}@${commitSha}`;
       return this.repo.create(

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { handleMcpRequest, type PublicMcpDeps } from '../control-plane/mcp/public-mcp';
+import { type PublicMcpDeps, handleMcpRequest } from '../control-plane/mcp/public-mcp';
 
 /**
  * SSE MCP transport — MCP 2024-11-05 HTTP+SSE spec.

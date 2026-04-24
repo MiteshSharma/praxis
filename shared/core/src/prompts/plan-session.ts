@@ -3,7 +3,10 @@ export interface ParentContext {
   jobTitle: string;
 }
 
-export function buildPlanSessionSystemPrompt(parentContext?: ParentContext, workingDir?: string): string {
+export function buildPlanSessionSystemPrompt(
+  parentContext?: ParentContext,
+  workingDir?: string,
+): string {
   const parentSection = parentContext
     ? `
 ## Context from previous work in this conversation

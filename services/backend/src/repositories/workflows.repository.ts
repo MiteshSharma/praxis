@@ -1,10 +1,12 @@
+import { ORPCError } from '@orpc/server';
 import type { WorkflowDto, WorkflowVersionDto } from '@shared/contracts';
 import type { Database } from '@shared/db';
 import { workflowVersions, workflows } from '@shared/db';
 import { desc, eq } from 'drizzle-orm';
-import { ORPCError } from '@orpc/server';
 
-export function toWorkflowVersionDto(row: typeof workflowVersions.$inferSelect): WorkflowVersionDto {
+export function toWorkflowVersionDto(
+  row: typeof workflowVersions.$inferSelect,
+): WorkflowVersionDto {
   return {
     id: row.id,
     workflowId: row.workflowId,
@@ -82,10 +84,7 @@ export class WorkflowsRepository {
     contentUri: string,
     definition: Record<string, unknown>,
   ): Promise<WorkflowDto> {
-    const [wf] = await this.db
-      .insert(workflows)
-      .values({ name, description })
-      .returning();
+    const [wf] = await this.db.insert(workflows).values({ name, description }).returning();
 
     if (!wf) throw new Error('workflow insert failed');
 

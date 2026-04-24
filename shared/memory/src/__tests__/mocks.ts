@@ -1,11 +1,9 @@
-import { vi } from 'vitest';
 import type { StorageClient } from '@shared/storage';
+import { vi } from 'vitest';
 
 // ── StorageClient ─────────────────────────────────────────────────────────────
 
-export function createMockStorageClient(
-  store: Record<string, string> = {},
-): StorageClient & {
+export function createMockStorageClient(store: Record<string, string> = {}): StorageClient & {
   getObjectAsString: ReturnType<typeof vi.fn>;
   putObject: ReturnType<typeof vi.fn>;
   deleteObject: ReturnType<typeof vi.fn>;

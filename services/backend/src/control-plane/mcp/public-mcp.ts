@@ -46,13 +46,22 @@ export const TOOL_DEFINITIONS = [
   // ── Sessions ────────────────────────────────────────────────────────────────
   {
     name: 'sessions_list',
-    description: 'List all Praxis sessions. A session is a project workspace that groups related jobs for a repo.',
-    inputSchema: { type: 'object', properties: { limit: { type: 'number', description: 'Max results (default 50)' } } },
+    description:
+      'List all Praxis sessions. A session is a project workspace that groups related jobs for a repo.',
+    inputSchema: {
+      type: 'object',
+      properties: { limit: { type: 'number', description: 'Max results (default 50)' } },
+    },
   },
   {
     name: 'sessions_get',
-    description: 'Get a single session — title, default GitHub URL, default workflow, model override.',
-    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'] },
+    description:
+      'Get a single session — title, default GitHub URL, default workflow, model override.',
+    inputSchema: {
+      type: 'object',
+      properties: { sessionId: { type: 'string' } },
+      required: ['sessionId'],
+    },
   },
   {
     name: 'sessions_create',
@@ -61,7 +70,10 @@ export const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         title: { type: 'string' },
-        githubUrl: { type: 'string', description: 'Default GitHub repo URL for jobs in this session' },
+        githubUrl: {
+          type: 'string',
+          description: 'Default GitHub repo URL for jobs in this session',
+        },
         workflowId: { type: 'string', description: 'Default workflow UUID' },
         model: { type: 'string', description: 'Default model override, e.g. claude-opus-4-6' },
       },
@@ -79,7 +91,10 @@ export const TOOL_DEFINITIONS = [
         githubUrl: { type: 'string', nullable: true },
         workflowId: { type: 'string', nullable: true },
         model: { type: 'string', nullable: true },
-        planHoldHours: { type: 'number', description: 'How long to hold plan_review before auto-expiry (1–168h)' },
+        planHoldHours: {
+          type: 'number',
+          description: 'How long to hold plan_review before auto-expiry (1–168h)',
+        },
       },
       required: ['sessionId'],
     },
@@ -87,11 +102,16 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'sessions_delete',
     description: 'Delete a session. Fails if the session has active (non-terminal) jobs.',
-    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'] },
+    inputSchema: {
+      type: 'object',
+      properties: { sessionId: { type: 'string' } },
+      required: ['sessionId'],
+    },
   },
   {
     name: 'sessions_history',
-    description: 'Read paginated message log for a session — shows submitted tasks and assistant responses.',
+    description:
+      'Read paginated message log for a session — shows submitted tasks and assistant responses.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -104,7 +124,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'sessions_send',
-    description: 'Submit a task to a session as a chat message. Creates a job and returns its ID immediately. The job will plan, wait for approval, then execute.',
+    description:
+      'Submit a task to a session as a chat message. Creates a job and returns its ID immediately. The job will plan, wait for approval, then execute.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -112,7 +133,10 @@ export const TOOL_DEFINITIONS = [
         message: { type: 'string', description: 'Natural language task description' },
         githubUrl: { type: 'string', description: 'Override session default GitHub URL' },
         workflowId: { type: 'string', description: 'Override session default workflow' },
-        autoApprove: { type: 'boolean', description: 'Skip plan review and execute immediately (default false)' },
+        autoApprove: {
+          type: 'boolean',
+          description: 'Skip plan review and execute immediately (default false)',
+        },
       },
       required: ['sessionId', 'message'],
     },
@@ -126,7 +150,10 @@ export const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
-        status: { type: 'string', description: 'Filter by job status, e.g. plan_review, executing, completed' },
+        status: {
+          type: 'string',
+          description: 'Filter by job status, e.g. plan_review, executing, completed',
+        },
         limit: { type: 'number', description: 'Max results (default 20)' },
       },
     },
@@ -163,14 +190,16 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'jobs_resume_from_plan',
-    description: 'Resume a failed job from its last approved plan checkpoint, skipping the planning phase.',
+    description:
+      'Resume a failed job from its last approved plan checkpoint, skipping the planning phase.',
     inputSchema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] },
   },
 
   // ── Plans ───────────────────────────────────────────────────────────────────
   {
     name: 'jobs_plan_get',
-    description: 'Get the current plan for a job — title, summary, steps, affected paths, risks, open questions. Read this before approving.',
+    description:
+      'Get the current plan for a job — title, summary, steps, affected paths, risks, open questions. Read this before approving.',
     inputSchema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] },
   },
   {
@@ -212,14 +241,16 @@ export const TOOL_DEFINITIONS = [
   // ── Steps ───────────────────────────────────────────────────────────────────
   {
     name: 'steps_list',
-    description: 'List all steps for a job — kind (plan/execute/check), status, duration, cost, model used.',
+    description:
+      'List all steps for a job — kind (plan/execute/check), status, duration, cost, model used.',
     inputSchema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] },
   },
 
   // ── Timeline ─────────────────────────────────────────────────────────────────
   {
     name: 'timeline_get',
-    description: 'Read the job timeline — agent turns, tool calls, status transitions, prompt snapshots. Supports cursor-based pagination.',
+    description:
+      'Read the job timeline — agent turns, tool calls, status transitions, prompt snapshots. Supports cursor-based pagination.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -232,7 +263,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'timeline_poll',
-    description: 'Non-blocking poll for new timeline events since a sequence number. Returns immediately — empty array if no new events.',
+    description:
+      'Non-blocking poll for new timeline events since a sequence number. Returns immediately — empty array if no new events.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -245,7 +277,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'timeline_wait',
-    description: 'Long-poll for the next timeline event. Blocks until a new event arrives after the cursor or the timeout elapses. Use this to watch job progress without hammering the server.',
+    description:
+      'Long-poll for the next timeline event. Blocks until a new event arrives after the cursor or the timeout elapses. Use this to watch job progress without hammering the server.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -266,25 +299,39 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'workflows_get',
     description: 'Get full workflow definition — steps, agent/skill assignments, models per step.',
-    inputSchema: { type: 'object', properties: { workflowId: { type: 'string' } }, required: ['workflowId'] },
+    inputSchema: {
+      type: 'object',
+      properties: { workflowId: { type: 'string' } },
+      required: ['workflowId'],
+    },
   },
 
   // ── Agents & Skills ──────────────────────────────────────────────────────────
   {
     name: 'agents_list',
-    description: 'List agents or skills. Agents have custom system prompts and tool configs. Skills are composable modules agents can depend on.',
+    description:
+      'List agents or skills. Agents have custom system prompts and tool configs. Skills are composable modules agents can depend on.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['agent', 'skill'], description: 'Filter by kind (default: both)' },
+        kind: {
+          type: 'string',
+          enum: ['agent', 'skill'],
+          description: 'Filter by kind (default: both)',
+        },
         limit: { type: 'number' },
       },
     },
   },
   {
     name: 'agents_get',
-    description: 'Get a single agent or skill — system prompt, model, allowed tools, dependsOn skills.',
-    inputSchema: { type: 'object', properties: { agentId: { type: 'string' } }, required: ['agentId'] },
+    description:
+      'Get a single agent or skill — system prompt, model, allowed tools, dependsOn skills.',
+    inputSchema: {
+      type: 'object',
+      properties: { agentId: { type: 'string' } },
+      required: ['agentId'],
+    },
   },
 
   // ── Memory ───────────────────────────────────────────────────────────────────
@@ -295,7 +342,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'memory_get',
-    description: 'Read the full MEMORY.md for a repo. This is the institutional context injected into every plan prompt.',
+    description:
+      'Read the full MEMORY.md for a repo. This is the institutional context injected into every plan prompt.',
     inputSchema: {
       type: 'object',
       properties: { repoKey: { type: 'string', description: 'e.g. "github.com/owner/repo"' } },
@@ -317,18 +365,26 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'memory_delete',
     description: 'Delete all memory for a repo.',
-    inputSchema: { type: 'object', properties: { repoKey: { type: 'string' } }, required: ['repoKey'] },
+    inputSchema: {
+      type: 'object',
+      properties: { repoKey: { type: 'string' } },
+      required: ['repoKey'],
+    },
   },
 
   // ── Permissions ──────────────────────────────────────────────────────────────
   {
     name: 'permissions_list_open',
     description: 'List all jobs currently waiting for plan approval across all sessions.',
-    inputSchema: { type: 'object', properties: { sessionId: { type: 'string', description: 'Filter by session (optional)' } } },
+    inputSchema: {
+      type: 'object',
+      properties: { sessionId: { type: 'string', description: 'Filter by session (optional)' } },
+    },
   },
   {
     name: 'permissions_respond',
-    description: 'Single-call plan approval. Wraps jobs_plan_approve / jobs_plan_revise / jobs_plan_reject. Use this when you want to respond without knowing which specific tool to call.',
+    description:
+      'Single-call plan approval. Wraps jobs_plan_approve / jobs_plan_revise / jobs_plan_reject. Use this when you want to respond without knowing which specific tool to call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -405,7 +461,14 @@ async function callTool(
   const { name, arguments: a = {} } = params;
   if (!name) return rpcErr(id, -32602, 'tools/call requires params.name');
 
-  const { jobsService, plansService, workflowsService, agentsService, sessionsService, memoriesService } = deps;
+  const {
+    jobsService,
+    plansService,
+    workflowsService,
+    agentsService,
+    sessionsService,
+    memoriesService,
+  } = deps;
 
   try {
     let result: unknown;
@@ -429,8 +492,18 @@ async function callTool(
       case 'sessions_update':
         result = await sessionsService.update(str(a.sessionId), {
           title: a.title ? str(a.title) : undefined,
-          githubUrl: a.githubUrl !== undefined ? (a.githubUrl === null ? null : str(a.githubUrl)) : undefined,
-          workflowId: a.workflowId !== undefined ? (a.workflowId === null ? null : str(a.workflowId)) : undefined,
+          githubUrl:
+            a.githubUrl !== undefined
+              ? a.githubUrl === null
+                ? null
+                : str(a.githubUrl)
+              : undefined,
+          workflowId:
+            a.workflowId !== undefined
+              ? a.workflowId === null
+                ? null
+                : str(a.workflowId)
+              : undefined,
           model: a.model !== undefined ? (a.model === null ? null : str(a.model)) : undefined,
           planHoldHours: a.planHoldHours ? num(a.planHoldHours) : undefined,
         });
@@ -524,11 +597,7 @@ async function callTool(
         );
         break;
       case 'timeline_poll':
-        result = await jobsService.getTimeline(
-          str(a.jobId),
-          num(a.limit, 50),
-          num(a.cursor),
-        );
+        result = await jobsService.getTimeline(str(a.jobId), num(a.limit, 50), num(a.cursor));
         break;
       case 'timeline_wait':
         result = await timelineWait(

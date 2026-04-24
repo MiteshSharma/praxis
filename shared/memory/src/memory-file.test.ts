@@ -1,18 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
+import { StorageNotConfiguredError } from '@shared/storage';
+import { describe, expect, it, vi } from 'vitest';
+import { createMockStorageClient } from './__tests__/mocks';
 import {
+  EMPTY_MEMORY_TEMPLATE,
+  MAX_MEMORY_BYTES,
+  MemoryTooLargeError,
   loadMemoryFile,
   saveMemoryFile,
-  EMPTY_MEMORY_TEMPLATE,
-  MemoryTooLargeError,
-  MAX_MEMORY_BYTES,
 } from './memory-file';
 import { InvalidMemoryFormatError } from './validator';
-import { StorageNotConfiguredError } from '@shared/storage';
-import { createMockStorageClient } from './__tests__/mocks';
 
 // ── Minimal DB stub ──────────────────────────────────────────────────────────
 
-function makeDb(row: { contentUri: string } | null = { contentUri: 'memory/owner_repo/MEMORY.md' }) {
+function makeDb(
+  row: { contentUri: string } | null = { contentUri: 'memory/owner_repo/MEMORY.md' },
+) {
   return {
     query: {
       repoMemories: {

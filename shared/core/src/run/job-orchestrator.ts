@@ -1,29 +1,44 @@
 import { randomUUID } from 'node:crypto';
-import { parse as parseYaml } from 'yaml';
 import type { JobStatus, NotifyEvent } from '@shared/contracts';
 import { assertTransition } from '@shared/contracts';
-import { type Database, type Job, SETTING_DEFAULTS, SETTING_KEYS, type SettingKey, artifacts, jobSteps, jobTimeline, jobs, plans, providerConfigs, sandboxes, settings, workflowVersions } from '@shared/db';
+import {
+  type Database,
+  type Job,
+  SETTING_DEFAULTS,
+  SETTING_KEYS,
+  type SettingKey,
+  artifacts,
+  jobSteps,
+  jobTimeline,
+  jobs,
+  plans,
+  providerConfigs,
+  sandboxes,
+  settings,
+  workflowVersions,
+} from '@shared/db';
+import type { Plan } from '@shared/db';
 import { type MemoryBackend, S3MemoryBackend, normalizeRepoKey } from '@shared/memory';
 import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
-import type { SecretBackend } from '../plugins/secret-backends/types.js';
 import type { Logger } from '@shared/telemetry';
 import type { WorkflowDefinition } from '@shared/workflows';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import type { Plan } from '@shared/db';
 import type PgBoss from 'pg-boss';
-import { emitNotification } from '../egress/notify';
+import { parse as parseYaml } from 'yaml';
+import { dispatchToConversation } from '../channels/dispatch';
 import { DEFAULT_WORKFLOW } from '../defaults/default-workflow';
+import { SCOUT_WORKFLOW } from '../defaults/scout-workflow';
+import { emitNotification } from '../egress/notify';
+import type { SecretBackend } from '../plugins/secret-backends/types.js';
 import { DbTaskTracker } from '../task-tracker/db-task-tracker';
 import type { TaskTracker } from '../task-tracker/task-tracker';
+import { classifyProviderError } from './errors';
+import { runLearningPass } from './learning';
+import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
+import { runReportPass } from './report';
+import { parseSSE } from './sse';
 import { HoldTimeoutError, PlanRejectedError, StepRunner } from './step-runner';
 import { appendTimeline, transitionJob } from './transitions';
-import { runLearningPass } from './learning';
-import { classifyProviderError } from './errors';
-import { runReportPass } from './report';
-import { SCOUT_WORKFLOW } from '../defaults/scout-workflow';
-import { buildPrBody, injectGithubToken, substituteInputs } from './orchestrator-utils';
-import { parseSSE } from './sse';
-import { dispatchToConversation } from '../channels/dispatch';
 
 export type ResumeMode = 'execute' | 'revise';
 
@@ -57,17 +72,19 @@ export class JobOrchestrator {
 
   constructor(private readonly deps: JobOrchestratorDeps) {
     this.tracker = deps.taskTracker ?? new DbTaskTracker(deps.db);
-    this.stepRunner = deps.stepRunner ?? new StepRunner({
-      db: deps.db,
-      boss: deps.boss,
-      sandbox: deps.sandbox,
-      taskTracker: this.tracker,
-      log: deps.log,
-      redisUrl: deps.redisUrl,
-      mcpEndpoint: deps.mcpEndpoint,
-      mcpSecret: deps.mcpSecret,
-      controlPlaneUrl: deps.controlPlaneUrl,
-    });
+    this.stepRunner =
+      deps.stepRunner ??
+      new StepRunner({
+        db: deps.db,
+        boss: deps.boss,
+        sandbox: deps.sandbox,
+        taskTracker: this.tracker,
+        log: deps.log,
+        redisUrl: deps.redisUrl,
+        mcpEndpoint: deps.mcpEndpoint,
+        mcpSecret: deps.mcpSecret,
+        controlPlaneUrl: deps.controlPlaneUrl,
+      });
   }
 
   async run(jobId: string, resumeMode?: ResumeMode): Promise<void> {
@@ -145,7 +162,10 @@ export class JobOrchestrator {
       if (jobRow.triggerKind === 'scout') {
         // Scout jobs: skip publish, mark no-changes, extract findings from agent result
         const scoutOutput = await extractScoutOutput(db, jobId);
-        await db.update(jobs).set({ noChanges: true, ...(scoutOutput ? { output: scoutOutput } : {}) }).where(eq(jobs.id, jobId));
+        await db
+          .update(jobs)
+          .set({ noChanges: true, ...(scoutOutput ? { output: scoutOutput } : {}) })
+          .where(eq(jobs.id, jobId));
         const seq = await appendTimeline(db, jobId, 'no-changes', {});
         await this.emit(jobId, seq, { kind: 'no-changes' } as NotifyEvent);
         if (scoutOutput) {
@@ -159,7 +179,13 @@ export class JobOrchestrator {
         }
         noChanges = true;
       } else {
-        const finalizeResult = await this.finalize(jobRow, sandboxInfo, workspace, jobLog, providerEnv);
+        const finalizeResult = await this.finalize(
+          jobRow,
+          sandboxInfo,
+          workspace,
+          jobLog,
+          providerEnv,
+        );
         noChanges = finalizeResult.noChanges;
       }
 
@@ -168,7 +194,11 @@ export class JobOrchestrator {
       const skipLearning = freshJob?.disableLearning || noChanges;
       if (!skipLearning) {
         await this.mustTransition(jobId, 'publishing', 'learning');
-        const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log: jobLog, auxiliaryModel: learningModel });
+        const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, {
+          db,
+          log: jobLog,
+          auxiliaryModel: learningModel,
+        });
         totalInputTokens += learningCost.inputTokens;
         totalOutputTokens += learningCost.outputTokens;
         totalCostUsd += learningCost.costUsd;
@@ -180,13 +210,21 @@ export class JobOrchestrator {
       // ── Report pass (implement jobs with generateReport=true only) ──
       // Scout jobs store output directly from the agent result above — no second LLM call needed.
       if (jobRow.triggerKind !== 'scout' && meta.generateReport) {
-        const reportCost = await runReportPass(jobId, sandboxInfo, workspace, { db, log: jobLog, providerEnv, auxiliaryModel: reportModel });
+        const reportCost = await runReportPass(jobId, sandboxInfo, workspace, {
+          db,
+          log: jobLog,
+          providerEnv,
+          auxiliaryModel: reportModel,
+        });
         totalInputTokens += reportCost.inputTokens;
         totalOutputTokens += reportCost.outputTokens;
         totalCostUsd += reportCost.costUsd;
       }
 
-      await db.update(jobs).set({ totalInputTokens, totalOutputTokens, totalCostUsd }).where(eq(jobs.id, jobId));
+      await db
+        .update(jobs)
+        .set({ totalInputTokens, totalOutputTokens, totalCostUsd })
+        .where(eq(jobs.id, jobId));
       await this.emitCompleted(jobId);
     } catch (err) {
       if (err instanceof PlanRejectedError) {
@@ -216,11 +254,7 @@ export class JobOrchestrator {
 
   // ── Cold resume (after hot hold expires or cold revise) ────────────────────
 
-  private async runColdResume(
-    jobRow: Job,
-    mode: ResumeMode,
-    log: Logger,
-  ): Promise<void> {
+  private async runColdResume(jobRow: Job, mode: ResumeMode, log: Logger): Promise<void> {
     const { db, sandbox } = this.deps;
     const jobId = jobRow.id;
     let sandboxInfo: SandboxInfo | undefined;
@@ -235,6 +269,15 @@ export class JobOrchestrator {
       });
 
       const fromStatus = mode === 'execute' ? 'plan_review' : 'plan_revising';
+      // Guard: hot path may have already transitioned the job. Skip cold resume if so.
+      const current = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+      if (!current || current.status !== fromStatus) {
+        log.info(
+          { jobId, status: current?.status },
+          'cold resume: job already progressed via hot path, skipping',
+        );
+        return;
+      }
       await this.mustTransition(jobId, fromStatus as JobStatus, 'preparing');
 
       const workspace = sandboxInfo.workspacePath ?? '';
@@ -266,7 +309,13 @@ export class JobOrchestrator {
 
         // ── Publish / no-op handling ───────────────────────────────────────
         await this.mustTransition(jobId, 'preparing', 'publishing');
-        const finalizeResult = await this.finalize(jobRow, sandboxInfo, workspace, log, providerEnv);
+        const finalizeResult = await this.finalize(
+          jobRow,
+          sandboxInfo,
+          workspace,
+          log,
+          providerEnv,
+        );
 
         // ── Learning pass (skipped for no-op) ─────────────────────────────
         const stepCost = this.stepRunner.getCostSummary();
@@ -276,11 +325,16 @@ export class JobOrchestrator {
 
         const freshJob = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
         const meta = (freshJob?.metadata ?? {}) as Record<string, unknown>;
-        const { learningModel: coldLearningModel, reportModel: coldReportModel } = await this.resolveAuxiliaryModels();
+        const { learningModel: coldLearningModel, reportModel: coldReportModel } =
+          await this.resolveAuxiliaryModels();
         const skipLearning = freshJob?.disableLearning || finalizeResult.noChanges;
         if (!skipLearning) {
           await this.mustTransition(jobId, 'publishing', 'learning');
-          const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, { db, log, auxiliaryModel: coldLearningModel });
+          const learningCost = await runLearningPass(jobId, sandboxInfo, workspace, {
+            db,
+            log,
+            auxiliaryModel: coldLearningModel,
+          });
           totalInputTokens += learningCost.inputTokens;
           totalOutputTokens += learningCost.outputTokens;
           totalCostUsd += learningCost.costUsd;
@@ -291,13 +345,20 @@ export class JobOrchestrator {
 
         // ── Report pass ────────────────────────────────────────────────────
         if (meta.generateReport) {
-          const reportCost = await runReportPass(jobId, sandboxInfo, workspace, { db, log, auxiliaryModel: coldReportModel });
+          const reportCost = await runReportPass(jobId, sandboxInfo, workspace, {
+            db,
+            log,
+            auxiliaryModel: coldReportModel,
+          });
           totalInputTokens += reportCost.inputTokens;
           totalOutputTokens += reportCost.outputTokens;
           totalCostUsd += reportCost.costUsd;
         }
 
-        await db.update(jobs).set({ totalInputTokens, totalOutputTokens, totalCostUsd }).where(eq(jobs.id, jobId));
+        await db
+          .update(jobs)
+          .set({ totalInputTokens, totalOutputTokens, totalCostUsd })
+          .where(eq(jobs.id, jobId));
         await this.emitCompleted(jobId);
       } else {
         // Revise: re-run from current position in step runner (plan step will handle revision)
@@ -324,12 +385,15 @@ export class JobOrchestrator {
   private async resolveAuxiliaryModels(): Promise<{ learningModel: string; reportModel: string }> {
     const { db } = this.deps;
     const rows = await db.query.settings.findMany({
-      where: (s, { inArray: inn }) => inn(s.key, [SETTING_KEYS.LEARNING_MODEL, SETTING_KEYS.REPORT_MODEL]),
+      where: (s, { inArray: inn }) =>
+        inn(s.key, [SETTING_KEYS.LEARNING_MODEL, SETTING_KEYS.REPORT_MODEL]),
     });
     const map = new Map(rows.map((r) => [r.key, r.value]));
     return {
-      learningModel: map.get(SETTING_KEYS.LEARNING_MODEL) ?? SETTING_DEFAULTS[SETTING_KEYS.LEARNING_MODEL],
-      reportModel: map.get(SETTING_KEYS.REPORT_MODEL) ?? SETTING_DEFAULTS[SETTING_KEYS.REPORT_MODEL],
+      learningModel:
+        map.get(SETTING_KEYS.LEARNING_MODEL) ?? SETTING_DEFAULTS[SETTING_KEYS.LEARNING_MODEL],
+      reportModel:
+        map.get(SETTING_KEYS.REPORT_MODEL) ?? SETTING_DEFAULTS[SETTING_KEYS.REPORT_MODEL],
     };
   }
 
@@ -346,7 +410,10 @@ export class JobOrchestrator {
         sizeBytes,
         source: ctx?.source,
       });
-      log.info({ repoKey, hasMemory: ctx !== null, sizeBytes, source: ctx?.source }, 'repo memory loaded');
+      log.info(
+        { repoKey, hasMemory: ctx !== null, sizeBytes, source: ctx?.source },
+        'repo memory loaded',
+      );
       return ctx?.content ?? null;
     } catch (err) {
       log.warn({ err, jobId: job.id }, 'could not load repo memory; continuing without it');
@@ -363,7 +430,8 @@ export class JobOrchestrator {
     const { sandbox, db } = this.deps;
     const cloneUrl = injectGithubToken(job.githubUrl);
     const meta = (job.metadata ?? {}) as Record<string, unknown>;
-    const prFollowupBranch = typeof meta.prFollowupBranch === 'string' ? meta.prFollowupBranch : null;
+    const prFollowupBranch =
+      typeof meta.prFollowupBranch === 'string' ? meta.prFollowupBranch : null;
 
     // For follow-up jobs, clone from the existing PR branch; otherwise clone base branch
     const cloneBranch = prFollowupBranch ?? job.githubBranch;
@@ -388,11 +456,9 @@ export class JobOrchestrator {
     } else {
       // Create a dedicated branch for this job's changes
       branchName = `praxis/job-${job.id.substring(0, 8)}`;
-      const branch = await sandbox.exec(
-        sandboxInfo.providerId,
-        `git checkout -b ${branchName}`,
-        { cwd: workspace },
-      );
+      const branch = await sandbox.exec(sandboxInfo.providerId, `git checkout -b ${branchName}`, {
+        cwd: workspace,
+      });
       if (branch.exitCode !== 0) {
         throw new Error(`git checkout -b failed: ${branch.stderr.slice(0, 500)}`);
       }
@@ -417,7 +483,6 @@ export class JobOrchestrator {
     let workflow: WorkflowDefinition;
     let inheritedModel: string | undefined;
     if (job.triggerKind === 'scout') {
-      workflow = SCOUT_WORKFLOW;
       if (job.workflowVersionId) {
         const [version] = await db
           .select()
@@ -425,9 +490,29 @@ export class JobOrchestrator {
           .where(eq(workflowVersions.id, job.workflowVersionId))
           .limit(1);
         const wfDef = version?.definition as WorkflowDefinition | undefined;
-        // Take the model from the first non-check step of the referenced workflow
-        const firstStep = wfDef?.steps.find((s) => s.kind !== 'check') as { model?: string } | undefined;
-        inheritedModel = firstStep?.model ?? undefined;
+        if (wfDef?.scout) {
+          // Workflow has an explicit scout section — build a scout workflow from it
+          workflow = {
+            steps: [
+              {
+                kind: 'scout',
+                name: 'Investigate codebase',
+                ...(wfDef.scout.model ? { model: wfDef.scout.model } : {}),
+                ...(wfDef.scout.agent ? { agent: wfDef.scout.agent } : {}),
+                ...(wfDef.scout.skillId ? { skillId: wfDef.scout.skillId } : {}),
+              },
+            ],
+          };
+        } else {
+          // No scout section — use SCOUT_WORKFLOW but inherit model from first implement step
+          workflow = SCOUT_WORKFLOW;
+          const firstStep = wfDef?.steps.find((s) => s.kind !== 'check') as
+            | { model?: string }
+            | undefined;
+          inheritedModel = firstStep?.model ?? undefined;
+        }
+      } else {
+        workflow = SCOUT_WORKFLOW;
       }
     } else if (job.workflowVersionId) {
       const [version] = await db
@@ -446,9 +531,12 @@ export class JobOrchestrator {
     };
 
     const rows = workflow.steps.map((step, index) => {
-      const config = substituteInputs(step as Record<string, unknown>, inputs) as Record<string, unknown>;
+      const config = substituteInputs(step as Record<string, unknown>, inputs) as Record<
+        string,
+        unknown
+      >;
       // Inject inherited model into scout steps that have no model of their own
-      if (step.kind === 'scout' && !(config.model) && inheritedModel) {
+      if (step.kind === 'scout' && !config.model && inheritedModel) {
         config.model = inheritedModel;
       }
       return {
@@ -535,11 +623,16 @@ export class JobOrchestrator {
         .where(and(eq(artifacts.jobId, jobId), eq(artifacts.kind, 'pr')))
         .limit(1);
       const prUrl = prArtifact?.url ?? '';
-      await dispatchToConversation(db, job.conversationId, {
-        type: 'job.completed',
-        job: { id: job.id, title: job.title, githubUrl: job.githubUrl },
-        prUrl,
-      }, log).catch((err) => log.warn({ err, jobId }, 'channel dispatch (completed) failed'));
+      await dispatchToConversation(
+        db,
+        job.conversationId,
+        {
+          type: 'job.completed',
+          job: { id: job.id, title: job.title, githubUrl: job.githubUrl },
+          prUrl,
+        },
+        log,
+      ).catch((err) => log.warn({ err, jobId }, 'channel dispatch (completed) failed'));
     }
   }
 
@@ -565,7 +658,8 @@ export class JobOrchestrator {
     const prBody = buildPrBody(job, plan);
 
     const meta = (job.metadata ?? {}) as Record<string, unknown>;
-    const prFollowupBranch = typeof meta.prFollowupBranch === 'string' ? meta.prFollowupBranch : null;
+    const prFollowupBranch =
+      typeof meta.prFollowupBranch === 'string' ? meta.prFollowupBranch : null;
     const branchName = prFollowupBranch ?? `praxis/job-${job.id.substring(0, 8)}`;
 
     const requestId = randomUUID();
@@ -591,7 +685,7 @@ export class JobOrchestrator {
       throw new Error(`publish failed: ${response.status} ${detail}`);
     }
 
-    const result = await response.json() as Record<string, unknown>;
+    const result = (await response.json()) as Record<string, unknown>;
 
     // publish.service.ts returns { error: 'no_changes' } when the working tree is clean.
     // Treat this as a valid outcome — not a failure.
@@ -630,12 +724,7 @@ export class JobOrchestrator {
     await db
       .update(jobSteps)
       .set({ status: 'pending', startedAt: null, completedAt: null, errorMessage: null })
-      .where(
-        and(
-          eq(jobSteps.jobId, job.id),
-          inArray(jobSteps.status, ['failed', 'running']),
-        ),
-      );
+      .where(and(eq(jobSteps.jobId, job.id), inArray(jobSteps.status, ['failed', 'running'])));
 
     const seq = await appendTimeline(db, job.id, 'checkpoint-resume', {
       planId: approvedPlan.id,
@@ -643,7 +732,10 @@ export class JobOrchestrator {
     });
     await this.emit(job.id, seq, {
       kind: 'chunk',
-      raw: { type: 'checkpoint-resume', message: 'Resuming from approved plan — skipping planning phase' },
+      raw: {
+        type: 'checkpoint-resume',
+        message: 'Resuming from approved plan — skipping planning phase',
+      },
     });
 
     return true;
@@ -779,11 +871,9 @@ export class JobOrchestrator {
     log: Logger,
   ): Promise<PraxisConfig | null> {
     try {
-      const result = await this.deps.sandbox.exec(
-        sandboxInfo.providerId,
-        'cat praxis.yml',
-        { cwd: workspace },
-      );
+      const result = await this.deps.sandbox.exec(sandboxInfo.providerId, 'cat praxis.yml', {
+        cwd: workspace,
+      });
       if (result.exitCode !== 0 || !result.stdout.trim()) return null;
       const config = parseYaml(result.stdout) as PraxisConfig;
       log.info({ qaSteps: config.qa?.steps?.length ?? 0 }, 'praxis.yml loaded');
@@ -808,20 +898,41 @@ export class JobOrchestrator {
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       await this.mustTransition(job.id, 'preparing', 'qa_running');
 
-      const startSeq = await appendTimeline(db, job.id, 'qa-started', { iteration, maxIterations, steps: qaConfig.steps.length });
-      await this.emit(job.id, startSeq, { kind: 'chunk', raw: { type: 'qa-started', iteration, maxIterations } });
+      const startSeq = await appendTimeline(db, job.id, 'qa-started', {
+        iteration,
+        maxIterations,
+        steps: qaConfig.steps.length,
+      });
+      await this.emit(job.id, startSeq, {
+        kind: 'chunk',
+        raw: { type: 'qa-started', iteration, maxIterations },
+      });
 
       const failures: QaStepFailure[] = [];
 
       for (const step of qaConfig.steps) {
-        const stepStartSeq = await appendTimeline(db, job.id, 'qa-step-started', { name: step.name, command: step.command });
-        await this.emit(job.id, stepStartSeq, { kind: 'chunk', raw: { type: 'qa-step-started', name: step.name, command: step.command } });
+        const stepStartSeq = await appendTimeline(db, job.id, 'qa-step-started', {
+          name: step.name,
+          command: step.command,
+        });
+        await this.emit(job.id, stepStartSeq, {
+          kind: 'chunk',
+          raw: { type: 'qa-step-started', name: step.name, command: step.command },
+        });
 
         const result = await (this.deps.fetchFn ?? fetch)(`${sandboxInfo.endpoint}/exec`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ command: step.command, cwd: workspace, timeoutSeconds: 300 }),
-        }).then((r) => r.json() as Promise<{ exitCode: number; stdout: string; stderr: string; durationMs: number }>);
+        }).then(
+          (r) =>
+            r.json() as Promise<{
+              exitCode: number;
+              stdout: string;
+              stderr: string;
+              durationMs: number;
+            }>,
+        );
 
         const output = `${result.stdout}\n${result.stderr}`.trim().slice(0, 4000);
         const passed = result.exitCode === 0;
@@ -834,17 +945,34 @@ export class JobOrchestrator {
           output,
           durationMs: result.durationMs,
         });
-        await this.emit(job.id, stepDoneSeq, { kind: 'chunk', raw: { type: 'qa-step-result', name: step.name, passed, exitCode: result.exitCode, output } });
+        await this.emit(job.id, stepDoneSeq, {
+          kind: 'chunk',
+          raw: {
+            type: 'qa-step-result',
+            name: step.name,
+            passed,
+            exitCode: result.exitCode,
+            output,
+          },
+        });
 
         if (!passed) {
-          failures.push({ name: step.name, command: step.command, exitCode: result.exitCode, output });
+          failures.push({
+            name: step.name,
+            command: step.command,
+            exitCode: result.exitCode,
+            output,
+          });
         }
       }
 
       if (failures.length === 0) {
         await this.mustTransition(job.id, 'qa_running', 'preparing');
         const passedSeq = await appendTimeline(db, job.id, 'qa-passed', { iteration });
-        await this.emit(job.id, passedSeq, { kind: 'chunk', raw: { type: 'qa-passed', iteration } });
+        await this.emit(job.id, passedSeq, {
+          kind: 'chunk',
+          raw: { type: 'qa-passed', iteration },
+        });
         log.info({ iteration }, 'QA passed');
         return;
       }
@@ -854,7 +982,10 @@ export class JobOrchestrator {
         iteration,
         failures: failures.map((f) => ({ name: f.name, exitCode: f.exitCode })),
       });
-      await this.emit(job.id, failedSeq, { kind: 'chunk', raw: { type: 'qa-iteration-failed', iteration, failures: failures.map((f) => f.name) } });
+      await this.emit(job.id, failedSeq, {
+        kind: 'chunk',
+        raw: { type: 'qa-iteration-failed', iteration, failures: failures.map((f) => f.name) },
+      });
       log.warn({ iteration, failures: failures.map((f) => f.name) }, 'QA iteration failed');
 
       await this.mustTransition(job.id, 'qa_running', 'preparing');
@@ -862,12 +993,21 @@ export class JobOrchestrator {
       if (iteration === maxIterations) {
         throw new Error(
           `QA failed after ${maxIterations} iteration${maxIterations === 1 ? '' : 's'}. ` +
-          `Failing steps: ${failures.map((f) => f.name).join(', ')}`,
+            `Failing steps: ${failures.map((f) => f.name).join(', ')}`,
         );
       }
 
       // Run a fix session then loop back
-      await this.runQaFix(job, sandboxInfo, workspace, failures, iteration, maxIterations, log, providerEnv);
+      await this.runQaFix(
+        job,
+        sandboxInfo,
+        workspace,
+        failures,
+        iteration,
+        maxIterations,
+        log,
+        providerEnv,
+      );
     }
   }
 
@@ -911,7 +1051,11 @@ export class JobOrchestrator {
 
     for await (const chunk of parseSSE(response.body)) {
       let parsed: unknown = chunk;
-      try { parsed = JSON.parse(chunk); } catch { /* leave as string */ }
+      try {
+        parsed = JSON.parse(chunk);
+      } catch {
+        /* leave as string */
+      }
 
       if (parsed && typeof parsed === 'object') {
         const msg = parsed as Record<string, unknown>;
@@ -963,11 +1107,16 @@ export class JobOrchestrator {
           });
           // Dispatch to conversation channels (e.g. Slack)
           if (current?.conversationId) {
-            await dispatchToConversation(this.deps.db, current.conversationId, {
-              type: 'job.failed',
-              job: { id: jobId, title: current.title, githubUrl: current.githubUrl },
-              error: errorMessage,
-            }, log).catch((err) => log.warn({ err, jobId }, 'channel dispatch (failed) failed'));
+            await dispatchToConversation(
+              this.deps.db,
+              current.conversationId,
+              {
+                type: 'job.failed',
+                job: { id: jobId, title: current.title, githubUrl: current.githubUrl },
+                error: errorMessage,
+              },
+              log,
+            ).catch((err) => log.warn({ err, jobId }, 'channel dispatch (failed) failed'));
           }
         }
       } catch {
@@ -1073,7 +1222,9 @@ async function callSandboxSingleTurn(
       if (msg.type === 'result' && msg.subtype === 'success' && typeof msg.result === 'string') {
         text = msg.result;
       }
-    } catch { /* non-JSON frame */ }
+    } catch {
+      /* non-JSON frame */
+    }
   }
 
   return text;
@@ -1111,17 +1262,29 @@ async function extractScoutOutput(
 function parseJsonFromText(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
   // 1. Try direct parse
-  try { return JSON.parse(trimmed) as Record<string, unknown>; } catch { /* fall through */ }
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    /* fall through */
+  }
   // 2. Extract from ```json ... ``` fence
   const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch?.[1]) {
-    try { return JSON.parse(fenceMatch[1].trim()) as Record<string, unknown>; } catch { /* fall through */ }
+    try {
+      return JSON.parse(fenceMatch[1].trim()) as Record<string, unknown>;
+    } catch {
+      /* fall through */
+    }
   }
   // 3. Extract first {...} block
   const start = trimmed.indexOf('{');
   const end = trimmed.lastIndexOf('}');
   if (start !== -1 && end > start) {
-    try { return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>; } catch { /* fall through */ }
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
+    } catch {
+      /* fall through */
+    }
   }
   return null;
 }

@@ -138,7 +138,10 @@ export const editFileTool: Tool<{ path: string; old_string: string; new_string: 
     type: 'object',
     properties: {
       path: { type: 'string', description: 'Path to the file' },
-      old_string: { type: 'string', description: 'Exact content to replace (must be unique in the file)' },
+      old_string: {
+        type: 'string',
+        description: 'Exact content to replace (must be unique in the file)',
+      },
       new_string: { type: 'string', description: 'Replacement content' },
     },
     required: ['path', 'old_string', 'new_string'],
@@ -149,7 +152,8 @@ export const editFileTool: Tool<{ path: string; old_string: string; new_string: 
     const content = await readFile(absPath, 'utf-8');
     const occurrences = content.split(old_string).length - 1;
     if (occurrences === 0) return `Error: old_string not found in ${path}`;
-    if (occurrences > 1) return `Error: old_string is ambiguous — found ${occurrences} times in ${path}`;
+    if (occurrences > 1)
+      return `Error: old_string is ambiguous — found ${occurrences} times in ${path}`;
     await writeFile(absPath, content.replace(old_string, new_string), 'utf-8');
     return JSON.stringify({ path, status: 'modified' });
   },
@@ -171,7 +175,11 @@ export const bashTool: Tool<{ command: string; timeout_seconds?: number }> = {
   },
   tags: ['write'],
   async execute({ command, timeout_seconds = 120 }, ctx) {
-    const result = await ctx.exec.run({ command, cwd: ctx.workingDir, timeoutSeconds: timeout_seconds });
+    const result = await ctx.exec.run({
+      command,
+      cwd: ctx.workingDir,
+      timeoutSeconds: timeout_seconds,
+    });
     const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
     return result.exitCode === 0 ? output || '(no output)' : `Exit ${result.exitCode}:\n${output}`;
   },
@@ -294,9 +302,15 @@ export const queryMemoryTool: Tool<{ query: string }> = {
       body: JSON.stringify({ query }),
     });
     if (!res.ok) return `query_memory failed (${res.status})`;
-    const data = (await res.json()) as { content: string | null; source: string | null; truncated: boolean };
+    const data = (await res.json()) as {
+      content: string | null;
+      source: string | null;
+      truncated: boolean;
+    };
     if (!data.content) return 'No memory found for this repository.';
-    const suffix = data.truncated ? `\n\n*(filtered to most relevant chunks — source: ${data.source})*` : '';
+    const suffix = data.truncated
+      ? `\n\n*(filtered to most relevant chunks — source: ${data.source})*`
+      : '';
     return `${data.content}${suffix}`;
   },
 };

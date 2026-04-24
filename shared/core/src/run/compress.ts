@@ -83,16 +83,15 @@ export async function buildResumeContext(
     log.info({ jobId, model: auxiliaryModel }, 'context compression summary generated');
   } catch (err) {
     log.warn({ jobId, err }, 'context compression failed — using minimal placeholder');
-    summary = JSON.stringify({ completedWork: [], changedFiles: [], remainingWork: 'Continue the original goal', criticalState: 'Context was truncated — check git diff for what was already done' });
+    summary = JSON.stringify({
+      completedWork: [],
+      changedFiles: [],
+      remainingWork: 'Continue the original goal',
+      criticalState: 'Context was truncated — check git diff for what was already done',
+    });
   }
 
-  return (
-    '\n\n---\n## Resume context (previous session hit context window limit)\n\n' +
-    'The execute step was interrupted when the context window filled. ' +
-    'The following summarises what was completed before the interruption. ' +
-    'Do NOT redo already-completed work. Continue from where execution stopped.\n\n' +
-    summary
-  );
+  return `\n\n---\n## Resume context (previous session hit context window limit)\n\nThe execute step was interrupted when the context window filled. The following summarises what was completed before the interruption. Do NOT redo already-completed work. Continue from where execution stopped.\n\n${summary}`;
 }
 
 // ── Minimal sandbox call (mirrors learning.ts / report.ts) ────────────────────
@@ -127,7 +126,11 @@ async function callSandboxForText(
   let text = '';
   for await (const chunk of parseSSE(response.body)) {
     let parsed: unknown = chunk;
-    try { parsed = JSON.parse(chunk); } catch { /* leave as string */ }
+    try {
+      parsed = JSON.parse(chunk);
+    } catch {
+      /* leave as string */
+    }
     if (parsed !== null && typeof parsed === 'object') {
       const msg = parsed as Record<string, unknown>;
       if (msg.type === 'result' && msg.subtype === 'success' && typeof msg.result === 'string') {

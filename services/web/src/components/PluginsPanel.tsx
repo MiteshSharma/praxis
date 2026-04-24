@@ -28,7 +28,12 @@ export function PluginsPanel({ sessionId }: PluginsPanelProps) {
       rpc.plugins.create({
         sessionId,
         ...values,
-        requiredEnv: requiredEnv ? requiredEnv.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        requiredEnv: requiredEnv
+          ? requiredEnv
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['plugins', sessionId] });
@@ -71,12 +76,7 @@ export function PluginsPanel({ sessionId }: PluginsPanelProps) {
               />
               <Typography.Text style={{ flex: 1 }}>{p.name}</Typography.Text>
               <Tag>{p.transport}</Tag>
-              <Button
-                size="small"
-                danger
-                type="text"
-                onClick={() => deleteMutation.mutate(p.id)}
-              >
+              <Button size="small" danger type="text" onClick={() => deleteMutation.mutate(p.id)}>
                 ×
               </Button>
             </div>
@@ -103,7 +103,12 @@ export function PluginsPanel({ sessionId }: PluginsPanelProps) {
           <Input placeholder="Plugin name (e.g. filesystem)" />
         </Form.Item>
         <Form.Item name="transport" initialValue="stdio" rules={[{ required: true }]}>
-          <Select options={[{ value: 'stdio', label: 'stdio' }, { value: 'http', label: 'http' }]} />
+          <Select
+            options={[
+              { value: 'stdio', label: 'stdio' },
+              { value: 'http', label: 'http' },
+            ]}
+          />
         </Form.Item>
         {transport === 'stdio' || !transport ? (
           <Form.Item name="command" rules={[{ required: true }]}>

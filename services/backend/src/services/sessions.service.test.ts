@@ -1,15 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
-import { SessionsService } from './sessions.service';
+import { describe, expect, it, vi } from 'vitest';
 import { createMockBoss, createMockLog, createMockTaskIngestService } from '../__tests__/mocks';
+import { SessionsService } from './sessions.service';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeSession(overrides: Partial<{
-  id: string;
-  defaultGithubUrl: string | null;
-  defaultWorkflowId: string | null;
-  model: string | null;
-}> = {}) {
+function makeSession(
+  overrides: Partial<{
+    id: string;
+    defaultGithubUrl: string | null;
+    defaultWorkflowId: string | null;
+    model: string | null;
+  }> = {},
+) {
   return {
     id: overrides.id ?? 'conv-1',
     title: 'My Session',
@@ -35,13 +37,17 @@ function makeMessage(overrides: Partial<{ id: string; jobId: string | null }> = 
   };
 }
 
-function makeRepo(options: {
-  session?: ReturnType<typeof makeSession> | null;
-  message?: ReturnType<typeof makeMessage>;
-  lastCompletedJobId?: string | null;
-} = {}) {
+function makeRepo(
+  options: {
+    session?: ReturnType<typeof makeSession> | null;
+    message?: ReturnType<typeof makeMessage>;
+    lastCompletedJobId?: string | null;
+  } = {},
+) {
   return {
-    findById: vi.fn().mockResolvedValue(options.session !== undefined ? options.session : makeSession()),
+    findById: vi
+      .fn()
+      .mockResolvedValue(options.session !== undefined ? options.session : makeSession()),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn().mockResolvedValue(makeSession()),
     update: vi.fn().mockResolvedValue(makeSession()),
@@ -68,31 +74,48 @@ function makeDb(workflowVersionId?: string) {
 describe('SessionsService.send', () => {
   it('throws NOT_FOUND when session does not exist', async () => {
     const repo = makeRepo({ session: null });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-    });
-    await expect(
-      svc.send({ sessionId: 'missing', message: 'hi' }),
-    ).rejects.toThrow('session not found');
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+      },
+    );
+    await expect(svc.send({ sessionId: 'missing', message: 'hi' })).rejects.toThrow(
+      'session not found',
+    );
   });
 
   it('throws BAD_REQUEST when no githubUrl available', async () => {
     const repo = makeRepo({ session: makeSession({ defaultGithubUrl: null }) });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-    });
-    await expect(
-      svc.send({ sessionId: 'conv-1', message: 'Fix bug' }),
-    ).rejects.toThrow('no githubUrl provided');
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+      },
+    );
+    await expect(svc.send({ sessionId: 'conv-1', message: 'Fix bug' })).rejects.toThrow(
+      'no githubUrl provided',
+    );
   });
 
   it('uses override githubUrl over session default', async () => {
     const ingest = createMockTaskIngestService('job-1');
-    const repo = makeRepo({ session: makeSession({ defaultGithubUrl: 'https://github.com/default/repo' }) });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
+    const repo = makeRepo({
+      session: makeSession({ defaultGithubUrl: 'https://github.com/default/repo' }),
     });
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     await svc.send({
       sessionId: 'conv-1',
@@ -107,11 +130,18 @@ describe('SessionsService.send', () => {
 
   it('falls back to session defaultGithubUrl', async () => {
     const ingest = createMockTaskIngestService('job-1');
-    const repo = makeRepo({ session: makeSession({ defaultGithubUrl: 'https://github.com/conv/repo' }) });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
+    const repo = makeRepo({
+      session: makeSession({ defaultGithubUrl: 'https://github.com/conv/repo' }),
     });
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     await svc.send({ sessionId: 'conv-1', message: 'Fix bug' });
 
@@ -126,10 +156,15 @@ describe('SessionsService.send', () => {
       session: makeSession({ defaultGithubUrl: 'https://github.com/owner/repo' }),
       lastCompletedJobId: 'job-parent',
     });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
-    });
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     await svc.send({ sessionId: 'conv-1', message: 'Continue work' });
 
@@ -141,13 +176,21 @@ describe('SessionsService.send', () => {
   it('resolves workflowVersionId from session defaultWorkflowId', async () => {
     const ingest = createMockTaskIngestService('job-1');
     const repo = makeRepo({
-      session: makeSession({ defaultGithubUrl: 'https://github.com/owner/repo', defaultWorkflowId: 'wf-1' }),
+      session: makeSession({
+        defaultGithubUrl: 'https://github.com/owner/repo',
+        defaultWorkflowId: 'wf-1',
+      }),
     });
     const db = makeDb('wv-latest');
-    const svc = new SessionsService(db as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
-    });
+    const svc = new SessionsService(
+      db as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     await svc.send({ sessionId: 'conv-1', message: 'Fix bug' });
 
@@ -158,12 +201,22 @@ describe('SessionsService.send', () => {
 
   it('uses explicit workflowId override, resolving its latest version', async () => {
     const ingest = createMockTaskIngestService('job-1');
-    const repo = makeRepo({ session: makeSession({ defaultGithubUrl: 'https://github.com/owner/repo', defaultWorkflowId: 'wf-default' }) });
-    const db = makeDb('wv-override');
-    const svc = new SessionsService(db as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
+    const repo = makeRepo({
+      session: makeSession({
+        defaultGithubUrl: 'https://github.com/owner/repo',
+        defaultWorkflowId: 'wf-default',
+      }),
     });
+    const db = makeDb('wv-override');
+    const svc = new SessionsService(
+      db as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     await svc.send({
       sessionId: 'conv-1',
@@ -182,10 +235,15 @@ describe('SessionsService.send', () => {
       session: makeSession({ defaultGithubUrl: 'https://github.com/owner/repo' }),
       message: makeMessage({ id: 'msg-123' }),
     });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
-    });
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     const result = await svc.send({ sessionId: 'conv-1', message: 'Fix bug' });
 
@@ -195,28 +253,41 @@ describe('SessionsService.send', () => {
 
   it('passes autoApprove to ingest', async () => {
     const ingest = createMockTaskIngestService('job-1');
-    const repo = makeRepo({ session: makeSession({ defaultGithubUrl: 'https://github.com/owner/repo' }) });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
+    const repo = makeRepo({
+      session: makeSession({ defaultGithubUrl: 'https://github.com/owner/repo' }),
     });
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     await svc.send({ sessionId: 'conv-1', message: 'Fix bug', autoApprove: true });
 
-    expect(ingest.ingest).toHaveBeenCalledWith(
-      expect.objectContaining({ autoApprove: true }),
-    );
+    expect(ingest.ingest).toHaveBeenCalledWith(expect.objectContaining({ autoApprove: true }));
   });
 
   it('passes session model to ingest', async () => {
     const ingest = createMockTaskIngestService('job-1');
     const repo = makeRepo({
-      session: makeSession({ defaultGithubUrl: 'https://github.com/owner/repo', model: 'claude-opus-4-6' }),
+      session: makeSession({
+        defaultGithubUrl: 'https://github.com/owner/repo',
+        model: 'claude-opus-4-6',
+      }),
     });
-    const svc = new SessionsService(makeDb() as never, createMockBoss() as never, createMockLog() as never, {
-      repo: repo as never,
-      ingest: ingest as never,
-    });
+    const svc = new SessionsService(
+      makeDb() as never,
+      createMockBoss() as never,
+      createMockLog() as never,
+      {
+        repo: repo as never,
+        ingest: ingest as never,
+      },
+    );
 
     await svc.send({ sessionId: 'conv-1', message: 'Fix bug' });
 

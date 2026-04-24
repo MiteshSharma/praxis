@@ -1,16 +1,16 @@
 import { serve } from '@hono/node-server';
 import { getDb, runMigrations } from '@shared/db';
+import { fleets } from '@shared/db';
 import { LocalSandboxProvider } from '@shared/sandbox';
 import { createLogger } from '@shared/telemetry';
+import { and, eq, notInArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import PgBoss from 'pg-boss';
 import { env } from './lib/env';
-import { fleets } from '@shared/db';
-import { and, notInArray, eq } from 'drizzle-orm';
 import {
+  registerFleetOrchestrateWorker,
   registerJobExecute,
   registerRecoverStuck,
-  registerFleetOrchestrateWorker,
   scheduleFleetOrchestrator,
 } from './queues';
 
@@ -36,6 +36,7 @@ export async function buildWorker(): Promise<{ stop: () => Promise<void> }> {
     `UPDATE pgboss.job SET state = 'failed', completed_on = NOW(),
      output = '{"error":"orphaned by worker restart"}'::jsonb
      WHERE name = 'job/execute' AND state = 'active'`,
+    [],
   );
 
   const sandbox = new LocalSandboxProvider();

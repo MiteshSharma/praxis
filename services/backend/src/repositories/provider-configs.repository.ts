@@ -7,7 +7,10 @@ export class ProviderConfigsRepository {
 
   async list(): Promise<Array<{ provider: string; config: Record<string, string> }>> {
     const rows = await this.db.select().from(providerConfigs);
-    return rows.map((r) => ({ provider: r.provider, config: (r.config ?? {}) as Record<string, string> }));
+    return rows.map((r) => ({
+      provider: r.provider,
+      config: (r.config ?? {}) as Record<string, string>,
+    }));
   }
 
   async upsert(provider: string, config: Record<string, string>): Promise<void> {

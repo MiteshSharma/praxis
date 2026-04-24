@@ -1,3 +1,5 @@
+import type { MemoryBackend, MemoryContext } from '@shared/memory';
+import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
 /**
  * Shared mock factories for all major interfaces.
  *
@@ -9,9 +11,7 @@
  *   tracker.createPlan.mockResolvedValue(somePlan);
  */
 import { vi } from 'vitest';
-import type { MemoryBackend, MemoryContext } from '@shared/memory';
-import type { SandboxInfo, SandboxProvider } from '@shared/sandbox';
-import type { TaskTracker, PlanDraft, PlanStatus } from '../task-tracker/task-tracker';
+import type { PlanDraft, PlanStatus, TaskTracker } from '../task-tracker/task-tracker';
 
 // ── TaskTracker ─────────────────────────────────────────────────────────────
 
@@ -33,7 +33,10 @@ export function createMockTaskTracker(): {
 // ── MemoryBackend ────────────────────────────────────────────────────────────
 
 export function createMockMemoryBackend(
-  defaults?: Partial<{ context: MemoryContext | null; saveResult: { sizeBytes: number; entryCount: number } }>,
+  defaults?: Partial<{
+    context: MemoryContext | null;
+    saveResult: { sizeBytes: number; entryCount: number };
+  }>,
 ): { [K in keyof MemoryBackend]: ReturnType<typeof vi.fn> } & MemoryBackend {
   return {
     loadForJob: vi.fn().mockResolvedValue(defaults?.context ?? null),

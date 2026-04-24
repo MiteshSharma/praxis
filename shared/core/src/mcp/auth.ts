@@ -22,10 +22,7 @@ export async function mintMcpToken(jobId: string, secret: string): Promise<strin
     .sign(getSecret(secret));
 }
 
-export async function verifyMcpToken(
-  token: string,
-  secret: string,
-): Promise<{ jobId: string }> {
+export async function verifyMcpToken(token: string, secret: string): Promise<{ jobId: string }> {
   const { payload } = await jwtVerify(token, getSecret(secret));
   if (typeof payload.jobId !== 'string') {
     throw new Error('invalid token: missing jobId');

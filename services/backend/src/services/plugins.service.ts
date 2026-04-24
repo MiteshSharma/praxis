@@ -34,9 +34,7 @@ export class PluginsService {
 
     if (input.requiredEnv?.length) {
       const env = input.env ?? {};
-      const missing = input.requiredEnv.filter(
-        (key) => !(key in env) && !(key in process.env),
-      );
+      const missing = input.requiredEnv.filter((key) => !(key in env) && !(key in process.env));
       if (missing.length > 0) {
         throw new ORPCError('BAD_REQUEST', {
           message: `Plugin is missing required env vars: ${missing.join(', ')}`,

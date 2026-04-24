@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildExecuteSystemPrompt } from './execute-session';
 
 function makePlan(bodyMarkdown?: string): Parameters<typeof buildExecuteSystemPrompt>[0] {
@@ -8,7 +8,13 @@ function makePlan(bodyMarkdown?: string): Parameters<typeof buildExecuteSystemPr
     version: 1,
     previousPlanId: null,
     contentUri: 'plans/job-1/v1',
-    data: { title: 'Add feature', bodyMarkdown: bodyMarkdown ?? '## Steps\n1. Do thing' },
+    data: {
+      title: 'Add feature',
+      summary: '',
+      steps: [],
+      affectedPaths: [],
+      bodyMarkdown: bodyMarkdown ?? '## Steps\n1. Do thing',
+    },
     status: 'approved',
     feedbackFromUser: null,
     approvedAt: new Date(),
@@ -41,7 +47,7 @@ describe('buildExecuteSystemPrompt', () => {
 
   it('falls back gracefully when bodyMarkdown is missing', () => {
     const plan = makePlan();
-    (plan.data as Record<string, unknown>).bodyMarkdown = undefined;
+    (plan.data as unknown as Record<string, unknown>).bodyMarkdown = undefined;
     const prompt = buildExecuteSystemPrompt(plan);
     expect(prompt).toContain('plan body unavailable');
   });

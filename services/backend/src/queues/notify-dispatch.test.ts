@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerNotifyDispatch } from './notify-dispatch';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -33,12 +33,14 @@ function makeBoss() {
 
   return {
     createQueue: vi.fn().mockResolvedValue(undefined),
-    work: vi.fn().mockImplementation(
-      (_queue: string, _opts: unknown, fn: (batch: unknown[]) => Promise<void>) => {
-        workerFn = fn;
-        return Promise.resolve();
-      },
-    ),
+    work: vi
+      .fn()
+      .mockImplementation(
+        (_queue: string, _opts: unknown, fn: (batch: unknown[]) => Promise<void>) => {
+          workerFn = fn;
+          return Promise.resolve();
+        },
+      ),
     on: vi.fn(),
     /** Call the captured worker with a batch */
     async runWorker(batch: unknown[]) {

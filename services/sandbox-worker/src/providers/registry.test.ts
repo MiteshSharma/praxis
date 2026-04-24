@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { ProviderRegistry, registerProvider } from './registry';
+import { describe, expect, it, vi } from 'vitest';
+import { providerRegistry, registerProvider } from './registry';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // Create a fresh ProviderRegistry per test to avoid global state pollution.
@@ -52,8 +52,14 @@ describe('ProviderRegistry (via providerRegistry + registerProvider)', () => {
     const claudeProvider = makeProvider('claude');
     const openaiProvider = makeProvider('openai');
 
-    register((m) => m.startsWith('claude-'), () => claudeProvider);
-    register((m) => m.startsWith('gpt-'), () => openaiProvider);
+    register(
+      (m) => m.startsWith('claude-'),
+      () => claudeProvider,
+    );
+    register(
+      (m) => m.startsWith('gpt-'),
+      () => openaiProvider,
+    );
 
     expect(resolve('claude-sonnet-4-6', {})).toBe(claudeProvider);
     expect(resolve('gpt-4o', {})).toBe(openaiProvider);
@@ -82,7 +88,10 @@ describe('ProviderRegistry (via providerRegistry + registerProvider)', () => {
     }> = [];
 
     const catchAll = makeProvider('demo');
-    entries.push({ matcher: (m) => m.startsWith('claude-'), factory: () => makeProvider('claude') });
+    entries.push({
+      matcher: (m) => m.startsWith('claude-'),
+      factory: () => makeProvider('claude'),
+    });
     entries.push({ matcher: () => true, factory: () => catchAll }); // catch-all last
 
     const result = entries.find((e) => e.matcher('unknown-model-xyz'))?.factory();

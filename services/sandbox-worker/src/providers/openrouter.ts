@@ -2,9 +2,9 @@ import OpenAI from 'openai';
 import type { PromptBody } from '../dto/agent.dto.js';
 import { ExecService } from '../services/exec.service.js';
 import { registerProvider } from './registry.js';
-import type { AgentProvider } from './types.js';
 import { toolRegistry } from './tools/index.js';
-import type { ToolContext, Phase } from './tools/index.js';
+import type { Phase, ToolContext } from './tools/index.js';
+import type { AgentProvider } from './types.js';
 
 /**
  * OpenRouter provider — routes any model via openrouter.ai's OpenAI-compatible API.
@@ -23,7 +23,9 @@ export class OpenRouterProvider implements AgentProvider {
     }
 
     const phase: Phase =
-      body.sessionPhase === 'plan' || body.sessionPhase === 'revise' ? body.sessionPhase : 'execute';
+      body.sessionPhase === 'plan' || body.sessionPhase === 'revise'
+        ? body.sessionPhase
+        : 'execute';
 
     const ctx: ToolContext = {
       workingDir: body.workingDir,
@@ -34,14 +36,16 @@ export class OpenRouterProvider implements AgentProvider {
 
     const availableTools = toolRegistry.getForPhase(phase, ctx);
 
-    const tools: OpenAI.Chat.ChatCompletionTool[] = toolRegistry.toFunctionSchema(availableTools).map((def) => ({
-      type: 'function',
-      function: {
-        name: def.name,
-        description: def.description,
-        parameters: def.parameters as OpenAI.FunctionParameters,
-      },
-    }));
+    const tools: OpenAI.Chat.ChatCompletionTool[] = toolRegistry
+      .toFunctionSchema(availableTools)
+      .map((def) => ({
+        type: 'function',
+        function: {
+          name: def.name,
+          description: def.description,
+          parameters: def.parameters as OpenAI.FunctionParameters,
+        },
+      }));
 
     // Strip the 'openrouter/' prefix — the actual model name is everything after it
     const model = (body.model ?? 'openrouter/anthropic/claude-opus-4').replace(/^openrouter\//, '');

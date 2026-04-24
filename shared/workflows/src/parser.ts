@@ -2,9 +2,9 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import {
   AgentDefinitionSchema,
+  type Definition,
   DefinitionSchema,
   WorkflowDefinitionSchema,
-  type Definition,
 } from './types';
 
 /**
@@ -49,6 +49,7 @@ function normalizeDoc(data: Record<string, unknown>): unknown {
       version: data.version ?? '1.0.0',
       workflow: WorkflowDefinitionSchema.parse({
         inputs: data.inputs,
+        scout: data.scout,
         steps: data.steps,
       }),
     };

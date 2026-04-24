@@ -16,7 +16,10 @@ export class S3MemoryBackend implements MemoryBackend {
     return { content: markdown, source: 'full', truncated: false };
   }
 
-  async save(repoKey: string, markdown: string): Promise<{ sizeBytes: number; entryCount: number }> {
+  async save(
+    repoKey: string,
+    markdown: string,
+  ): Promise<{ sizeBytes: number; entryCount: number }> {
     return saveMemoryFile(this.db, repoKey, markdown);
   }
 }

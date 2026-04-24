@@ -1,19 +1,26 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createMockBoss,
+  createMockJobsRepository,
+  createMockLog,
+  createMockTaskIngestService,
+} from '../__tests__/mocks';
 import { JobsService } from './jobs.service';
-import { createMockBoss, createMockLog, createMockJobsRepository, createMockTaskIngestService } from '../__tests__/mocks';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeJobRow(overrides: Partial<{
-  id: string;
-  status: string;
-  conversationId: string | null;
-  workflowVersionId: string | null;
-  title: string;
-  description: string | null;
-  githubUrl: string;
-  githubBranch: string;
-}> = {}) {
+function makeJobRow(
+  overrides: Partial<{
+    id: string;
+    status: string;
+    conversationId: string | null;
+    workflowVersionId: string | null;
+    title: string;
+    description: string | null;
+    githubUrl: string;
+    githubBranch: string;
+  }> = {},
+) {
   return {
     id: overrides.id ?? 'job-1',
     status: overrides.status ?? 'failed',
@@ -42,10 +49,12 @@ function makeJobRow(overrides: Partial<{
   };
 }
 
-function makeDb(options: {
-  job?: ReturnType<typeof makeJobRow> | null;
-  plan?: { id: string; status: string } | null;
-} = {}) {
+function makeDb(
+  options: {
+    job?: ReturnType<typeof makeJobRow> | null;
+    plan?: { id: string; status: string } | null;
+  } = {},
+) {
   return {
     query: {
       jobs: { findFirst: vi.fn().mockResolvedValue(options.job ?? makeJobRow()) },
@@ -59,20 +68,39 @@ function makeDb(options: {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-function makeSessionsRepo(options: {
-  session?: { id: string; defaultGithubUrl: string | null; defaultWorkflowId: string | null; model: string | null } | null;
-  lastCompletedJobId?: string | null;
-} = {}) {
-  const session = options.session !== undefined ? options.session : {
-    id: 'sess-1',
-    defaultGithubUrl: 'https://github.com/owner/repo',
-    defaultWorkflowId: null,
-    model: null,
-  };
+function makeSessionsRepo(
+  options: {
+    session?: {
+      id: string;
+      defaultGithubUrl: string | null;
+      defaultWorkflowId: string | null;
+      model: string | null;
+    } | null;
+    lastCompletedJobId?: string | null;
+  } = {},
+) {
+  const session =
+    options.session !== undefined
+      ? options.session
+      : {
+          id: 'sess-1',
+          defaultGithubUrl: 'https://github.com/owner/repo',
+          defaultWorkflowId: null,
+          model: null,
+        };
   return {
     findById: vi.fn().mockResolvedValue(session),
     findLastCompletedJobId: vi.fn().mockResolvedValue(options.lastCompletedJobId ?? null),
-    insertMessage: vi.fn().mockResolvedValue({ id: 'msg-1', sessionId: 'sess-1', role: 'user', content: '', jobId: null, prArtifactUrl: null, metadata: {}, createdAt: new Date().toISOString() }),
+    insertMessage: vi.fn().mockResolvedValue({
+      id: 'msg-1',
+      sessionId: 'sess-1',
+      role: 'user',
+      content: '',
+      jobId: null,
+      prArtifactUrl: null,
+      metadata: {},
+      createdAt: new Date().toISOString(),
+    }),
     updateMessageJobId: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -80,7 +108,9 @@ function makeSessionsRepo(options: {
 describe('JobsService.create', () => {
   it('creates message + job and returns full JobDto', async () => {
     const ingest = createMockTaskIngestService('new-job');
-    const repo = createMockJobsRepository({ findById: makeJobRow({ id: 'new-job', status: 'queued' }) as never });
+    const repo = createMockJobsRepository({
+      findById: makeJobRow({ id: 'new-job', status: 'queued' }) as never,
+    });
     const sessionsRepo = makeSessionsRepo();
     const db = makeDb();
     const svc = new JobsService(db as never, createMockBoss() as never, createMockLog() as never, {
@@ -114,16 +144,22 @@ describe('JobsService.create', () => {
     const svc = new JobsService(db as never, createMockBoss() as never, createMockLog() as never, {
       sessionsRepo: sessionsRepo as never,
     });
-    await expect(svc.create({ sessionId: 'missing', task: 'task' })).rejects.toThrow('session not found');
+    await expect(svc.create({ sessionId: 'missing', task: 'task' })).rejects.toThrow(
+      'session not found',
+    );
   });
 
   it('throws BAD_REQUEST when no githubUrl available', async () => {
-    const sessionsRepo = makeSessionsRepo({ session: { id: 'sess-1', defaultGithubUrl: null, defaultWorkflowId: null, model: null } });
+    const sessionsRepo = makeSessionsRepo({
+      session: { id: 'sess-1', defaultGithubUrl: null, defaultWorkflowId: null, model: null },
+    });
     const db = makeDb();
     const svc = new JobsService(db as never, createMockBoss() as never, createMockLog() as never, {
       sessionsRepo: sessionsRepo as never,
     });
-    await expect(svc.create({ sessionId: 'sess-1', task: 'task' })).rejects.toThrow('no githubUrl provided');
+    await expect(svc.create({ sessionId: 'sess-1', task: 'task' })).rejects.toThrow(
+      'no githubUrl provided',
+    );
   });
 });
 
@@ -161,7 +197,9 @@ describe('JobsService.resumeFromPlan', () => {
   });
 
   it('throws BAD_REQUEST when job status is not failed', async () => {
-    const repo = createMockJobsRepository({ findById: makeJobRow({ status: 'executing' }) as never });
+    const repo = createMockJobsRepository({
+      findById: makeJobRow({ status: 'executing' }) as never,
+    });
     const db = makeDb();
     const svc = new JobsService(db as never, createMockBoss() as never, createMockLog() as never, {
       repo: repo as never,
@@ -180,7 +218,9 @@ describe('JobsService.resumeFromPlan', () => {
 
   it('sets job status=queued and enqueues when approved plan exists', async () => {
     const boss = createMockBoss();
-    const repo = createMockJobsRepository({ findById: makeJobRow({ id: 'job-1', status: 'failed' }) as never });
+    const repo = createMockJobsRepository({
+      findById: makeJobRow({ id: 'job-1', status: 'failed' }) as never,
+    });
     const db = makeDb({ plan: { id: 'plan-1', status: 'approved' } });
     const svc = new JobsService(db as never, boss as never, createMockLog() as never, {
       repo: repo as never,

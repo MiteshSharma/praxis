@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  buildPlanSessionSystemPrompt,
-  buildMemorySection,
   PLAN_SESSION_SYSTEM_PROMPT,
+  buildMemorySection,
+  buildPlanSessionSystemPrompt,
 } from './plan-session';
 
 describe('buildPlanSessionSystemPrompt', () => {
@@ -23,7 +23,15 @@ describe('buildPlanSessionSystemPrompt', () => {
 
   it('includes all required plan fields in instructions', () => {
     const prompt = buildPlanSessionSystemPrompt();
-    for (const field of ['title', 'summary', 'bodyMarkdown', 'steps', 'affectedPaths', 'risks', 'openQuestions']) {
+    for (const field of [
+      'title',
+      'summary',
+      'bodyMarkdown',
+      'steps',
+      'affectedPaths',
+      'risks',
+      'openQuestions',
+    ]) {
       expect(prompt).toContain(field);
     }
   });

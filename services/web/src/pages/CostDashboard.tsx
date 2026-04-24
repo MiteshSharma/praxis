@@ -32,35 +32,55 @@ function SpendBarChart({ data }: { data: DailyCostDto[] }) {
   const BAR_H = 120;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: BAR_H + 24, padding: '28px 4px 0', overflow: 'visible' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 3,
+        height: BAR_H + 24,
+        padding: '28px 4px 0',
+        overflow: 'visible',
+      }}
+    >
       {data.map((d, i) => {
         const height = Math.max(2, (d.costUsd / max) * BAR_H);
         const isHovered = hovered === i;
         return (
           <div
             key={d.date}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, position: 'relative' }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 2,
+              position: 'relative',
+            }}
             onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(null)}
           >
             {isHovered && (
-              <div style={{
-                position: 'absolute',
-                bottom: height + (data.length <= 14 ? 14 : 2) + 4,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                background: 'var(--c-text)',
-                color: 'var(--c-bg, #fff)',
-                borderRadius: 5,
-                padding: '4px 8px',
-                fontSize: 11,
-                whiteSpace: 'nowrap',
-                pointerEvents: 'none',
-                zIndex: 10,
-                lineHeight: 1.5,
-              }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: height + (data.length <= 14 ? 14 : 2) + 4,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: 'var(--c-text)',
+                  color: 'var(--c-bg, #fff)',
+                  borderRadius: 5,
+                  padding: '4px 8px',
+                  fontSize: 11,
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                  zIndex: 10,
+                  lineHeight: 1.5,
+                }}
+              >
                 <div style={{ fontWeight: 600 }}>${fmt(d.costUsd)}</div>
-                <div style={{ opacity: 0.75 }}>{d.date} · {d.jobCount} job{d.jobCount !== 1 ? 's' : ''}</div>
+                <div style={{ opacity: 0.75 }}>
+                  {d.date} · {d.jobCount} job{d.jobCount !== 1 ? 's' : ''}
+                </div>
               </div>
             )}
             <div
@@ -92,7 +112,12 @@ const repoColumns = [
     dataIndex: 'githubUrl',
     key: 'githubUrl',
     render: (url: string) => (
-      <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontFamily: 'monospace' }}>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        style={{ fontSize: 13, fontFamily: 'monospace' }}
+      >
         {url.replace('https://github.com/', '')}
       </a>
     ),
@@ -146,7 +171,14 @@ export function CostDashboard() {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 0' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 24,
+        }}
+      >
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Cost Dashboard</h2>
         <div style={{ display: 'flex', gap: 6 }}>
           {PRESETS.map((p, i) => (
@@ -154,7 +186,11 @@ export function CostDashboard() {
               key={p.label}
               type="button"
               className={`btn btn-sm${preset === i ? '' : ' btn-ghost'}`}
-              style={preset === i ? { background: 'var(--c-primary)', color: '#fff', border: 'none' } : {}}
+              style={
+                preset === i
+                  ? { background: 'var(--c-primary)', color: '#fff', border: 'none' }
+                  : {}
+              }
               onClick={() => setPreset(i)}
             >
               {p.label}
@@ -173,11 +209,23 @@ export function CostDashboard() {
         }}
       >
         {[
-          { title: 'Total spend', value: s ? `$${fmt(s.totalCostUsd)}` : '—', color: 'var(--c-primary)' },
+          {
+            title: 'Total spend',
+            value: s ? `$${fmt(s.totalCostUsd)}` : '—',
+            color: 'var(--c-primary)',
+          },
           { title: 'Avg per job', value: s ? `$${fmt(s.avgCostPerJob, 4)}` : '—' },
           { title: 'Jobs run', value: s ? s.totalJobs.toLocaleString() : '—' },
-          { title: 'Completed', value: s ? s.completedJobs.toLocaleString() : '—', color: 'var(--c-success)' },
-          { title: 'Failed', value: s ? s.failedJobs.toLocaleString() : '—', color: s && s.failedJobs > 0 ? 'var(--c-error)' : undefined },
+          {
+            title: 'Completed',
+            value: s ? s.completedJobs.toLocaleString() : '—',
+            color: 'var(--c-success)',
+          },
+          {
+            title: 'Failed',
+            value: s ? s.failedJobs.toLocaleString() : '—',
+            color: s && s.failedJobs > 0 ? 'var(--c-error)' : undefined,
+          },
         ].map((card) => (
           <div
             key={card.title}
@@ -188,10 +236,25 @@ export function CostDashboard() {
               padding: '16px 20px',
             }}
           >
-            <div style={{ fontSize: 11, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--c-text-3)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                marginBottom: 6,
+              }}
+            >
               {card.title}
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: card.color ?? 'var(--c-text)', fontVariantNumeric: 'tabular-nums' }}>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: card.color ?? 'var(--c-text)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
               {card.value}
             </div>
           </div>
@@ -201,7 +264,8 @@ export function CostDashboard() {
       {/* Token footnote */}
       {s && (s.totalInputTokens > 0 || s.totalOutputTokens > 0) && (
         <p style={{ margin: '0 0 20px', fontSize: 12, color: 'var(--c-text-3)' }}>
-          {s.totalInputTokens.toLocaleString()} input tokens · {s.totalOutputTokens.toLocaleString()} output tokens
+          {s.totalInputTokens.toLocaleString()} input tokens ·{' '}
+          {s.totalOutputTokens.toLocaleString()} output tokens
         </p>
       )}
 
@@ -232,7 +296,14 @@ export function CostDashboard() {
           overflow: 'hidden',
         }}
       >
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--c-border-subtle)', fontWeight: 600, fontSize: 13 }}>
+        <div
+          style={{
+            padding: '12px 20px',
+            borderBottom: '1px solid var(--c-border-subtle)',
+            fontWeight: 600,
+            fontSize: 13,
+          }}
+        >
           Spend by repository
         </div>
         <Table

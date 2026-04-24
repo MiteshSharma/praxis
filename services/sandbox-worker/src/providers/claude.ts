@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { PromptBody } from '../dto/agent.dto';
 import { ExecService } from '../services/exec.service.js';
 import { registerProvider } from './registry.js';
-import type { AgentProvider } from './types';
 import { toolRegistry } from './tools/index.js';
+import type { AgentProvider } from './types';
 
 /**
  * Claude provider — uses @anthropic-ai/claude-agent-sdk.
@@ -56,58 +56,79 @@ export class ClaudeProvider implements AgentProvider {
 
       const INTERNAL_MCP_SERVER = 'praxis-control-plane';
 
-      const submitPlanSdkTool = isPlanPhase ? tool(
-        'submit_plan',
-        'Submit a structured implementation plan for user review. Call this once you have analysed the codebase and are ready to propose a plan.',
-        {
-          title: z.string().describe('Short title for the plan'),
-          summary: z.string().describe('1–3 sentence summary of the approach'),
-          bodyMarkdown: z.string().describe('Full plan body in markdown'),
-          steps: z
-            .array(
-              z.object({
-                id: z.string().describe('Unique step identifier (e.g. "step-1")'),
-                content: z.string().describe('Description of this step'),
-                status: z.enum(['pending', 'done', 'skipped']).optional(),
-              }),
-            )
-            .describe('Ordered list of implementation steps'),
-          affectedPaths: z
-            .array(z.string())
-            .describe('File or directory paths that will be changed'),
-          risks: z.array(z.string()).optional().describe('Known risks or caveats'),
-          openQuestions: z
-            .array(
-              z.object({
-                id: z.string(),
-                question: z.string().describe('Question that requires user input'),
-                context: z.string().optional(),
-                options: z.array(z.string()).optional().describe('Suggested answers'),
-                answer: z.string().nullable().optional(),
-              }),
-            )
-            .optional()
-            .describe('Questions for the user before execution begins'),
-        },
-        async (args) => {
-          const normalizedArgs = {
-            ...args,
-            steps: args.steps.map((s) => ({ ...s, status: s.status ?? 'pending' })),
-          };
-          const result = await toolRegistry.execute('submit_plan', normalizedArgs as Record<string, unknown>, ctx);
-          const isError = result.startsWith('submit_plan failed') || result.startsWith('Error:');
-          return { content: [{ type: 'text' as const, text: result }], ...(isError && { isError: true }) };
-        },
-      ) : null;
+      const submitPlanSdkTool = isPlanPhase
+        ? tool(
+            'submit_plan',
+            'Submit a structured implementation plan for user review. Call this once you have analysed the codebase and are ready to propose a plan.',
+            {
+              title: z.string().describe('Short title for the plan'),
+              summary: z.string().describe('1–3 sentence summary of the approach'),
+              bodyMarkdown: z.string().describe('Full plan body in markdown'),
+              steps: z
+                .array(
+                  z.object({
+                    id: z.string().describe('Unique step identifier (e.g. "step-1")'),
+                    content: z.string().describe('Description of this step'),
+                    status: z.enum(['pending', 'done', 'skipped']).optional(),
+                  }),
+                )
+                .describe('Ordered list of implementation steps'),
+              affectedPaths: z
+                .array(z.string())
+                .describe('File or directory paths that will be changed'),
+              risks: z.array(z.string()).optional().describe('Known risks or caveats'),
+              openQuestions: z
+                .array(
+                  z.object({
+                    id: z.string(),
+                    question: z.string().describe('Question that requires user input'),
+                    context: z.string().optional(),
+                    options: z.array(z.string()).optional().describe('Suggested answers'),
+                    answer: z.string().nullable().optional(),
+                  }),
+                )
+                .optional()
+                .describe('Questions for the user before execution begins'),
+            },
+            async (args) => {
+              const normalizedArgs = {
+                ...args,
+                steps: args.steps.map((s) => ({ ...s, status: s.status ?? 'pending' })),
+              };
+              const result = await toolRegistry.execute(
+                'submit_plan',
+                normalizedArgs as Record<string, unknown>,
+                ctx,
+              );
+              const isError =
+                result.startsWith('submit_plan failed') || result.startsWith('Error:');
+              return {
+                content: [{ type: 'text' as const, text: result }],
+                ...(isError && { isError: true }),
+              };
+            },
+          )
+        : null;
 
       const queryMemorySdkTool = tool(
         'query_memory',
         "Query the repository's memory for past design decisions, architectural patterns, and conventions. Use this when you need context about how similar problems were solved before or to stay consistent with existing patterns.",
-        { query: z.string().describe('Natural language question about the codebase design or conventions') },
+        {
+          query: z
+            .string()
+            .describe('Natural language question about the codebase design or conventions'),
+        },
         async (args) => {
-          const result = await toolRegistry.execute('query_memory', args as Record<string, unknown>, ctx);
+          const result = await toolRegistry.execute(
+            'query_memory',
+            args as Record<string, unknown>,
+            ctx,
+          );
           const isError = result.startsWith('query_memory failed') || result.startsWith('Error:');
-          return { content: [{ type: 'text' as const, text: result }], ...(isError && { isError: true }) };
+          return {
+            content: [{ type: 'text' as const, text: result }],
+            ...(isError && { isError: true }),
+          };
         },
       );
 
@@ -132,7 +153,7 @@ export class ClaudeProvider implements AgentProvider {
       for (const p of body.plugins) {
         if (p.transport === 'stdio' && p.command) {
           const [cmd, ...args] = p.command.split(' ');
-          extraServers[p.name] = { type: 'stdio', command: cmd!, args, env: p.env };
+          extraServers[p.name] = { type: 'stdio', command: cmd ?? '', args, env: p.env };
         } else if (p.transport === 'http' && p.url) {
           extraServers[p.name] = { type: 'http', url: p.url };
         }
