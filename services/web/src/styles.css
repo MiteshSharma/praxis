@@ -679,6 +679,7 @@ body {
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
+  position: relative;
 }
 
 .phase-dot.done {
@@ -696,6 +697,20 @@ body {
 .phase-dot.wait {
   background: var(--c-border);
   color: var(--c-text-3);
+}
+
+@keyframes phase-spin {
+  to { transform: rotate(360deg); }
+}
+
+.phase-dot.active::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--c-primary);
+  animation: phase-spin 0.75s linear infinite;
 }
 
 .phase-label {
